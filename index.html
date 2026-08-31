@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pedidos · EDISATECH</title>
+<style>
+  :root{
+    --graphite: #1c2128;
+    --graphite-soft: #262c35;
+    --graphite-line: #333a44;
+    --paper: #f4f5f7;
+    --paper-card: #ffffff;
+    --ink: #1c2128;
+    --ink-soft: #5b6472;
+    --copper: #c1662f;
+    --copper-soft: #e9c9b3;
+    --ok: #2f8f5b;
+    --warn: #c9922f;
+    --danger: #c1372f;
+    --radius: 6px;
+    --font: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  }
+
+  *{ box-sizing: border-box; }
+  html, body{ height: 100%; }
+  body{
+    margin: 0;
+    font-family: var(--font);
+    background: var(--paper);
+    color: var(--ink);
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ---------- Sidebar ---------- */
+  #sidebar{
+    width: 216px;
+    flex-shrink: 0;
+    background: var(--graphite);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    padding: 20px 0;
+  }
+  #sidebar .brand{
+    padding: 0 20px 22px 20px;
+    border-bottom: 1px solid var(--graphite-line);
+    margin-bottom: 14px;
+  }
+  #sidebar .brand .name{
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+  }
+  #sidebar .brand .sub{
+    font-size: 12px;
+    color: #9aa3af;
+    margin-top: 2px;
+  }
+
+  nav#tabs{
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 10px;
+  }
+  nav#tabs button{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    color: #c4cad3;
+    font-size: 14px;
+    font-family: inherit;
+    padding: 10px 12px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  nav#tabs button .dot{
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #4b535f;
+    flex-shrink: 0;
+  }
+  nav#tabs button:hover{
+    background: var(--graphite-soft);
+    color: #fff;
+  }
+  nav#tabs button.active{
+    background: var(--graphite-soft);
+    color: #fff;
+  }
+  nav#tabs button.active .dot{
+    background: var(--copper);
+  }
+
+  #sidebar .foot{
+    margin-top: auto;
+    padding: 14px 20px 0 20px;
+    font-size: 11px;
+    color: #6b7481;
+    border-top: 1px solid var(--graphite-line);
+  }
+
+  /* ---------- Main content ---------- */
+  #main{
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  header#topbar{
+    height: 56px;
+    flex-shrink: 0;
+    background: var(--paper-card);
+    border-bottom: 1px solid #e2e4e9;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+  }
+  header#topbar h1{
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+  }
+  header#topbar .status{
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+
+  #panels{
+    flex: 1;
+    overflow: auto;
+    padding: 24px;
+  }
+
+  .panel{
+    display: none;
+  }
+  .panel.active{
+    display: block;
+  }
+
+  .panel .placeholder{
+    background: var(--paper-card);
+    border: 1px dashed #d4d7dc;
+    border-radius: var(--radius);
+    padding: 40px 24px;
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 14px;
+  }
+  .panel .placeholder strong{
+    display: block;
+    color: var(--ink);
+    font-size: 15px;
+    margin-bottom: 6px;
+  }
+
+  /* Utilidades compartidas para las pestañas */
+  .card{
+    background: var(--paper-card);
+    border: 1px solid #e2e4e9;
+    border-radius: var(--radius);
+    padding: 18px;
+  }
+  .btn{
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    border-radius: var(--radius);
+    padding: 9px 14px;
+    cursor: pointer;
+    background: var(--copper);
+    color: #fff;
+  }
+  .btn:hover{ filter: brightness(1.05); }
+  .btn.secondary{
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid #d4d7dc;
+  }
+
+  /* ---------- Tabla ---------- */
+  table.data-table{
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--paper-card);
+    border: 1px solid #e2e4e9;
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  table.data-table th, table.data-table td{
+    text-align: left;
+    padding: 10px 14px;
+    font-size: 13.5px;
+    border-bottom: 1px solid #edeef1;
+  }
+  table.data-table th{
+    background: #fafafb;
+    color: var(--ink-soft);
+    font-weight: 600;
+    font-size: 12px;
+  }
+  table.data-table tbody tr:last-child td{ border-bottom: none; }
+  table.data-table tbody tr:hover{ background: #fbfaf8; }
+  table.data-table .row-actions{
+    display: flex;
+    gap: 6px;
+  }
+  table.data-table .row-actions button{
+    background: transparent;
+    border: 1px solid #d4d7dc;
+    border-radius: var(--radius);
+    font-size: 12px;
+    padding: 4px 9px;
+    cursor: pointer;
+    color: var(--ink-soft);
+  }
+  table.data-table .row-actions button:hover{ color: var(--ink); border-color: #b8bcc4; }
+  table.data-table .row-actions button.danger:hover{ color: var(--danger); border-color: var(--danger); }
+
+  .tag-reparaciones{
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--copper);
+    background: var(--copper-soft);
+    padding: 2px 7px;
+    border-radius: 999px;
+    margin-left: 6px;
+  }
+
+  .panel-header{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .panel-header h2{
+    font-size: 15px;
+    margin: 0;
+  }
+  .empty-state{
+    color: var(--ink-soft);
+    font-size: 13.5px;
+    padding: 24px;
+    text-align: center;
+  }
+
+  /* ---------- Formulario ---------- */
+  .form-group{ margin-bottom: 14px; }
+  .form-group label{
+    display: block;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    margin-bottom: 5px;
+  }
+  .form-group input[type="text"], .form-group input[type="tel"]{
+    width: 100%;
+    font-family: inherit;
+    font-size: 13.5px;
+    padding: 8px 10px;
+    border: 1px solid #d4d7dc;
+    border-radius: var(--radius);
+    background: #fff;
+  }
+  .form-group input:focus{
+    outline: none;
+    border-color: var(--copper);
+  }
+
+  .contactos-list{
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .contacto-row{
+    display: grid;
+    grid-template-columns: 1fr 1fr auto auto;
+    gap: 8px;
+    align-items: center;
+  }
+  .contacto-row .radio-rep{
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+  .contacto-row button.remove-contacto{
+    background: transparent;
+    border: none;
+    color: var(--ink-soft);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 4px;
+  }
+  .contacto-row button.remove-contacto:hover{ color: var(--danger); }
+
+  .btn-link{
+    background: transparent;
+    border: none;
+    color: var(--copper);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 4px 0;
+  }
+
+  /* ---------- Modal ---------- */
+  .modal-backdrop{
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(28,33,40,0.45);
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 50;
+  }
+  .modal-backdrop.open{ display: flex; }
+  .modal{
+    background: #fff;
+    border-radius: var(--radius);
+    width: 100%;
+    max-width: 480px;
+    max-height: 88vh;
+    overflow: auto;
+    padding: 22px;
+  }
+  .modal h3{
+    margin: 0 0 16px 0;
+    font-size: 16px;
+  }
+  .modal .modal-actions{
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid #edeef1;
+  }
+
+  @media (max-width: 760px){
+    body{ flex-direction: column; }
+    #sidebar{
+      width: 100%;
+      flex-direction: row;
+      overflow-x: auto;
+      padding: 10px;
+    }
+    #sidebar .brand, #sidebar .foot{ display: none; }
+    nav#tabs{ flex-direction: row; padding: 0; }
+    nav#tabs button{ white-space: nowrap; }
+  }
+</style>
+</head>
+<body>
+
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="name">Pedidos</div>
+      <div class="sub">EDISATECH</div>
+    </div>
+    <nav id="tabs">
+      <button type="button" class="tab-btn active" data-tab="pedidos"><span class="dot"></span>Pedidos</button>
+      <button type="button" class="tab-btn" data-tab="envios"><span class="dot"></span>Envíos / Despachos</button>
+      <button type="button" class="tab-btn" data-tab="clientes"><span class="dot"></span>Clientes / Compañías</button>
+      <button type="button" class="tab-btn" data-tab="equipos"><span class="dot"></span>Equipos</button>
+      <button type="button" class="tab-btn" data-tab="historial"><span class="dot"></span>Historial</button>
+      <button type="button" class="tab-btn" data-tab="config"><span class="dot"></span>Config</button>
+    </nav>
+    <div class="foot">v0.1 · index.html</div>
+  </aside>
+
+  <div id="main">
+    <header id="topbar">
+      <h1 id="panel-title">Pedidos</h1>
+      <div class="status" id="panel-status"></div>
+    </header>
+
+    <div id="panels">
+      <section class="panel active" id="panel-pedidos" data-title="Pedidos">
+        <div class="placeholder">
+          <strong>Pestaña Pedidos</strong>
+          Todavía no tiene contenido. La lógica va en js/pedidos.js.
+        </div>
+      </section>
+
+      <section class="panel" id="panel-envios" data-title="Envíos / Despachos">
+        <div class="placeholder">
+          <strong>Pestaña Envíos / Despachos</strong>
+          Todavía no tiene contenido. La lógica va en js/envios.js.
+        </div>
+      </section>
+
+      <section class="panel" id="panel-clientes" data-title="Clientes / Compañías">
+        <div class="panel-header">
+          <h2>Compañías registradas</h2>
+          <button type="button" class="btn" id="btn-nuevo-cliente">+ Nueva compañía</button>
+        </div>
+
+        <table class="data-table" id="tabla-clientes">
+          <thead>
+            <tr>
+              <th>Compañía</th>
+              <th>Dirección</th>
+              <th>Contactos</th>
+              <th style="width:110px;"></th>
+            </tr>
+          </thead>
+          <tbody id="tabla-clientes-body">
+            <!-- filas generadas por clientes.js -->
+          </tbody>
+        </table>
+        <div class="empty-state" id="clientes-empty" style="display:none;">
+          Todavía no hay compañías registradas.
+        </div>
+      </section>
+
+      <section class="panel" id="panel-equipos" data-title="Equipos">
+        <div class="placeholder">
+          <strong>Pestaña Equipos</strong>
+          Todavía no tiene contenido. La lógica va en js/equipos.js.
+        </div>
+      </section>
+
+      <section class="panel" id="panel-historial" data-title="Historial">
+        <div class="placeholder">
+          <strong>Pestaña Historial</strong>
+          Todavía no tiene contenido. La lógica va en js/historial.js.
+        </div>
+      </section>
+
+      <section class="panel" id="panel-config" data-title="Config">
+        <div class="placeholder">
+          <strong>Pestaña Config</strong>
+          Todavía no tiene contenido. La lógica va en js/config.js.
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Modal: nueva/editar compañía (usado por clientes.js) -->
+  <div class="modal-backdrop" id="modal-cliente">
+    <div class="modal">
+      <h3 id="modal-cliente-titulo">Nueva compañía</h3>
+      <form id="form-cliente">
+        <input type="hidden" id="cliente-id">
+
+        <div class="form-group">
+          <label for="cliente-nombre">Nombre de la compañía</label>
+          <input type="text" id="cliente-nombre" required placeholder="Ej: Contegral Cartago">
+        </div>
+
+        <div class="form-group">
+          <label for="cliente-direccion">Dirección</label>
+          <input type="text" id="cliente-direccion" placeholder="Ej: Cra 10 # 20-30, Cartago, Valle">
+        </div>
+
+        <div class="form-group">
+          <label>Personas encargadas de recibir envíos</label>
+          <div class="contactos-list" id="contactos-list"></div>
+          <button type="button" class="btn-link" id="btn-add-contacto">+ Agregar contacto</button>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="btn-cancelar-cliente">Cancelar</button>
+          <button type="submit" class="btn">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Navegación entre pestañas (código estructural, vive aquí en index) -->
+  <script>
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const panels = document.querySelectorAll('.panel');
+    const panelTitle = document.getElementById('panel-title');
+
+    function activarTab(nombre){
+      tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === nombre));
+      panels.forEach(p => {
+        const activo = p.id === 'panel-' + nombre;
+        p.classList.toggle('active', activo);
+        if(activo) panelTitle.textContent = p.dataset.title;
+      });
+      // Avisa a la pestaña por si su JS necesita inicializar/refrescar al entrar
+      document.dispatchEvent(new CustomEvent('tab:activada', { detail: { tab: nombre } }));
+    }
+
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => activarTab(btn.dataset.tab));
+    });
+  </script>
+
+  <!-- Firebase (SDK compat, para poder usarlo con <script> normales sin bundler) -->
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+
+  <!-- Un archivo JS por pestaña -->
+  <script src="js/pedidos.js"></script>
+  <script src="js/envios.js"></script>
+  <script src="js/clientes.js"></script>
+  <script src="js/equipos.js"></script>
+  <script src="js/historial.js"></script>
+  <script src="js/config.js"></script>
+
+</body>
+</html>
