@@ -54,7 +54,7 @@
   }
 
   function formatearPeso(peso) {
-    if (peso === undefined || peso === null || peso === '') return '—';
+    if (peso === undefined || peso === null || peso === '') return 'Sin peso';
     return `${peso} kg`;
   }
 

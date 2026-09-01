@@ -468,6 +468,11 @@
     font-weight: 700;
     letter-spacing: 0.2px;
   }
+  .ficha-header-resumen{
+    font-size: 12px;
+    color: rgba(255,255,255,0.72);
+    margin-top: 4px;
+  }
   .ficha-header-tags{
     display: flex;
     gap: 8px;
@@ -653,6 +658,14 @@
     font-size: 15px;
     font-weight: 600;
     color: var(--ink);
+  }
+  .equipo-card-oc{
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-top: 3px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
   }
   .equipo-card-meta{
     display: flex;
@@ -1068,7 +1081,10 @@
   <div class="modal-backdrop" id="modal-ficha-pedido">
     <div class="modal modal-ficha">
       <div class="ficha-header" id="ficha-header">
-        <div class="ficha-header-numero" id="ficha-header-numero">Pedido</div>
+        <div>
+          <div class="ficha-header-numero" id="ficha-header-numero">Pedido</div>
+          <div class="ficha-header-resumen" id="ficha-header-resumen"></div>
+        </div>
         <div class="ficha-header-tags" id="ficha-header-tags"></div>
       </div>
 

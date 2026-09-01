@@ -34,6 +34,7 @@
 
   const modalFicha = document.getElementById('modal-ficha-pedido');
   const fichaHeaderNumero = document.getElementById('ficha-header-numero');
+  const fichaHeaderResumen = document.getElementById('ficha-header-resumen');
   const fichaHeaderTags = document.getElementById('ficha-header-tags');
   const fichaSeccionCliente = document.getElementById('ficha-seccion-cliente');
   const fichaEquiposContenido = document.getElementById('ficha-equipos-contenido');
@@ -53,6 +54,7 @@
 
   let pedidosCache = [];
   let borradorId = null;
+  let origenEdicion = null; // 'ficha' cuando se edita desde dentro de la Ficha, null si es desde la tabla
 
   // ---------- Helpers ----------
 
@@ -254,7 +256,10 @@
     modal.classList.remove('open');
   }
 
-  document.getElementById('btn-nuevo-pedido').addEventListener('click', abrirModalNuevo);
+  document.getElementById('btn-nuevo-pedido').addEventListener('click', () => {
+    origenEdicion = null;
+    abrirModalNuevo();
+  });
   document.getElementById('btn-cancelar-pedido').addEventListener('click', cancelarYLimpiar);
   modal.addEventListener('click', (e) => {
     if (e.target === modal) cerrarModalConservandoBorrador();
@@ -285,10 +290,12 @@
     btnGuardar.textContent = 'Guardando...';
 
     try {
+      let numeroFinal = id ? parseInt(inputNumero.value, 10) : null;
       if (id) {
         await db.collection(COLECCION).doc(id).update(datos);
       } else {
-        datos.numero = siguienteNumeroDisponible(); // recalculado justo antes de guardar
+        numeroFinal = siguienteNumeroDisponible(); // recalculado justo antes de guardar
+        datos.numero = numeroFinal;
         datos.creadoEn = firebase.firestore.FieldValue.serverTimestamp();
         await db.collection(COLECCION).add(datos);
       }
@@ -297,6 +304,13 @@
       resetSubtabs();
       borradorId = null;
       modal.classList.remove('open');
+
+      if (id && origenEdicion === 'ficha') {
+        // Volvemos a abrir la ficha del mismo pedido con los datos recién guardados
+        // (sin esperar al próximo snapshot, para que se sienta instantáneo).
+        abrirFicha({ id, numero: numeroFinal, ...datos });
+      }
+      origenEdicion = null;
     } catch (err) {
       console.error('Error guardando pedido:', err);
       alert('No se pudo guardar el pedido. Revisa la consola.');
@@ -354,6 +368,11 @@
     `;
   }
 
+  function formatearPesoFicha(peso) {
+    if (peso === undefined || peso === null || peso === '') return 'Sin peso';
+    return `${peso} kg`;
+  }
+
   function resumenSeriales(item, cantidad) {
     const seriales = (item.seriales || []).filter(s => s && s.trim());
     if (!seriales.length) {
@@ -363,6 +382,21 @@
       return `<span class="equipo-card-serial completo">🔢 ${seriales.map(escapeHtml).join(', ')}</span>`;
     }
     return `<span class="equipo-card-serial pendiente">🟡 ${seriales.map(escapeHtml).join(', ')} (${seriales.length}/${cantidad})</span>`;
+  }
+
+  function resumenEquiposPorTipo(pedido) {
+    const equipos = pedido.equipos || [];
+    if (!equipos.length) return 'Sin equipos agregados';
+    const conteos = {};
+    const orden = [];
+    equipos.forEach(item => {
+      const equipo = buscarEquipoCatalogo(item.equipoId);
+      const tipo = equipo ? buscarTipoEquipo(equipo.tipoId) : null;
+      const nombreTipo = tipo?.nombre || 'Sin tipo';
+      if (!(nombreTipo in conteos)) orden.push(nombreTipo);
+      conteos[nombreTipo] = (conteos[nombreTipo] || 0) + (item.cantidad || 0);
+    });
+    return orden.map(nombre => `${nombre} x ${conteos[nombre]} und`).join(', ');
   }
 
   function renderSeccionEquipos(pedido) {
@@ -384,9 +418,12 @@
         : '<span style="color:var(--danger);">Equipo no encontrado</span>';
 
       const usaSerial = !!equipo?.usaSerial;
+      const ocHtml = item.ordenCompra
+        ? `<div class="equipo-card-oc">📄 OC: ${escapeHtml(item.ordenCompra)}</div>`
+        : '';
       const metaChips = `
         <span class="meta-chip">Cant: ${item.cantidad}</span>
-        ${item.ordenCompra ? `<span class="meta-chip">OC: ${escapeHtml(item.ordenCompra)}</span>` : ''}
+        <span class="meta-chip">${formatearPesoFicha(equipo?.peso)}</span>
       `;
 
       return `
@@ -397,6 +434,7 @@
           <div class="equipo-card-body" style="background:${color}15;">
             <div>
               <div class="equipo-card-nombre">${nombreEquipo}</div>
+              ${ocHtml}
               <div class="equipo-card-meta">${metaChips}</div>
             </div>
             ${usaSerial ? resumenSeriales(item, item.cantidad) : ''}
@@ -417,8 +455,11 @@
   function abrirFicha(pedido) {
     pedidoIdEnFicha = pedido.id;
     const tipoInfo = TIPO_PEDIDO_LABEL[pedido.tipo] || TIPO_PEDIDO_LABEL.normal;
+    const compania = buscarCompania(pedido.companiaId);
+    const nombreCompania = compania ? compania.nombre : 'Compañía no encontrada';
 
-    fichaHeaderNumero.textContent = `Pedido N° ${pedido.numero}`;
+    fichaHeaderNumero.textContent = `N${pedido.numero} - ${nombreCompania}`;
+    fichaHeaderResumen.textContent = resumenEquiposPorTipo(pedido);
     fichaHeaderTags.innerHTML = `<span class="${tipoInfo.clase}">${tipoInfo.texto}</span>`;
 
     renderSeccionCliente(pedido);
@@ -440,6 +481,7 @@
   });
   btnEditarDesdeFicha.addEventListener('click', () => {
     const pedido = pedidosCache.find(p => p.id === btnEditarDesdeFicha.dataset.id);
+    origenEdicion = 'ficha';
     cerrarFicha();
     if (pedido) abrirModalEditar(pedido);
   });
@@ -555,7 +597,10 @@
     tablaBody.querySelectorAll('.btn-editar').forEach(btn => {
       btn.addEventListener('click', () => {
         const pedido = pedidosCache.find(p => p.id === btn.dataset.id);
-        if (pedido) abrirModalEditar(pedido);
+        if (pedido) {
+          origenEdicion = null;
+          abrirModalEditar(pedido);
+        }
       });
     });
     tablaBody.querySelectorAll('.btn-eliminar').forEach(btn => {
