@@ -33,7 +33,7 @@
   const inputPeso     = document.getElementById('equipo-peso');
   const inputUsaSerial = document.getElementById('equipo-usa-serial');
 
-  let equiposCache = []; // [{id, ...datos}]
+  let equiposCache = []; // [{id, ...datos}] — también expuesto en window.equiposCache
   let filtroTexto = '';
   let filtroTipoId = '';
   let borradorId = null;
@@ -294,7 +294,9 @@
     db.collection(COLECCION).orderBy('nombre').onSnapshot(
       (snapshot) => {
         equiposCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        window.equiposCache = equiposCache;
         renderTabla();
+        document.dispatchEvent(new CustomEvent('equipos-catalogo:cambio', { detail: { equipos: equiposCache } }));
       },
       (err) => {
         console.error('Error escuchando equipos:', err);

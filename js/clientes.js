@@ -43,7 +43,7 @@
   const contactosPedidosList   = document.getElementById('contactos-pedidos-list');
   const inputContactoRepNombre = document.getElementById('cliente-contacto-reparaciones-nombre');
 
-  let clientesCache = []; // [{id, ...datos}]
+  let clientesCache = []; // [{id, ...datos}] — también expuesto en window.clientesCache
   let filtroTexto = '';
 
   // Estado del borrador: 'id' del registro en edición ('' = compañía nueva),
@@ -320,7 +320,9 @@
     db.collection(COLECCION).orderBy('nombre').onSnapshot(
       (snapshot) => {
         clientesCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        window.clientesCache = clientesCache;
         renderTabla();
+        document.dispatchEvent(new CustomEvent('clientes:cambio', { detail: { clientes: clientesCache } }));
       },
       (err) => {
         console.error('Error escuchando clientes:', err);

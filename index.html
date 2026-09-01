@@ -437,6 +437,74 @@
     border-top: 1px solid #edeef1;
   }
 
+  .modal.modal-wide{ max-width: 620px; }
+
+  .subtabs{
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid #e2e4e9;
+    margin-bottom: 18px;
+  }
+  .subtab-btn{
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    background: transparent;
+    border: none;
+    padding: 8px 4px;
+    margin-right: 16px;
+    color: var(--ink-soft);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .subtab-btn.active{
+    color: var(--copper);
+    border-bottom-color: var(--copper);
+  }
+  .subtab-panel{ display: none; }
+  .subtab-panel.active{ display: block; }
+
+  .equipos-pedido-list{
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .equipo-pedido-row{
+    display: grid;
+    grid-template-columns: 2fr 80px 1fr auto;
+    gap: 8px;
+    align-items: center;
+    background: #fafafb;
+    border: 1px solid #e2e4e9;
+    border-radius: var(--radius);
+    padding: 10px;
+  }
+  .equipo-pedido-row select, .equipo-pedido-row input{
+    font-family: inherit;
+    font-size: 13px;
+    padding: 7px 8px;
+    border: 1px solid #d4d7dc;
+    border-radius: var(--radius);
+    width: 100%;
+  }
+  .equipo-pedido-row button.remove-equipo-pedido{
+    background: transparent;
+    border: none;
+    color: var(--ink-soft);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 4px;
+  }
+  .equipo-pedido-row button.remove-equipo-pedido:hover{ color: var(--danger); }
+
+  .empty-equipos-pedido{
+    color: var(--ink-soft);
+    font-size: 13px;
+    padding: 10px 0;
+  }
+
   @media (max-width: 760px){
     body{ flex-direction: column; }
     #sidebar{
@@ -477,9 +545,27 @@
 
     <div id="panels">
       <section class="panel active" id="panel-pedidos" data-title="Pedidos">
-        <div class="placeholder">
-          <strong>Pestaña Pedidos</strong>
-          Todavía no tiene contenido. La lógica va en js/pedidos.js.
+        <div class="panel-header">
+          <h2>Pedidos</h2>
+          <button type="button" class="btn" id="btn-nuevo-pedido">+ Nuevo pedido</button>
+        </div>
+
+        <table class="data-table" id="tabla-pedidos">
+          <thead>
+            <tr>
+              <th style="width:70px;">N°</th>
+              <th>Compañía</th>
+              <th>Contacto</th>
+              <th>Equipos</th>
+              <th style="width:110px;"></th>
+            </tr>
+          </thead>
+          <tbody id="tabla-pedidos-body">
+            <!-- filas generadas por pedidos.js -->
+          </tbody>
+        </table>
+        <div class="empty-state" id="pedidos-empty" style="display:none;">
+          Todavía no hay pedidos registrados.
         </div>
       </section>
 
@@ -724,6 +810,49 @@
     </div>
   </div>
 
+  <!-- Modal: nuevo/editar pedido (usado por pedidos.js) -->
+  <div class="modal-backdrop" id="modal-pedido">
+    <div class="modal modal-wide">
+      <h3 id="modal-pedido-titulo">Nuevo pedido</h3>
+
+      <div class="subtabs">
+        <button type="button" class="subtab-btn active" data-subtab="datos">Datos</button>
+        <button type="button" class="subtab-btn" data-subtab="equipos">Equipos</button>
+      </div>
+
+      <form id="form-pedido">
+        <input type="hidden" id="pedido-id">
+        <input type="hidden" id="pedido-numero">
+
+        <div class="subtab-panel active" id="subtab-datos">
+          <div class="form-group">
+            <label for="pedido-compania">Compañía destino</label>
+            <select id="pedido-compania" required>
+              <option value="">Selecciona una compañía...</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="pedido-contacto">Contacto de recibir pedidos</label>
+            <select id="pedido-contacto">
+              <option value="">Selecciona una compañía primero</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="subtab-panel" id="subtab-equipos">
+          <div class="equipos-pedido-list" id="equipos-pedido-list"></div>
+          <button type="button" class="btn-link" id="btn-add-equipo-pedido">+ Agregar equipo</button>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="btn-cancelar-pedido">Cancelar</button>
+          <button type="submit" class="btn">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Navegación entre pestañas (código estructural, vive aquí en index) -->
   <script>
     const tabButtons = document.querySelectorAll('.tab-btn');
@@ -753,10 +882,10 @@
 
   <!-- Un archivo JS por pestaña -->
   <script src="js/config.js"></script>
-  <script src="js/pedidos.js"></script>
-  <script src="js/envios.js"></script>
   <script src="js/clientes.js"></script>
   <script src="js/equipos.js"></script>
+  <script src="js/pedidos.js"></script>
+  <script src="js/envios.js"></script>
   <script src="js/historial.js"></script>
 
 </body>
