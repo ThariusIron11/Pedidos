@@ -1,68 +1,47 @@
 // ================== Pestaña: Clientes / Compañías ==================
 // CRUD de compañías sobre Firestore (colección "clientes").
-// Cada compañía: { nombre, direccion, contactos: [{nombre, telefono, recibeReparaciones}] }
+//
+// Cada compañía:
+// {
+//   nombre, tipo: 'normal' | 'subsidiaria' | 'subsidiaria_edisatech',
+//   nit, direccion, direccionRemision, contraentrega: boolean,
+//   contactoPedidos: { nombre, telefono },
+//   contactoReparaciones: { nombre, telefono }
+// }
 
 (function () {
   const COLECCION = 'clientes';
 
-  const tablaBody   = document.getElementById('tabla-clientes-body');
-  const tablaEmpty  = document.getElementById('clientes-empty');
+  const TIPO_LABEL = {
+    normal: null, // no se muestra tag para el caso normal (es el default)
+    subsidiaria: 'Subsidiaria',
+    subsidiaria_edisatech: 'Subsidiaria de Edisatech'
+  };
+
+  const tablaBody  = document.getElementById('tabla-clientes-body');
+  const tablaEmpty = document.getElementById('clientes-empty');
   const modal       = document.getElementById('modal-cliente');
   const modalTitulo = document.getElementById('modal-cliente-titulo');
-  const form        = document.getElementById('form-cliente');
-  const inputId     = document.getElementById('cliente-id');
-  const inputNombre = document.getElementById('cliente-nombre');
-  const inputDireccion = document.getElementById('cliente-direccion');
-  const contactosList  = document.getElementById('contactos-list');
+  const form         = document.getElementById('form-cliente');
 
-  let clientesCache = []; // [{id, nombre, direccion, contactos}]
-  let contactoUid = 0;    // id incremental solo para las filas del formulario (no se guarda)
+  const inputId               = document.getElementById('cliente-id');
+  const inputNombre           = document.getElementById('cliente-nombre');
+  const inputTipo             = document.getElementById('cliente-tipo');
+  const inputNit               = document.getElementById('cliente-nit');
+  const inputDireccion         = document.getElementById('cliente-direccion');
+  const inputDireccionRemision = document.getElementById('cliente-direccion-remision');
+  const inputContraentrega     = document.getElementById('cliente-contraentrega');
+  const inputContactoPedidosNombre     = document.getElementById('cliente-contacto-pedidos-nombre');
+  const inputContactoPedidosTelefono   = document.getElementById('cliente-contacto-pedidos-telefono');
+  const inputContactoRepNombre         = document.getElementById('cliente-contacto-reparaciones-nombre');
+  const inputContactoRepTelefono       = document.getElementById('cliente-contacto-reparaciones-telefono');
 
-  // ---------- Utilidades del formulario de contactos ----------
+  let clientesCache = []; // [{id, ...datos}]
 
-  function nuevaFilaContacto(contacto) {
-    contactoUid++;
-    const uid = 'c' + contactoUid;
+  // ---------- Helpers ----------
 
-    const row = document.createElement('div');
-    row.className = 'contacto-row';
-    row.dataset.uid = uid;
-    row.innerHTML = `
-      <input type="text" class="contacto-nombre" placeholder="Nombre" value="${escapeAttr(contacto?.nombre || '')}">
-      <input type="tel" class="contacto-telefono" placeholder="Teléfono">
-      <label class="radio-rep">
-        <input type="radio" name="recibeReparaciones" value="${uid}" ${contacto?.recibeReparaciones ? 'checked' : ''}>
-        Recibe reparaciones
-      </label>
-      <button type="button" class="remove-contacto" title="Quitar contacto">✕</button>
-    `;
-    row.querySelector('.contacto-telefono').value = contacto?.telefono || '';
-    row.querySelector('.remove-contacto').addEventListener('click', () => row.remove());
-    contactosList.appendChild(row);
-  }
-
-  function leerContactosDelFormulario() {
-    const filas = contactosList.querySelectorAll('.contacto-row');
-    const contactos = [];
-    filas.forEach(fila => {
-      const nombre = fila.querySelector('.contacto-nombre').value.trim();
-      if (!nombre) return; // ignora filas vacías
-      const telefono = fila.querySelector('.contacto-telefono').value.trim();
-      const radio = fila.querySelector('input[type="radio"]');
-      contactos.push({
-        nombre,
-        telefono,
-        recibeReparaciones: radio.checked
-      });
-    });
-    return contactos;
-  }
-
-  function escapeAttr(str) {
-    return String(str).replace(/"/g, '&quot;');
-  }
   function escapeHtml(str) {
-    return String(str)
+    return String(str ?? '')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
@@ -74,8 +53,7 @@
     modalTitulo.textContent = 'Nueva compañía';
     form.reset();
     inputId.value = '';
-    contactosList.innerHTML = '';
-    nuevaFilaContacto(); // arranca con un contacto vacío
+    inputTipo.value = 'normal';
     modal.classList.add('open');
     inputNombre.focus();
   }
@@ -85,13 +63,15 @@
     form.reset();
     inputId.value = cliente.id;
     inputNombre.value = cliente.nombre || '';
+    inputTipo.value = cliente.tipo || 'normal';
+    inputNit.value = cliente.nit || '';
     inputDireccion.value = cliente.direccion || '';
-    contactosList.innerHTML = '';
-    if (cliente.contactos && cliente.contactos.length) {
-      cliente.contactos.forEach(c => nuevaFilaContacto(c));
-    } else {
-      nuevaFilaContacto();
-    }
+    inputDireccionRemision.value = cliente.direccionRemision || '';
+    inputContraentrega.checked = !!cliente.contraentrega;
+    inputContactoPedidosNombre.value = cliente.contactoPedidos?.nombre || '';
+    inputContactoPedidosTelefono.value = cliente.contactoPedidos?.telefono || '';
+    inputContactoRepNombre.value = cliente.contactoReparaciones?.nombre || '';
+    inputContactoRepTelefono.value = cliente.contactoReparaciones?.telefono || '';
     modal.classList.add('open');
     inputNombre.focus();
   }
@@ -102,7 +82,6 @@
 
   document.getElementById('btn-nuevo-cliente').addEventListener('click', abrirModalNuevo);
   document.getElementById('btn-cancelar-cliente').addEventListener('click', cerrarModal);
-  document.getElementById('btn-add-contacto').addEventListener('click', () => nuevaFilaContacto());
   modal.addEventListener('click', (e) => {
     if (e.target === modal) cerrarModal(); // click en el backdrop cierra
   });
@@ -114,8 +93,19 @@
 
     const datos = {
       nombre: inputNombre.value.trim(),
+      tipo: inputTipo.value,
+      nit: inputNit.value.trim(),
       direccion: inputDireccion.value.trim(),
-      contactos: leerContactosDelFormulario()
+      direccionRemision: inputDireccionRemision.value.trim(),
+      contraentrega: inputContraentrega.checked,
+      contactoPedidos: {
+        nombre: inputContactoPedidosNombre.value.trim(),
+        telefono: inputContactoPedidosTelefono.value.trim()
+      },
+      contactoReparaciones: {
+        nombre: inputContactoRepNombre.value.trim(),
+        telefono: inputContactoRepTelefono.value.trim()
+      }
     };
 
     if (!datos.nombre) {
@@ -160,6 +150,11 @@
 
   // ---------- Render de la tabla ----------
 
+  function formatearContacto(contacto) {
+    if (!contacto || !contacto.nombre) return '<span style="color:var(--ink-soft);">—</span>';
+    return escapeHtml(contacto.nombre) + (contacto.telefono ? ' · ' + escapeHtml(contacto.telefono) : '');
+  }
+
   function renderTabla() {
     if (!clientesCache.length) {
       tablaBody.innerHTML = '';
@@ -169,18 +164,28 @@
     tablaEmpty.style.display = 'none';
 
     tablaBody.innerHTML = clientesCache.map(cliente => {
-      const contactos = cliente.contactos || [];
-      const contactosHtml = contactos.length
-        ? contactos.map(c => {
-            const tag = c.recibeReparaciones ? '<span class="tag-reparaciones">Reparaciones</span>' : '';
-            return `${escapeHtml(c.nombre)}${c.telefono ? ' · ' + escapeHtml(c.telefono) : ''}${tag}`;
-          }).join('<br>')
-        : '<span style="color:var(--ink-soft);">Sin contactos</span>';
+      const tipoLabel = TIPO_LABEL[cliente.tipo];
+      const tipoTag = tipoLabel
+        ? `<span class="tag-tipo ${cliente.tipo}">${tipoLabel}</span>`
+        : '';
+      const contraentregaTag = cliente.contraentrega
+        ? '<span class="tag-contraentrega">Contraentrega</span>'
+        : '';
+
+      const direccionHtml = cliente.direccionRemision && cliente.direccionRemision !== cliente.direccion
+        ? `${escapeHtml(cliente.direccion || '—')}<br><span style="color:var(--ink-soft); font-size:12px;">Remisión: ${escapeHtml(cliente.direccionRemision)}</span>`
+        : escapeHtml(cliente.direccion || '—');
+
+      const contactosHtml = `
+        <div>Pedidos: ${formatearContacto(cliente.contactoPedidos)}</div>
+        <div>Reparaciones: ${formatearContacto(cliente.contactoReparaciones)}</div>
+      `;
 
       return `
         <tr data-id="${cliente.id}">
-          <td>${escapeHtml(cliente.nombre)}</td>
-          <td>${escapeHtml(cliente.direccion || '—')}</td>
+          <td>${escapeHtml(cliente.nombre)}${tipoTag}${contraentregaTag}</td>
+          <td>${escapeHtml(cliente.nit || '—')}</td>
+          <td>${direccionHtml}</td>
           <td>${contactosHtml}</td>
           <td>
             <div class="row-actions">
@@ -223,8 +228,6 @@
     );
   }
 
-  // Carga apenas el script entra en memoria (la pestaña Clientes es
-  // barata de mantener sincronizada aunque el usuario no esté mirándola).
   iniciarSuscripcion();
 
   document.addEventListener('tab:activada', (e) => {
