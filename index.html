@@ -353,6 +353,45 @@
   .tag-tipo.subsidiaria{ color: #8a5a1f; background: #f3e3c9; }
   .tag-tipo.subsidiaria_edisatech{ color: #1f6f8a; background: #cfe9f1; }
 
+  .tipo-badge{
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid;
+    white-space: nowrap;
+  }
+  .tipo-swatch{
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .tag-variante{
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    color: #1f5c8a;
+    background: #d6e9fb;
+    padding: 2px 7px;
+    border-radius: 999px;
+  }
+
+  .tag-falta-peso{
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--warn);
+    background: #f3e6c9;
+    padding: 2px 7px;
+    border-radius: 999px;
+  }
+
   .tag-contraentrega{
     display: inline-block;
     font-size: 11px;
@@ -486,8 +525,15 @@
           <button type="button" class="btn" id="btn-nuevo-equipo">+ Nuevo equipo</button>
         </div>
 
-        <div class="form-group" style="max-width:340px;">
-          <input type="text" id="buscador-equipos" placeholder="Buscar por nombre, tipo o variante...">
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+          <div class="form-group" style="max-width:280px; margin-bottom:0; flex:1;">
+            <input type="text" id="buscador-equipos" placeholder="Buscar equipo por nombre...">
+          </div>
+          <div class="form-group" style="max-width:220px; margin-bottom:0;">
+            <select id="filtro-tipo-equipos">
+              <option value="">Todos los tipos</option>
+            </select>
+          </div>
         </div>
 
         <table class="data-table" id="tabla-equipos">
@@ -518,9 +564,25 @@
       </section>
 
       <section class="panel" id="panel-config" data-title="Config">
-        <div class="placeholder">
-          <strong>Pestaña Config</strong>
-          Todavía no tiene contenido. La lógica va en js/config.js.
+        <div class="panel-header">
+          <h2>Tipos de equipo</h2>
+          <button type="button" class="btn" id="btn-nuevo-tipo">+ Nuevo tipo</button>
+        </div>
+
+        <table class="data-table" id="tabla-tipos">
+          <thead>
+            <tr>
+              <th style="width:70px;"></th>
+              <th>Nombre</th>
+              <th style="width:110px;"></th>
+            </tr>
+          </thead>
+          <tbody id="tabla-tipos-body">
+            <!-- filas generadas por config.js -->
+          </tbody>
+        </table>
+        <div class="empty-state" id="tipos-empty" style="display:none;">
+          Todavía no hay tipos de equipo registrados.
         </div>
       </section>
     </div>
@@ -602,19 +664,8 @@
 
         <div class="form-group">
           <label for="equipo-tipo">Tipo</label>
-          <select id="equipo-tipo">
-            <option value="Motor">Motor</option>
-            <option value="Reductor">Reductor</option>
-            <option value="Motoreductor">Motoreductor</option>
-            <option value="Piezas de Acople">Piezas de Acople</option>
-            <option value="Motovibrador">Motovibrador</option>
-            <option value="Brazo de reacción">Brazo de reacción</option>
-            <option value="Eje sólido">Eje sólido</option>
-            <option value="Motor ZD">Motor ZD</option>
-            <option value="Reductor ZD">Reductor ZD</option>
-            <option value="Motoreductor ZD">Motoreductor ZD</option>
-            <option value="Sprocket">Sprocket</option>
-            <option value="Caja de cadena">Caja de cadena</option>
+          <select id="equipo-tipo" required>
+            <option value="">Selecciona un tipo...</option>
           </select>
         </div>
 
@@ -637,6 +688,36 @@
 
         <div class="modal-actions">
           <button type="button" class="btn secondary" id="btn-cancelar-equipo">Cancelar</button>
+          <button type="submit" class="btn">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: nuevo/editar tipo de equipo (usado por config.js) -->
+  <div class="modal-backdrop" id="modal-tipo">
+    <div class="modal">
+      <h3 id="modal-tipo-titulo">Nuevo tipo de equipo</h3>
+      <form id="form-tipo">
+        <input type="hidden" id="tipo-id">
+
+        <div class="form-group">
+          <label for="tipo-nombre">Nombre</label>
+          <input type="text" id="tipo-nombre" required placeholder="Ej: Motor">
+        </div>
+
+        <div class="form-group">
+          <label for="tipo-icono">Ícono</label>
+          <input type="text" id="tipo-icono" placeholder="Ej: ⚡ (un emoji)" maxlength="4">
+        </div>
+
+        <div class="form-group">
+          <label for="tipo-color">Color</label>
+          <input type="color" id="tipo-color" value="#c1662f">
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="btn-cancelar-tipo">Cancelar</button>
           <button type="submit" class="btn">Guardar</button>
         </div>
       </form>
@@ -671,12 +752,12 @@
   <script src="js/firebase-init.js"></script>
 
   <!-- Un archivo JS por pestaña -->
+  <script src="js/config.js"></script>
   <script src="js/pedidos.js"></script>
   <script src="js/envios.js"></script>
   <script src="js/clientes.js"></script>
   <script src="js/equipos.js"></script>
   <script src="js/historial.js"></script>
-  <script src="js/config.js"></script>
 
 </body>
 </html>
