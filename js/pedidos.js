@@ -30,6 +30,18 @@
   const selectCompania = document.getElementById('pedido-compania');
   const selectContacto = document.getElementById('pedido-contacto');
   const equiposPedidoList = document.getElementById('equipos-pedido-list');
+  const radiosTipoPedido = form.querySelectorAll('input[name="tipo-pedido"]');
+
+  const modalFicha = document.getElementById('modal-ficha-pedido');
+  const fichaTitulo = document.getElementById('ficha-pedido-titulo');
+  const fichaContenido = document.getElementById('ficha-pedido-contenido');
+  const btnCerrarFicha = document.getElementById('btn-cerrar-ficha-pedido');
+  const btnEditarDesdeFicha = document.getElementById('btn-editar-desde-ficha');
+
+  const TIPO_PEDIDO_LABEL = {
+    normal: { texto: 'Normal', clase: 'tag-pedido-normal' },
+    reparacion: { texto: 'Reparación', clase: 'tag-pedido-reparacion' }
+  };
 
   let pedidosCache = [];
   let borradorId = null;
@@ -176,6 +188,9 @@
     } else {
       nuevaFilaEquipoPedido();
     }
+
+    const tipoActual = pedido?.tipo || 'normal';
+    radiosTipoPedido.forEach(r => { r.checked = (r.value === tipoActual); });
   }
 
   // ---------- Abrir / cerrar modal ----------
@@ -237,6 +252,7 @@
     const datos = {
       companiaId,
       contacto: selectContacto.value,
+      tipo: Array.from(radiosTipoPedido).find(r => r.checked)?.value || 'normal',
       equipos: leerEquiposDelFormulario()
     };
 
@@ -280,6 +296,85 @@
     }
   }
 
+  // ---------- Ficha de pedido (solo lectura, distinta al modal de crear/editar) ----------
+
+  function campoFicha(label, valor) {
+    return `
+      <div class="ficha-campo">
+        <div class="campo-label">${escapeHtml(label)}</div>
+        <div class="campo-valor">${valor}</div>
+      </div>
+    `;
+  }
+
+  function abrirFicha(pedido) {
+    const compania = buscarCompania(pedido.companiaId);
+    const tipoInfo = TIPO_PEDIDO_LABEL[pedido.tipo] || TIPO_PEDIDO_LABEL.normal;
+
+    fichaTitulo.innerHTML = `Pedido N° ${pedido.numero} <span class="${tipoInfo.clase}">${tipoInfo.texto}</span>`;
+
+    const nombreCliente = compania ? escapeHtml(compania.nombre) : '<span style="color:var(--danger);">Compañía no encontrada</span>';
+    const nit = compania?.nit ? escapeHtml(compania.nit) : '—';
+    const direccion = compania?.direccion ? escapeHtml(compania.direccion) : '—';
+    const direccionRemision = compania?.direccionRemision ? escapeHtml(compania.direccionRemision) : '—';
+    const contraentrega = compania?.contraentrega ? 'Sí' : 'No';
+    const persona = pedido.contacto ? escapeHtml(pedido.contacto) : '—';
+
+    const equipos = pedido.equipos || [];
+    const filasEquipos = equipos.map(item => {
+      const equipo = buscarEquipoCatalogo(item.equipoId);
+      const nombreEquipo = equipo ? escapeHtml(equipo.nombre) + (equipo.variante ? ' (' + escapeHtml(equipo.variante) + ')' : '') : '<span style="color:var(--danger);">Equipo no encontrado</span>';
+      return `
+        <tr>
+          <td>${nombreEquipo}</td>
+          <td>${item.cantidad}</td>
+          <td>${item.ordenCompra ? escapeHtml(item.ordenCompra) : '—'}</td>
+        </tr>
+      `;
+    }).join('');
+
+    fichaContenido.innerHTML = `
+      <div class="ficha-seccion">
+        <h4>Cliente</h4>
+        <div class="ficha-campos">
+          ${campoFicha('Cliente', nombreCliente)}
+          ${campoFicha('Nombre de quien recibe', persona)}
+          ${campoFicha('NIT', nit)}
+          ${campoFicha('Dirección', direccion)}
+          ${campoFicha('Dirección de remisión', direccionRemision)}
+          ${campoFicha('¿Contraentrega?', contraentrega)}
+        </div>
+      </div>
+
+      <div class="ficha-seccion">
+        <h4>Equipos</h4>
+        ${equipos.length ? `
+          <table class="ficha-equipos-tabla">
+            <thead><tr><th>Equipo</th><th>Cantidad</th><th>Orden de compra</th></tr></thead>
+            <tbody>${filasEquipos}</tbody>
+          </table>
+        ` : '<div class="empty-equipos-pedido">Este pedido no tiene equipos agregados.</div>'}
+      </div>
+    `;
+
+    btnEditarDesdeFicha.dataset.id = pedido.id;
+    modalFicha.classList.add('open');
+  }
+
+  function cerrarFicha() {
+    modalFicha.classList.remove('open');
+  }
+
+  btnCerrarFicha.addEventListener('click', cerrarFicha);
+  modalFicha.addEventListener('click', (e) => {
+    if (e.target === modalFicha) cerrarFicha();
+  });
+  btnEditarDesdeFicha.addEventListener('click', () => {
+    const pedido = pedidosCache.find(p => p.id === btnEditarDesdeFicha.dataset.id);
+    cerrarFicha();
+    if (pedido) abrirModalEditar(pedido);
+  });
+
   // ---------- Render de la tabla ----------
 
   function renderTabla() {
@@ -296,12 +391,14 @@
       const compania = buscarCompania(pedido.companiaId);
       const nombreCompania = compania ? escapeHtml(compania.nombre) : '<span style="color:var(--danger);">Compañía no encontrada</span>';
       const cantidadEquipos = (pedido.equipos || []).length;
+      const tipoInfo = TIPO_PEDIDO_LABEL[pedido.tipo] || TIPO_PEDIDO_LABEL.normal;
 
       return `
-        <tr data-id="${pedido.id}">
+        <tr data-id="${pedido.id}" class="fila-pedido-clicable">
           <td><strong>${pedido.numero}</strong></td>
           <td>${nombreCompania}</td>
           <td>${pedido.contacto ? escapeHtml(pedido.contacto) : '<span style="color:var(--ink-soft);">—</span>'}</td>
+          <td><span class="${tipoInfo.clase}">${tipoInfo.texto}</span></td>
           <td>${cantidadEquipos} ${cantidadEquipos === 1 ? 'equipo' : 'equipos'}</td>
           <td>
             <div class="row-actions">
@@ -312,6 +409,15 @@
         </tr>
       `;
     }).join('');
+
+    // Clic en cualquier parte de la fila (fuera de los botones) abre la Ficha de solo lectura.
+    tablaBody.querySelectorAll('tr.fila-pedido-clicable').forEach(tr => {
+      tr.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return; // los botones tienen su propio comportamiento
+        const pedido = pedidosCache.find(p => p.id === tr.dataset.id);
+        if (pedido) abrirFicha(pedido);
+      });
+    });
 
     tablaBody.querySelectorAll('.btn-editar').forEach(btn => {
       btn.addEventListener('click', () => {

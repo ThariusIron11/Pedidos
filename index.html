@@ -212,6 +212,7 @@
   }
   table.data-table tbody tr:last-child td{ border-bottom: none; }
   table.data-table tbody tr:hover{ background: #fbfaf8; }
+  table.data-table tbody tr.fila-pedido-clicable{ cursor: pointer; }
   table.data-table .row-actions{
     display: flex;
     gap: 6px;
@@ -505,7 +506,94 @@
     padding: 10px 0;
   }
 
+  .tipo-pedido-toggle{
+    display: flex;
+    gap: 10px;
+  }
+  .tipo-pedido-opcion{
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #fafafb;
+    border: 1px solid #e2e4e9;
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .tipo-pedido-opcion input{ accent-color: var(--copper); }
+  .tag-pedido-normal{
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ok);
+    background: #dcefe3;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .tag-pedido-reparacion{
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    color: #6a1b9a;
+    background: #ede7f6;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+
+  /* ---------- Ficha de pedido (solo lectura) ---------- */
+  .ficha-seccion{
+    margin-bottom: 18px;
+  }
+  .ficha-seccion h4{
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--ink-soft);
+    margin: 0 0 10px 0;
+  }
+  .ficha-campos{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .ficha-campo{
+    background: #fafafb;
+    border: 1px solid #e2e4e9;
+    border-radius: var(--radius);
+    padding: 9px 12px;
+  }
+  .ficha-campo .campo-label{
+    font-size: 11px;
+    color: var(--ink-soft);
+    margin-bottom: 2px;
+  }
+  .ficha-campo .campo-valor{
+    font-size: 13.5px;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .ficha-equipos-tabla{
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .ficha-equipos-tabla th, .ficha-equipos-tabla td{
+    text-align: left;
+    padding: 7px 8px;
+    font-size: 13px;
+    border-bottom: 1px solid #edeef1;
+  }
+  .ficha-equipos-tabla th{
+    color: var(--ink-soft);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
   @media (max-width: 760px){
+    .ficha-campos{ grid-template-columns: 1fr; }
     body{ flex-direction: column; }
     #sidebar{
       width: 100%;
@@ -556,6 +644,7 @@
               <th style="width:70px;">N°</th>
               <th>Compañía</th>
               <th>Contacto</th>
+              <th>Tipo</th>
               <th>Equipos</th>
               <th style="width:110px;"></th>
             </tr>
@@ -838,6 +927,20 @@
               <option value="">Selecciona una compañía primero</option>
             </select>
           </div>
+
+          <div class="form-group">
+            <label>Tipo de pedido</label>
+            <div class="tipo-pedido-toggle">
+              <label class="tipo-pedido-opcion">
+                <input type="radio" name="tipo-pedido" value="normal" checked>
+                Normal
+              </label>
+              <label class="tipo-pedido-opcion">
+                <input type="radio" name="tipo-pedido" value="reparacion">
+                Reparación
+              </label>
+            </div>
+          </div>
         </div>
 
         <div class="subtab-panel" id="subtab-equipos">
@@ -850,6 +953,18 @@
           <button type="submit" class="btn">Guardar</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal: FICHA de pedido (solo lectura, distinto al de crear/editar) -->
+  <div class="modal-backdrop" id="modal-ficha-pedido">
+    <div class="modal modal-wide">
+      <h3 id="ficha-pedido-titulo">Pedido</h3>
+      <div id="ficha-pedido-contenido"><!-- generado por pedidos.js --></div>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" id="btn-cerrar-ficha-pedido">Cerrar</button>
+        <button type="button" class="btn" id="btn-editar-desde-ficha">Editar</button>
+      </div>
     </div>
   </div>
 
