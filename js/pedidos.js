@@ -34,7 +34,6 @@
 
   const modalFicha = document.getElementById('modal-ficha-pedido');
   const fichaHeaderNumero = document.getElementById('ficha-header-numero');
-  const fichaHeaderResumen = document.getElementById('ficha-header-resumen');
   const fichaHeaderTags = document.getElementById('ficha-header-tags');
   const fichaSeccionCliente = document.getElementById('ficha-seccion-cliente');
   const fichaEquiposContenido = document.getElementById('ficha-equipos-contenido');
@@ -384,21 +383,6 @@
     return `<span class="equipo-card-serial pendiente">🟡 ${seriales.map(escapeHtml).join(', ')} (${seriales.length}/${cantidad})</span>`;
   }
 
-  function resumenEquiposPorTipo(pedido) {
-    const equipos = pedido.equipos || [];
-    if (!equipos.length) return 'Sin equipos agregados';
-    const conteos = {};
-    const orden = [];
-    equipos.forEach(item => {
-      const equipo = buscarEquipoCatalogo(item.equipoId);
-      const tipo = equipo ? buscarTipoEquipo(equipo.tipoId) : null;
-      const nombreTipo = tipo?.nombre || 'Sin tipo';
-      if (!(nombreTipo in conteos)) orden.push(nombreTipo);
-      conteos[nombreTipo] = (conteos[nombreTipo] || 0) + (item.cantidad || 0);
-    });
-    return orden.map(nombre => `${nombre} x ${conteos[nombre]} und`).join(', ');
-  }
-
   function renderSeccionEquipos(pedido) {
     const equipos = pedido.equipos || [];
     if (!equipos.length) {
@@ -422,14 +406,13 @@
         ? `<div class="equipo-card-oc">📄 OC: ${escapeHtml(item.ordenCompra)}</div>`
         : '';
       const metaChips = `
-        <span class="meta-chip">Cant: ${item.cantidad}</span>
         <span class="meta-chip">${formatearPesoFicha(equipo?.peso)}</span>
       `;
 
       return `
         <div class="equipo-card ${usaSerial ? 'clicable' : ''}" data-index="${index}" style="border-color:${color};">
           <div class="equipo-card-header" style="background:${color};">
-            <span>${icono}</span><span>${escapeHtml(nombreTipo)}</span>
+            <span>${icono}</span><span>${escapeHtml(nombreTipo)} x ${item.cantidad}</span>
           </div>
           <div class="equipo-card-body" style="background:${color}15;">
             <div>
@@ -459,7 +442,6 @@
     const nombreCompania = compania ? compania.nombre : 'Compañía no encontrada';
 
     fichaHeaderNumero.textContent = `N${pedido.numero} - ${nombreCompania}`;
-    fichaHeaderResumen.textContent = resumenEquiposPorTipo(pedido);
     fichaHeaderTags.innerHTML = `<span class="${tipoInfo.clase}">${tipoInfo.texto}</span>`;
 
     renderSeccionCliente(pedido);
