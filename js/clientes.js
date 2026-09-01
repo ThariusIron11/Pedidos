@@ -5,17 +5,17 @@
 // {
 //   nombre, tipo: 'normal' | 'subsidiaria' | 'subsidiaria_edisatech',
 //   nit, direccion, direccionRemision, contraentrega: boolean,
-//   contactoPedidos: { nombre, telefono },
-//   contactoReparaciones: { nombre, telefono }
+//   contactosPedidos: ['nombre1', 'nombre2', ...],
+//   contactoReparaciones: 'nombre'
 // }
 
 (function () {
   const COLECCION = 'clientes';
 
-  const TIPO_LABEL = {
-    normal: null, // no se muestra tag para el caso normal (es el default)
-    subsidiaria: 'Subsidiaria',
-    subsidiaria_edisatech: 'Subsidiaria de Edisatech'
+  const TIPO_INFO = {
+    normal: { label: null, icono: '🏢' },              // sin tag (es el default), pero sí ícono
+    subsidiaria: { label: 'Subsidiaria', icono: '🔗' },
+    subsidiaria_edisatech: { label: 'Subsidiaria de Edisatech', icono: '🏭' }
   };
 
   const tablaBody  = document.getElementById('tabla-clientes-body');
@@ -31,10 +31,8 @@
   const inputDireccion         = document.getElementById('cliente-direccion');
   const inputDireccionRemision = document.getElementById('cliente-direccion-remision');
   const inputContraentrega     = document.getElementById('cliente-contraentrega');
-  const inputContactoPedidosNombre     = document.getElementById('cliente-contacto-pedidos-nombre');
-  const inputContactoPedidosTelefono   = document.getElementById('cliente-contacto-pedidos-telefono');
-  const inputContactoRepNombre         = document.getElementById('cliente-contacto-reparaciones-nombre');
-  const inputContactoRepTelefono       = document.getElementById('cliente-contacto-reparaciones-telefono');
+  const contactosPedidosList   = document.getElementById('contactos-pedidos-list');
+  const inputContactoRepNombre = document.getElementById('cliente-contacto-reparaciones-nombre');
 
   let clientesCache = []; // [{id, ...datos}]
 
@@ -47,6 +45,35 @@
       .replace(/>/g, '&gt;');
   }
 
+  function escapeAttr(str) {
+    return String(str ?? '').replace(/"/g, '&quot;');
+  }
+
+  // ---------- Lista dinámica de contactos de pedidos ----------
+
+  function nuevaFilaContactoPedido(nombre) {
+    const row = document.createElement('div');
+    row.className = 'contacto-simple-row';
+    row.innerHTML = `
+      <input type="text" class="contacto-pedido-nombre" placeholder="Nombre" value="${escapeAttr(nombre || '')}">
+      <button type="button" class="remove-contacto" title="Quitar contacto">✕</button>
+    `;
+    row.querySelector('.remove-contacto').addEventListener('click', () => row.remove());
+    contactosPedidosList.appendChild(row);
+  }
+
+  function leerContactosPedidosDelFormulario() {
+    const filas = contactosPedidosList.querySelectorAll('.contacto-pedido-nombre');
+    const contactos = [];
+    filas.forEach(input => {
+      const nombre = input.value.trim();
+      if (nombre) contactos.push(nombre);
+    });
+    return contactos;
+  }
+
+  document.getElementById('btn-add-contacto-pedidos').addEventListener('click', () => nuevaFilaContactoPedido());
+
   // ---------- Modal ----------
 
   function abrirModalNuevo() {
@@ -54,6 +81,8 @@
     form.reset();
     inputId.value = '';
     inputTipo.value = 'normal';
+    contactosPedidosList.innerHTML = '';
+    nuevaFilaContactoPedido(); // arranca con una fila vacía
     modal.classList.add('open');
     inputNombre.focus();
   }
@@ -68,10 +97,16 @@
     inputDireccion.value = cliente.direccion || '';
     inputDireccionRemision.value = cliente.direccionRemision || '';
     inputContraentrega.checked = !!cliente.contraentrega;
-    inputContactoPedidosNombre.value = cliente.contactoPedidos?.nombre || '';
-    inputContactoPedidosTelefono.value = cliente.contactoPedidos?.telefono || '';
-    inputContactoRepNombre.value = cliente.contactoReparaciones?.nombre || '';
-    inputContactoRepTelefono.value = cliente.contactoReparaciones?.telefono || '';
+    inputContactoRepNombre.value = cliente.contactoReparaciones || '';
+
+    contactosPedidosList.innerHTML = '';
+    const contactos = cliente.contactosPedidos || [];
+    if (contactos.length) {
+      contactos.forEach(nombre => nuevaFilaContactoPedido(nombre));
+    } else {
+      nuevaFilaContactoPedido();
+    }
+
     modal.classList.add('open');
     inputNombre.focus();
   }
@@ -98,14 +133,8 @@
       direccion: inputDireccion.value.trim(),
       direccionRemision: inputDireccionRemision.value.trim(),
       contraentrega: inputContraentrega.checked,
-      contactoPedidos: {
-        nombre: inputContactoPedidosNombre.value.trim(),
-        telefono: inputContactoPedidosTelefono.value.trim()
-      },
-      contactoReparaciones: {
-        nombre: inputContactoRepNombre.value.trim(),
-        telefono: inputContactoRepTelefono.value.trim()
-      }
+      contactosPedidos: leerContactosPedidosDelFormulario(),
+      contactoReparaciones: inputContactoRepNombre.value.trim()
     };
 
     if (!datos.nombre) {
@@ -150,11 +179,6 @@
 
   // ---------- Render de la tabla ----------
 
-  function formatearContacto(contacto) {
-    if (!contacto || !contacto.nombre) return '<span style="color:var(--ink-soft);">—</span>';
-    return escapeHtml(contacto.nombre) + (contacto.telefono ? ' · ' + escapeHtml(contacto.telefono) : '');
-  }
-
   function renderTabla() {
     if (!clientesCache.length) {
       tablaBody.innerHTML = '';
@@ -164,9 +188,9 @@
     tablaEmpty.style.display = 'none';
 
     tablaBody.innerHTML = clientesCache.map(cliente => {
-      const tipoLabel = TIPO_LABEL[cliente.tipo];
-      const tipoTag = tipoLabel
-        ? `<span class="tag-tipo ${cliente.tipo}">${tipoLabel}</span>`
+      const tipoInfo = TIPO_INFO[cliente.tipo] || TIPO_INFO.normal;
+      const tipoTag = tipoInfo.label
+        ? `<span class="tag-tipo ${cliente.tipo}">${tipoInfo.icono} ${tipoInfo.label}</span>`
         : '';
       const contraentregaTag = cliente.contraentrega
         ? '<span class="tag-contraentrega">Contraentrega</span>'
@@ -176,14 +200,22 @@
         ? `${escapeHtml(cliente.direccion || '—')}<br><span style="color:var(--ink-soft); font-size:12px;">Remisión: ${escapeHtml(cliente.direccionRemision)}</span>`
         : escapeHtml(cliente.direccion || '—');
 
+      const contactosPedidos = cliente.contactosPedidos || [];
+      const contactosPedidosHtml = contactosPedidos.length
+        ? contactosPedidos.map(escapeHtml).join(', ')
+        : '<span style="color:var(--ink-soft);">—</span>';
+      const contactoRepHtml = cliente.contactoReparaciones
+        ? escapeHtml(cliente.contactoReparaciones)
+        : '<span style="color:var(--ink-soft);">—</span>';
+
       const contactosHtml = `
-        <div>Pedidos: ${formatearContacto(cliente.contactoPedidos)}</div>
-        <div>Reparaciones: ${formatearContacto(cliente.contactoReparaciones)}</div>
+        <div>Pedidos: ${contactosPedidosHtml}</div>
+        <div>Reparaciones: ${contactoRepHtml}</div>
       `;
 
       return `
         <tr data-id="${cliente.id}">
-          <td>${escapeHtml(cliente.nombre)}${tipoTag}${contraentregaTag}</td>
+          <td>${tipoInfo.icono} ${escapeHtml(cliente.nombre)}${tipoTag}${contraentregaTag}</td>
           <td>${escapeHtml(cliente.nit || '—')}</td>
           <td>${direccionHtml}</td>
           <td>${contactosHtml}</td>

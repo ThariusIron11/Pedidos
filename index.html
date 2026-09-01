@@ -286,10 +286,45 @@
     padding-right: 30px;
   }
 
-  .contacto-pair{
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+  .contactos-simple-list{
+    display: flex;
+    flex-direction: column;
     gap: 8px;
+  }
+  .contacto-simple-row{
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .contacto-simple-row input{
+    flex: 1;
+    font-family: inherit;
+    font-size: 13.5px;
+    padding: 8px 10px;
+    border: 1px solid #d4d7dc;
+    border-radius: var(--radius);
+  }
+  .contacto-simple-row input:focus{ outline: none; border-color: var(--copper); }
+  .contacto-simple-row button.remove-contacto{
+    background: transparent;
+    border: none;
+    color: var(--ink-soft);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 4px;
+    flex-shrink: 0;
+  }
+  .contacto-simple-row button.remove-contacto:hover{ color: var(--danger); }
+
+  .btn-link{
+    background: transparent;
+    border: none;
+    color: var(--copper);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 4px 0;
   }
 
   .checkbox-box{
@@ -479,9 +514,9 @@
         <div class="form-group">
           <label for="cliente-tipo">Tipo de empresa</label>
           <select id="cliente-tipo">
-            <option value="normal">Empresa normal</option>
-            <option value="subsidiaria">Subsidiaria</option>
-            <option value="subsidiaria_edisatech">Subsidiaria de Edisatech</option>
+            <option value="normal">🏢 Empresa normal</option>
+            <option value="subsidiaria">🔗 Subsidiaria</option>
+            <option value="subsidiaria_edisatech">🏭 Subsidiaria de Edisatech</option>
           </select>
         </div>
 
@@ -508,19 +543,14 @@
         </div>
 
         <div class="form-group">
-          <label for="cliente-contacto-pedidos-nombre">Contacto de recibir pedidos</label>
-          <div class="contacto-pair">
-            <input type="text" id="cliente-contacto-pedidos-nombre" placeholder="Nombre">
-            <input type="tel" id="cliente-contacto-pedidos-telefono" placeholder="Teléfono">
-          </div>
+          <label>Contacto(s) de recibir pedidos</label>
+          <div class="contactos-simple-list" id="contactos-pedidos-list"></div>
+          <button type="button" class="btn-link" id="btn-add-contacto-pedidos">+ Agregar contacto</button>
         </div>
 
         <div class="form-group">
           <label for="cliente-contacto-reparaciones-nombre">Contacto de recibir pedidos de reparaciones</label>
-          <div class="contacto-pair">
-            <input type="text" id="cliente-contacto-reparaciones-nombre" placeholder="Nombre">
-            <input type="tel" id="cliente-contacto-reparaciones-telefono" placeholder="Teléfono">
-          </div>
+          <input type="text" id="cliente-contacto-reparaciones-nombre" placeholder="Nombre">
         </div>
 
         <div class="modal-actions">
