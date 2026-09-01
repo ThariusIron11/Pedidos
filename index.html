@@ -439,6 +439,39 @@
   }
 
   .modal.modal-wide{ max-width: 620px; }
+  .modal.modal-ficha{
+    max-width: 820px;
+    padding: 0;
+    overflow: hidden;
+  }
+  .modal.modal-ficha .subtabs,
+  .modal.modal-ficha .subtab-panel,
+  .modal.modal-ficha .modal-actions{
+    padding-left: 26px;
+    padding-right: 26px;
+  }
+  .modal.modal-ficha .subtabs{ padding-top: 4px; }
+  .modal.modal-ficha .modal-actions{ padding-bottom: 22px; }
+
+  .ficha-header{
+    background: linear-gradient(135deg, var(--graphite) 0%, #30384a 100%);
+    color: #fff;
+    padding: 22px 26px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .ficha-header-numero{
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+  }
+  .ficha-header-tags{
+    display: flex;
+    gap: 8px;
+  }
 
   .subtabs{
     display: flex;
@@ -452,19 +485,22 @@
     font-weight: 600;
     background: transparent;
     border: none;
-    padding: 8px 4px;
-    margin-right: 16px;
+    padding: 12px 4px;
+    margin-right: 20px;
     color: var(--ink-soft);
     cursor: pointer;
     border-bottom: 2px solid transparent;
     margin-bottom: -1px;
+    transition: color 0.12s ease, border-color 0.12s ease;
   }
+  .subtab-btn:hover{ color: var(--ink); }
   .subtab-btn.active{
     color: var(--copper);
     border-bottom-color: var(--copper);
   }
   .subtab-panel{ display: none; }
   .subtab-panel.active{ display: block; }
+  .modal.modal-ficha .subtab-panel{ padding-bottom: 8px; max-height: 52vh; overflow: auto; }
 
   .equipos-pedido-list{
     display: flex;
@@ -563,34 +599,106 @@
   .ficha-campo{
     background: #fafafb;
     border: 1px solid #e2e4e9;
+    border-left: 3px solid var(--copper);
     border-radius: var(--radius);
-    padding: 9px 12px;
+    padding: 10px 13px;
   }
   .ficha-campo .campo-label{
     font-size: 11px;
     color: var(--ink-soft);
-    margin-bottom: 2px;
+    margin-bottom: 3px;
   }
   .ficha-campo .campo-valor{
-    font-size: 13.5px;
+    font-size: 14px;
     color: var(--ink);
-    font-weight: 500;
-  }
-  .ficha-equipos-tabla{
-    width: 100%;
-    border-collapse: collapse;
-  }
-  .ficha-equipos-tabla th, .ficha-equipos-tabla td{
-    text-align: left;
-    padding: 7px 8px;
-    font-size: 13px;
-    border-bottom: 1px solid #edeef1;
-  }
-  .ficha-equipos-tabla th{
-    color: var(--ink-soft);
-    font-size: 11px;
     font-weight: 600;
   }
+
+  /* Tarjetas de equipo, agrupadas visualmente por tipo */
+  .equipos-cards-list{
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .equipo-card{
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid #e2e4e9;
+    cursor: default;
+    transition: transform 0.08s ease, box-shadow 0.08s ease;
+  }
+  .equipo-card.clicable{ cursor: pointer; }
+  .equipo-card.clicable:hover{
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(28,33,40,0.10);
+  }
+  .equipo-card-header{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #fff;
+  }
+  .equipo-card-body{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px 14px;
+  }
+  .equipo-card-nombre{
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .equipo-card-meta{
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+  .equipo-card-meta .meta-chip{
+    background: rgba(28,33,40,0.06);
+    border-radius: 999px;
+    padding: 3px 9px;
+    font-weight: 600;
+  }
+  .equipo-card-serial{
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .equipo-card-serial.completo{ color: var(--ok); }
+  .equipo-card-serial.pendiente{ color: var(--warn); }
+
+  .seriales-campos-list{
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .serial-campo label{
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    margin-bottom: 4px;
+  }
+  .serial-campo input{
+    width: 100%;
+    font-family: inherit;
+    font-size: 13.5px;
+    padding: 8px 10px;
+    border: 1px solid #d4d7dc;
+    border-radius: var(--radius);
+  }
+  .serial-campo input:focus{ outline: none; border-color: var(--copper); }
 
   @media (max-width: 760px){
     .ficha-campos{ grid-template-columns: 1fr; }
@@ -958,12 +1066,48 @@
 
   <!-- Modal: FICHA de pedido (solo lectura, distinto al de crear/editar) -->
   <div class="modal-backdrop" id="modal-ficha-pedido">
-    <div class="modal modal-wide">
-      <h3 id="ficha-pedido-titulo">Pedido</h3>
-      <div id="ficha-pedido-contenido"><!-- generado por pedidos.js --></div>
+    <div class="modal modal-ficha">
+      <div class="ficha-header" id="ficha-header">
+        <div class="ficha-header-numero" id="ficha-header-numero">Pedido</div>
+        <div class="ficha-header-tags" id="ficha-header-tags"></div>
+      </div>
+
+      <div class="subtabs">
+        <button type="button" class="subtab-btn active" data-subtab="ficha-datos">📋 Datos</button>
+        <button type="button" class="subtab-btn" data-subtab="ficha-equipos">📦 Equipos</button>
+        <button type="button" class="subtab-btn" data-subtab="ficha-envio">🚚 Envío / Despacho</button>
+      </div>
+
+      <div class="subtab-panel active" id="subtab-ficha-datos">
+        <div class="ficha-seccion" id="ficha-seccion-cliente"><!-- generado por pedidos.js --></div>
+      </div>
+
+      <div class="subtab-panel" id="subtab-ficha-equipos">
+        <div id="ficha-equipos-contenido"><!-- generado por pedidos.js --></div>
+      </div>
+
+      <div class="subtab-panel" id="subtab-ficha-envio">
+        <div class="placeholder">
+          <strong>Envío / Despacho</strong>
+          Se habilitará cuando esté lista la pestaña Envíos.
+        </div>
+      </div>
+
       <div class="modal-actions">
         <button type="button" class="btn secondary" id="btn-cerrar-ficha-pedido">Cerrar</button>
         <button type="button" class="btn" id="btn-editar-desde-ficha">Editar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: números de serial de un equipo dentro del pedido -->
+  <div class="modal-backdrop" id="modal-seriales">
+    <div class="modal">
+      <h3 id="modal-seriales-titulo">Números de serial</h3>
+      <div id="seriales-campos"><!-- generado por pedidos.js --></div>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" id="btn-cancelar-seriales">Cancelar</button>
+        <button type="button" class="btn" id="btn-guardar-seriales">Guardar</button>
       </div>
     </div>
   </div>

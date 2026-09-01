@@ -33,10 +33,18 @@
   const radiosTipoPedido = form.querySelectorAll('input[name="tipo-pedido"]');
 
   const modalFicha = document.getElementById('modal-ficha-pedido');
-  const fichaTitulo = document.getElementById('ficha-pedido-titulo');
-  const fichaContenido = document.getElementById('ficha-pedido-contenido');
+  const fichaHeaderNumero = document.getElementById('ficha-header-numero');
+  const fichaHeaderTags = document.getElementById('ficha-header-tags');
+  const fichaSeccionCliente = document.getElementById('ficha-seccion-cliente');
+  const fichaEquiposContenido = document.getElementById('ficha-equipos-contenido');
   const btnCerrarFicha = document.getElementById('btn-cerrar-ficha-pedido');
   const btnEditarDesdeFicha = document.getElementById('btn-editar-desde-ficha');
+
+  const modalSeriales = document.getElementById('modal-seriales');
+  const modalSerialesTitulo = document.getElementById('modal-seriales-titulo');
+  const serialesCampos = document.getElementById('seriales-campos');
+  const btnCancelarSeriales = document.getElementById('btn-cancelar-seriales');
+  const btnGuardarSeriales = document.getElementById('btn-guardar-seriales');
 
   const TIPO_PEDIDO_LABEL = {
     normal: { texto: 'Normal', clase: 'tag-pedido-normal' },
@@ -83,6 +91,21 @@
   function resetSubtabs() {
     subtabButtons.forEach((b, i) => b.classList.toggle('active', i === 0));
     subtabPanels.forEach((p, i) => p.classList.toggle('active', i === 0));
+  }
+
+  // Sub-pestañas dentro de la Ficha (Datos / Equipos / Envío) — mismo patrón,
+  // pero escuchando dentro de modalFicha para no chocar con las de arriba.
+  const fichaSubtabButtons = modalFicha.querySelectorAll('.subtab-btn');
+  const fichaSubtabPanels = modalFicha.querySelectorAll('.subtab-panel');
+  fichaSubtabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      fichaSubtabButtons.forEach(b => b.classList.toggle('active', b === btn));
+      fichaSubtabPanels.forEach(p => p.classList.toggle('active', p.id === 'subtab-' + btn.dataset.subtab));
+    });
+  });
+  function resetFichaSubtabs() {
+    fichaSubtabButtons.forEach((b, i) => b.classList.toggle('active', i === 0));
+    fichaSubtabPanels.forEach((p, i) => p.classList.toggle('active', i === 0));
   }
 
   // ---------- Select de compañía / contacto ----------
@@ -307,55 +330,100 @@
     `;
   }
 
-  function abrirFicha(pedido) {
+  let pedidoIdEnFicha = null; // qué pedido está abierto en la ficha (para poder guardar seriales)
+
+  function renderSeccionCliente(pedido) {
     const compania = buscarCompania(pedido.companiaId);
-    const tipoInfo = TIPO_PEDIDO_LABEL[pedido.tipo] || TIPO_PEDIDO_LABEL.normal;
-
-    fichaTitulo.innerHTML = `Pedido N° ${pedido.numero} <span class="${tipoInfo.clase}">${tipoInfo.texto}</span>`;
-
-    const nombreCliente = compania ? escapeHtml(compania.nombre) : '<span style="color:var(--danger);">Compañía no encontrada</span>';
     const nit = compania?.nit ? escapeHtml(compania.nit) : '—';
     const direccion = compania?.direccion ? escapeHtml(compania.direccion) : '—';
     const direccionRemision = compania?.direccionRemision ? escapeHtml(compania.direccionRemision) : '—';
     const contraentrega = compania?.contraentrega ? 'Sí' : 'No';
-    const persona = pedido.contacto ? escapeHtml(pedido.contacto) : '—';
+    const persona = pedido.contacto ? escapeHtml(pedido.contacto) : '— (sin asignar)';
+    const nombreCliente = compania ? escapeHtml(compania.nombre) : '<span style="color:var(--danger);">Compañía no encontrada</span>';
 
-    const equipos = pedido.equipos || [];
-    const filasEquipos = equipos.map(item => {
-      const equipo = buscarEquipoCatalogo(item.equipoId);
-      const nombreEquipo = equipo ? escapeHtml(equipo.nombre) + (equipo.variante ? ' (' + escapeHtml(equipo.variante) + ')' : '') : '<span style="color:var(--danger);">Equipo no encontrado</span>';
-      return `
-        <tr>
-          <td>${nombreEquipo}</td>
-          <td>${item.cantidad}</td>
-          <td>${item.ordenCompra ? escapeHtml(item.ordenCompra) : '—'}</td>
-        </tr>
-      `;
-    }).join('');
-
-    fichaContenido.innerHTML = `
-      <div class="ficha-seccion">
-        <h4>Cliente</h4>
-        <div class="ficha-campos">
-          ${campoFicha('Cliente', nombreCliente)}
-          ${campoFicha('Nombre de quien recibe', persona)}
-          ${campoFicha('NIT', nit)}
-          ${campoFicha('Dirección', direccion)}
-          ${campoFicha('Dirección de remisión', direccionRemision)}
-          ${campoFicha('¿Contraentrega?', contraentrega)}
-        </div>
-      </div>
-
-      <div class="ficha-seccion">
-        <h4>Equipos</h4>
-        ${equipos.length ? `
-          <table class="ficha-equipos-tabla">
-            <thead><tr><th>Equipo</th><th>Cantidad</th><th>Orden de compra</th></tr></thead>
-            <tbody>${filasEquipos}</tbody>
-          </table>
-        ` : '<div class="empty-equipos-pedido">Este pedido no tiene equipos agregados.</div>'}
+    fichaSeccionCliente.innerHTML = `
+      <h4>Cliente</h4>
+      <div class="ficha-campos">
+        ${campoFicha('Cliente', nombreCliente)}
+        ${campoFicha('Nombre de quien recibe', persona)}
+        ${campoFicha('NIT', nit)}
+        ${campoFicha('Dirección', direccion)}
+        ${campoFicha('Dirección de remisión', direccionRemision)}
+        ${campoFicha('¿Contraentrega?', contraentrega)}
       </div>
     `;
+  }
+
+  function resumenSeriales(item, cantidad) {
+    const seriales = (item.seriales || []).filter(s => s && s.trim());
+    if (!seriales.length) {
+      return `<span class="equipo-card-serial pendiente">🔴 Sin serial (0/${cantidad})</span>`;
+    }
+    if (seriales.length >= cantidad) {
+      return `<span class="equipo-card-serial completo">🔢 ${seriales.map(escapeHtml).join(', ')}</span>`;
+    }
+    return `<span class="equipo-card-serial pendiente">🟡 ${seriales.map(escapeHtml).join(', ')} (${seriales.length}/${cantidad})</span>`;
+  }
+
+  function renderSeccionEquipos(pedido) {
+    const equipos = pedido.equipos || [];
+    if (!equipos.length) {
+      fichaEquiposContenido.innerHTML = '<div class="empty-equipos-pedido">Este pedido no tiene equipos agregados.</div>';
+      return;
+    }
+
+    fichaEquiposContenido.innerHTML = `<div class="equipos-cards-list">${equipos.map((item, index) => {
+      const equipo = buscarEquipoCatalogo(item.equipoId);
+      const tipo = equipo ? buscarTipoEquipo(equipo.tipoId) : null;
+      const color = tipo?.color || '#5b6472';
+      const icono = tipo?.icono || '📦';
+      const nombreTipo = tipo?.nombre || 'Tipo desconocido';
+
+      const nombreEquipo = equipo
+        ? escapeHtml(equipo.nombre) + (equipo.variante ? ` <span class="tag-variante">${escapeHtml(equipo.variante)}</span>` : '')
+        : '<span style="color:var(--danger);">Equipo no encontrado</span>';
+
+      const usaSerial = !!equipo?.usaSerial;
+      const metaChips = `
+        <span class="meta-chip">Cant: ${item.cantidad}</span>
+        ${item.ordenCompra ? `<span class="meta-chip">OC: ${escapeHtml(item.ordenCompra)}</span>` : ''}
+      `;
+
+      return `
+        <div class="equipo-card ${usaSerial ? 'clicable' : ''}" data-index="${index}" style="border-color:${color};">
+          <div class="equipo-card-header" style="background:${color};">
+            <span>${icono}</span><span>${escapeHtml(nombreTipo)}</span>
+          </div>
+          <div class="equipo-card-body" style="background:${color}15;">
+            <div>
+              <div class="equipo-card-nombre">${nombreEquipo}</div>
+              <div class="equipo-card-meta">${metaChips}</div>
+            </div>
+            ${usaSerial ? resumenSeriales(item, item.cantidad) : ''}
+          </div>
+        </div>
+      `;
+    }).join('')}</div>`;
+
+    fichaEquiposContenido.querySelectorAll('.equipo-card.clicable').forEach(card => {
+      card.addEventListener('click', () => abrirModalSeriales(parseInt(card.dataset.index, 10)));
+    });
+  }
+
+  function buscarTipoEquipo(tipoId) {
+    return (window.tiposEquipoCache || []).find(t => t.id === tipoId) || null;
+  }
+
+  function abrirFicha(pedido) {
+    pedidoIdEnFicha = pedido.id;
+    const tipoInfo = TIPO_PEDIDO_LABEL[pedido.tipo] || TIPO_PEDIDO_LABEL.normal;
+
+    fichaHeaderNumero.textContent = `Pedido N° ${pedido.numero}`;
+    fichaHeaderTags.innerHTML = `<span class="${tipoInfo.clase}">${tipoInfo.texto}</span>`;
+
+    renderSeccionCliente(pedido);
+    renderSeccionEquipos(pedido);
+    resetFichaSubtabs();
 
     btnEditarDesdeFicha.dataset.id = pedido.id;
     modalFicha.classList.add('open');
@@ -363,6 +431,7 @@
 
   function cerrarFicha() {
     modalFicha.classList.remove('open');
+    pedidoIdEnFicha = null;
   }
 
   btnCerrarFicha.addEventListener('click', cerrarFicha);
@@ -373,6 +442,70 @@
     const pedido = pedidosCache.find(p => p.id === btnEditarDesdeFicha.dataset.id);
     cerrarFicha();
     if (pedido) abrirModalEditar(pedido);
+  });
+
+  // ---------- Sub-modal: números de serial de un equipo del pedido ----------
+
+  let indexEquipoEnSeriales = null;
+
+  function abrirModalSeriales(index) {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) return;
+    const item = (pedido.equipos || [])[index];
+    if (!item) return;
+    const equipo = buscarEquipoCatalogo(item.equipoId);
+
+    indexEquipoEnSeriales = index;
+    modalSerialesTitulo.textContent = `Seriales — ${equipo ? equipo.nombre : 'Equipo'}`;
+
+    const cantidad = item.cantidad || 1;
+    const serialesActuales = item.seriales || [];
+    serialesCampos.innerHTML = `<div class="seriales-campos-list">${
+      Array.from({ length: cantidad }).map((_, i) => `
+        <div class="serial-campo">
+          <label>Unidad ${i + 1}</label>
+          <input type="text" class="serial-input" value="${serialesActuales[i] ? escapeHtml(serialesActuales[i]) : ''}" placeholder="Número de serial">
+        </div>
+      `).join('')
+    }</div>`;
+
+    modalSeriales.classList.add('open');
+  }
+
+  function cerrarModalSeriales() {
+    modalSeriales.classList.remove('open');
+    indexEquipoEnSeriales = null;
+  }
+
+  btnCancelarSeriales.addEventListener('click', cerrarModalSeriales);
+  modalSeriales.addEventListener('click', (e) => {
+    if (e.target === modalSeriales) cerrarModalSeriales();
+  });
+
+  btnGuardarSeriales.addEventListener('click', async () => {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido || indexEquipoEnSeriales === null) return;
+
+    const nuevosSeriales = Array.from(serialesCampos.querySelectorAll('.serial-input')).map(inp => inp.value.trim());
+    const equiposActualizados = (pedido.equipos || []).map((item, i) =>
+      i === indexEquipoEnSeriales ? { ...item, seriales: nuevosSeriales } : item
+    );
+
+    btnGuardarSeriales.disabled = true;
+    btnGuardarSeriales.textContent = 'Guardando...';
+    try {
+      await db.collection(COLECCION).doc(pedido.id).update({ equipos: equiposActualizados });
+      cerrarModalSeriales();
+      // La ficha se refresca sola con el próximo snapshot; refrescamos ya
+      // mismo con los datos locales para que se sienta instantáneo.
+      renderSeccionEquipos({ ...pedido, equipos: equiposActualizados });
+    } catch (err) {
+      console.error('Error guardando seriales:', err);
+      alert('No se pudieron guardar los seriales. Revisa la consola.');
+    } finally {
+      btnGuardarSeriales.disabled = false;
+      btnGuardarSeriales.textContent = 'Guardar';
+    }
   });
 
   // ---------- Render de la tabla ----------

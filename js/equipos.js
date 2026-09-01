@@ -87,6 +87,17 @@
     poblarSelectsDeTipo();
   }
 
+  const TIPOS_CON_SERIAL_POR_DEFECTO = ['motor', 'reductor', 'motovibrador'];
+
+  inputTipo.addEventListener('change', () => {
+    // Solo sugiere el valor por defecto al CREAR un equipo nuevo; al editar uno
+    // existente se respeta lo que ya tenía guardado.
+    if (inputId.value) return;
+    const tipo = buscarTipo(inputTipo.value);
+    if (!tipo) return;
+    inputUsaSerial.checked = TIPOS_CON_SERIAL_POR_DEFECTO.includes(normalizar(tipo.nombre));
+  });
+
   // ---------- Cargar / limpiar formulario ----------
 
   function cargarFormularioDesdeEquipo(equipo) {
