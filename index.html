@@ -481,9 +481,32 @@
       </section>
 
       <section class="panel" id="panel-equipos" data-title="Equipos">
-        <div class="placeholder">
-          <strong>Pestaña Equipos</strong>
-          Todavía no tiene contenido. La lógica va en js/equipos.js.
+        <div class="panel-header">
+          <h2>Catálogo de equipos</h2>
+          <button type="button" class="btn" id="btn-nuevo-equipo">+ Nuevo equipo</button>
+        </div>
+
+        <div class="form-group" style="max-width:340px;">
+          <input type="text" id="buscador-equipos" placeholder="Buscar por nombre, tipo o variante...">
+        </div>
+
+        <table class="data-table" id="tabla-equipos">
+          <thead>
+            <tr>
+              <th>Equipo</th>
+              <th>Tipo</th>
+              <th>Variante</th>
+              <th>Peso</th>
+              <th>N° Serial</th>
+              <th style="width:110px;"></th>
+            </tr>
+          </thead>
+          <tbody id="tabla-equipos-body">
+            <!-- filas generadas por equipos.js -->
+          </tbody>
+        </table>
+        <div class="empty-state" id="equipos-empty" style="display:none;">
+          Todavía no hay equipos registrados.
         </div>
       </section>
 
@@ -559,6 +582,61 @@
 
         <div class="modal-actions">
           <button type="button" class="btn secondary" id="btn-cancelar-cliente">Cancelar</button>
+          <button type="submit" class="btn">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: nuevo/editar equipo (usado por equipos.js) -->
+  <div class="modal-backdrop" id="modal-equipo">
+    <div class="modal">
+      <h3 id="modal-equipo-titulo">Nuevo equipo</h3>
+      <form id="form-equipo">
+        <input type="hidden" id="equipo-id">
+
+        <div class="form-group">
+          <label for="equipo-nombre">Nombre / Referencia</label>
+          <input type="text" id="equipo-nombre" required placeholder="Ej: TR67 IEC 132">
+        </div>
+
+        <div class="form-group">
+          <label for="equipo-tipo">Tipo</label>
+          <select id="equipo-tipo">
+            <option value="Motor">Motor</option>
+            <option value="Reductor">Reductor</option>
+            <option value="Motoreductor">Motoreductor</option>
+            <option value="Piezas de Acople">Piezas de Acople</option>
+            <option value="Motovibrador">Motovibrador</option>
+            <option value="Brazo de reacción">Brazo de reacción</option>
+            <option value="Eje sólido">Eje sólido</option>
+            <option value="Motor ZD">Motor ZD</option>
+            <option value="Reductor ZD">Reductor ZD</option>
+            <option value="Motoreductor ZD">Motoreductor ZD</option>
+            <option value="Sprocket">Sprocket</option>
+            <option value="Caja de cadena">Caja de cadena</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="equipo-variante">Variante</label>
+          <input type="text" id="equipo-variante" placeholder="Ej: D3, D4 (deja vacío si no aplica)">
+        </div>
+
+        <div class="form-group">
+          <label for="equipo-peso">Peso (kg)</label>
+          <input type="text" id="equipo-peso" inputmode="decimal" placeholder="Ej: 45.5">
+        </div>
+
+        <div class="form-group">
+          <label class="checkbox-box">
+            <input type="checkbox" id="equipo-usa-serial">
+            Este equipo emplea número serial
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="btn-cancelar-equipo">Cancelar</button>
           <button type="submit" class="btn">Guardar</button>
         </div>
       </form>
