@@ -8,12 +8,20 @@
 //   contactosPedidos: ['nombre1', 'nombre2', ...],
 //   contactoReparaciones: 'nombre'
 // }
+//
+// Comportamiento del modal (igual al de Pedidos/Reparación en App Repuestos):
+// - Clic por fuera (backdrop) cierra PERO conserva lo digitado (borrador).
+// - Botón "Cancelar" cierra y SÍ limpia todo.
+// - Si hay un borrador de una compañía nueva sin guardar y se vuelve a abrir
+//   "+ Nueva compañía", se retoma ese borrador en vez de empezar en blanco.
+// - Si hay un borrador de edición sin guardar y se vuelve a editar la MISMA
+//   compañía, se retoma; si es otra compañía, se descarta y se carga la nueva.
 
 (function () {
   const COLECCION = 'clientes';
 
   const TIPO_INFO = {
-    normal: { label: null, icono: '🏢' },              // sin tag (es el default), pero sí ícono
+    normal: { label: null, icono: '🏢' },
     subsidiaria: { label: 'Subsidiaria', icono: '🔗' },
     subsidiaria_edisatech: { label: 'Subsidiaria de Edisatech', icono: '🏭' }
   };
@@ -23,6 +31,7 @@
   const modal       = document.getElementById('modal-cliente');
   const modalTitulo = document.getElementById('modal-cliente-titulo');
   const form         = document.getElementById('form-cliente');
+  const buscador      = document.getElementById('buscador-clientes');
 
   const inputId               = document.getElementById('cliente-id');
   const inputNombre           = document.getElementById('cliente-nombre');
@@ -35,6 +44,11 @@
   const inputContactoRepNombre = document.getElementById('cliente-contacto-reparaciones-nombre');
 
   let clientesCache = []; // [{id, ...datos}]
+  let filtroTexto = '';
+
+  // Estado del borrador: 'id' del registro en edición ('' = compañía nueva),
+  // o null si no hay ningún borrador activo (el modal fue cancelado/guardado).
+  let borradorId = null;
 
   // ---------- Helpers ----------
 
@@ -47,6 +61,12 @@
 
   function escapeAttr(str) {
     return String(str ?? '').replace(/"/g, '&quot;');
+  }
+
+  function normalizar(str) {
+    return String(str ?? '')
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // quita tildes
   }
 
   // ---------- Lista dinámica de contactos de pedidos ----------
@@ -74,51 +94,76 @@
 
   document.getElementById('btn-add-contacto-pedidos').addEventListener('click', () => nuevaFilaContactoPedido());
 
-  // ---------- Modal ----------
+  // ---------- Cargar datos limpios de un cliente en el formulario ----------
 
-  function abrirModalNuevo() {
-    modalTitulo.textContent = 'Nueva compañía';
+  function cargarFormularioDesdeCliente(cliente) {
     form.reset();
-    inputId.value = '';
-    inputTipo.value = 'normal';
-    contactosPedidosList.innerHTML = '';
-    nuevaFilaContactoPedido(); // arranca con una fila vacía
-    modal.classList.add('open');
-    inputNombre.focus();
-  }
-
-  function abrirModalEditar(cliente) {
-    modalTitulo.textContent = 'Editar compañía';
-    form.reset();
-    inputId.value = cliente.id;
-    inputNombre.value = cliente.nombre || '';
-    inputTipo.value = cliente.tipo || 'normal';
-    inputNit.value = cliente.nit || '';
-    inputDireccion.value = cliente.direccion || '';
-    inputDireccionRemision.value = cliente.direccionRemision || '';
-    inputContraentrega.checked = !!cliente.contraentrega;
-    inputContactoRepNombre.value = cliente.contactoReparaciones || '';
+    inputId.value = cliente ? cliente.id : '';
+    inputNombre.value = cliente?.nombre || '';
+    inputTipo.value = cliente?.tipo || 'normal';
+    inputNit.value = cliente?.nit || '';
+    inputDireccion.value = cliente?.direccion || '';
+    inputDireccionRemision.value = cliente?.direccionRemision || '';
+    inputContraentrega.checked = !!cliente?.contraentrega;
+    inputContactoRepNombre.value = cliente?.contactoReparaciones || '';
 
     contactosPedidosList.innerHTML = '';
-    const contactos = cliente.contactosPedidos || [];
+    const contactos = cliente?.contactosPedidos || [];
     if (contactos.length) {
       contactos.forEach(nombre => nuevaFilaContactoPedido(nombre));
     } else {
       nuevaFilaContactoPedido();
     }
+  }
 
+  // ---------- Abrir / cerrar modal ----------
+
+  function abrirModalNuevo() {
+    if (borradorId === '') {
+      // Ya había un borrador de compañía nueva en curso: se retoma tal cual.
+      modalTitulo.textContent = 'Nueva compañía';
+      modal.classList.add('open');
+      inputNombre.focus();
+      return;
+    }
+    modalTitulo.textContent = 'Nueva compañía';
+    cargarFormularioDesdeCliente(null);
+    borradorId = '';
     modal.classList.add('open');
     inputNombre.focus();
   }
 
-  function cerrarModal() {
+  function abrirModalEditar(cliente) {
+    if (borradorId === cliente.id) {
+      // Ya había un borrador de edición de ESTA MISMA compañía: se retoma.
+      modalTitulo.textContent = 'Editar compañía';
+      modal.classList.add('open');
+      inputNombre.focus();
+      return;
+    }
+    modalTitulo.textContent = 'Editar compañía';
+    cargarFormularioDesdeCliente(cliente);
+    borradorId = cliente.id;
+    modal.classList.add('open');
+    inputNombre.focus();
+  }
+
+  function cerrarModalConservandoBorrador() {
+    // Clic por fuera: solo oculta, no toca los datos digitados.
+    modal.classList.remove('open');
+  }
+
+  function cancelarYLimpiar() {
+    form.reset();
+    contactosPedidosList.innerHTML = '';
+    borradorId = null;
     modal.classList.remove('open');
   }
 
   document.getElementById('btn-nuevo-cliente').addEventListener('click', abrirModalNuevo);
-  document.getElementById('btn-cancelar-cliente').addEventListener('click', cerrarModal);
+  document.getElementById('btn-cancelar-cliente').addEventListener('click', cancelarYLimpiar);
   modal.addEventListener('click', (e) => {
-    if (e.target === modal) cerrarModal(); // click en el backdrop cierra
+    if (e.target === modal) cerrarModalConservandoBorrador();
   });
 
   // ---------- Guardar (crear/editar) ----------
@@ -154,7 +199,11 @@
         datos.creadoEn = firebase.firestore.FieldValue.serverTimestamp();
         await db.collection(COLECCION).add(datos);
       }
-      cerrarModal();
+      // Guardado con éxito: ya no queda borrador pendiente.
+      form.reset();
+      contactosPedidosList.innerHTML = '';
+      borradorId = null;
+      modal.classList.remove('open');
     } catch (err) {
       console.error('Error guardando cliente:', err);
       alert('No se pudo guardar la compañía. Revisa la consola.');
@@ -177,17 +226,36 @@
     }
   }
 
+  // ---------- Buscador ----------
+
+  buscador.addEventListener('input', () => {
+    filtroTexto = normalizar(buscador.value.trim());
+    renderTabla();
+  });
+
+  function clienteCoincideConFiltro(cliente) {
+    if (!filtroTexto) return true;
+    if (normalizar(cliente.nombre).includes(filtroTexto)) return true;
+    const contactos = cliente.contactosPedidos || [];
+    return contactos.some(nombre => normalizar(nombre).includes(filtroTexto));
+  }
+
   // ---------- Render de la tabla ----------
 
   function renderTabla() {
-    if (!clientesCache.length) {
+    const listaFiltrada = clientesCache.filter(clienteCoincideConFiltro);
+
+    if (!listaFiltrada.length) {
       tablaBody.innerHTML = '';
       tablaEmpty.style.display = 'block';
+      tablaEmpty.textContent = clientesCache.length
+        ? 'Ninguna compañía coincide con la búsqueda.'
+        : 'Todavía no hay compañías registradas.';
       return;
     }
     tablaEmpty.style.display = 'none';
 
-    tablaBody.innerHTML = clientesCache.map(cliente => {
+    tablaBody.innerHTML = listaFiltrada.map(cliente => {
       const tipoInfo = TIPO_INFO[cliente.tipo] || TIPO_INFO.normal;
       const tipoTag = tipoInfo.label
         ? `<span class="tag-tipo ${cliente.tipo}">${tipoInfo.icono} ${tipoInfo.label}</span>`
