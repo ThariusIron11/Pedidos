@@ -36,7 +36,13 @@
   const inputLlevaBrazo = document.getElementById('equipo-lleva-brazo');
   const inputLlevaEje = document.getElementById('equipo-lleva-eje');
 
+  const grupoAcopleCompuesto = document.getElementById('grupo-acople-compuesto');
+  const inputEsCompuesto = document.getElementById('equipo-es-compuesto');
+  const piezasCompuestoWrap = document.getElementById('piezas-compuesto-wrap');
+  const piezasCompuestoList = document.getElementById('piezas-compuesto-list');
+
   const TIPOS_CON_BRAZO_EJE = ['reductor', 'motoreductor'];
+  const TIPOS_ACOPLE = ['acople', 'piezas de acople'];
 
   let equiposCache = []; // [{id, ...datos}] — también expuesto en window.equiposCache
   let filtroTexto = '';
@@ -104,6 +110,122 @@
     }
   }
 
+  function actualizarVisibilidadAcopleCompuesto() {
+    const tipo = buscarTipo(inputTipo.value);
+    const aplica = tipo && TIPOS_ACOPLE.includes(normalizar(tipo.nombre));
+    grupoAcopleCompuesto.style.display = aplica ? 'block' : 'none';
+    if (!aplica) {
+      inputEsCompuesto.checked = false;
+      piezasCompuestoWrap.style.display = 'none';
+      piezasCompuestoList.innerHTML = '';
+    }
+  }
+
+  inputEsCompuesto.addEventListener('change', () => {
+    piezasCompuestoWrap.style.display = inputEsCompuesto.checked ? 'block' : 'none';
+    if (inputEsCompuesto.checked && !piezasCompuestoList.children.length) {
+      nuevaFilaPiezaCompuesto();
+    }
+    if (!inputEsCompuesto.checked) {
+      piezasCompuestoList.innerHTML = '';
+    }
+  });
+
+  function nombreMostrableEquipo(eq) {
+    return eq.nombre + (eq.variante ? ` (${eq.variante})` : '');
+  }
+
+  // Buscador con autocompletar para elegir una pieza de acople del catálogo,
+  // excluyendo el propio equipo que se está editando (evita auto-referencia).
+  function inicializarBuscadorPieza(contenedor, seleccionInicialId) {
+    const inputTexto = contenedor.querySelector('.buscador-input');
+    const inputValor = contenedor.querySelector('input[type="hidden"]');
+    const resultados = contenedor.querySelector('.buscador-resultados');
+
+    function catalogoFiltrado(texto) {
+      const propioId = inputId.value;
+      const porTipo = equiposCache.filter(eq => {
+        if (eq.id === propioId) return false; // no puede componerse de sí mismo
+        const tipo = buscarTipo(eq.tipoId);
+        return tipo && TIPOS_ACOPLE.includes(normalizar(tipo.nombre));
+      });
+      const t = normalizar(texto);
+      const coincidencias = t
+        ? porTipo.filter(eq => normalizar(eq.nombre + ' ' + (eq.variante || '')).includes(t))
+        : porTipo;
+      return coincidencias.slice(0, 8);
+    }
+
+    function mostrarResultados() {
+      const lista = catalogoFiltrado(inputTexto.value);
+      resultados.innerHTML = lista.length
+        ? lista.map(eq => `<div class="buscador-item" data-id="${eq.id}">${escapeHtml(nombreMostrableEquipo(eq))}</div>`).join('')
+        : '<div class="buscador-item-vacio">Sin coincidencias en el catálogo</div>';
+      resultados.classList.add('open');
+      resultados.querySelectorAll('.buscador-item').forEach(el => {
+        el.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          const eq = equiposCache.find(x => x.id === el.dataset.id);
+          if (eq) seleccionar(eq);
+        });
+      });
+    }
+
+    function seleccionar(eq) {
+      inputValor.value = eq.id;
+      inputTexto.value = nombreMostrableEquipo(eq);
+      resultados.classList.remove('open');
+    }
+
+    inputTexto.addEventListener('input', () => {
+      inputValor.value = '';
+      mostrarResultados();
+    });
+    inputTexto.addEventListener('focus', mostrarResultados);
+    inputTexto.addEventListener('blur', () => {
+      setTimeout(() => resultados.classList.remove('open'), 120);
+    });
+
+    if (seleccionInicialId) {
+      const eq = equiposCache.find(x => x.id === seleccionInicialId);
+      if (eq) {
+        inputValor.value = eq.id;
+        inputTexto.value = nombreMostrableEquipo(eq);
+      }
+    }
+  }
+
+  function nuevaFilaPiezaCompuesto(pieza) {
+    const row = document.createElement('div');
+    row.className = 'pieza-compuesto-row';
+    row.innerHTML = `
+      <div class="buscador-equipo">
+        <input type="text" class="buscador-input" placeholder="Buscar pieza de acople..." autocomplete="off">
+        <input type="hidden" class="pieza-compuesto-id">
+        <div class="buscador-resultados"></div>
+      </div>
+      <input type="number" class="pieza-compuesto-cantidad" min="1" step="1" placeholder="Cant." value="${pieza?.cantidad ?? 1}">
+      <button type="button" class="remove-contacto" title="Quitar pieza">✕</button>
+    `;
+    row.querySelector('.remove-contacto').addEventListener('click', () => row.remove());
+    piezasCompuestoList.appendChild(row);
+    inicializarBuscadorPieza(row.querySelector('.buscador-equipo'), pieza?.piezaId);
+  }
+
+  document.getElementById('btn-add-pieza-compuesto').addEventListener('click', () => nuevaFilaPiezaCompuesto());
+
+  function leerPiezasCompuestoDelFormulario() {
+    const filas = piezasCompuestoList.querySelectorAll('.pieza-compuesto-row');
+    const piezas = [];
+    filas.forEach(fila => {
+      const piezaId = fila.querySelector('.pieza-compuesto-id').value;
+      if (!piezaId) return;
+      const cantidad = parseInt(fila.querySelector('.pieza-compuesto-cantidad').value, 10) || 1;
+      piezas.push({ piezaId, cantidad });
+    });
+    return piezas;
+  }
+
   inputTipo.addEventListener('change', () => {
     // Solo sugiere el valor por defecto al CREAR un equipo nuevo; al editar uno
     // existente se respeta lo que ya tenía guardado.
@@ -112,6 +234,7 @@
       if (tipo) inputUsaSerial.checked = TIPOS_CON_SERIAL_POR_DEFECTO.includes(normalizar(tipo.nombre));
     }
     actualizarVisibilidadBrazoEje();
+    actualizarVisibilidadAcopleCompuesto();
   });
 
   // ---------- Cargar / limpiar formulario ----------
@@ -127,6 +250,19 @@
     inputLlevaBrazo.checked = !!equipo?.puedeLlevarBrazo;
     inputLlevaEje.checked = !!equipo?.puedeLlevarEjeSolido;
     actualizarVisibilidadBrazoEje();
+
+    inputEsCompuesto.checked = !!equipo?.esCompuesto;
+    piezasCompuestoList.innerHTML = '';
+    actualizarVisibilidadAcopleCompuesto(); // muestra/oculta el grupo según el tipo
+    piezasCompuestoWrap.style.display = inputEsCompuesto.checked ? 'block' : 'none';
+    const piezas = equipo?.piezasCompuesto || [];
+    if (inputEsCompuesto.checked) {
+      if (piezas.length) {
+        piezas.forEach(p => nuevaFilaPiezaCompuesto(p));
+      } else {
+        nuevaFilaPiezaCompuesto();
+      }
+    }
   }
 
   // ---------- Abrir / cerrar modal ----------
@@ -190,7 +326,9 @@
       peso: (peso === null || isNaN(peso)) ? null : peso,
       usaSerial: inputUsaSerial.checked,
       puedeLlevarBrazo: inputLlevaBrazo.checked,
-      puedeLlevarEjeSolido: inputLlevaEje.checked
+      puedeLlevarEjeSolido: inputLlevaEje.checked,
+      esCompuesto: inputEsCompuesto.checked,
+      piezasCompuesto: inputEsCompuesto.checked ? leerPiezasCompuestoDelFormulario() : []
     };
 
     if (!datos.nombre) {
@@ -288,7 +426,8 @@
 
       const extrasHtml = [
         equipo.puedeLlevarBrazo ? '<span class="meta-chip" title="Puede llevar brazo de reacción">🦾 Brazo</span>' : '',
-        equipo.puedeLlevarEjeSolido ? '<span class="meta-chip" title="Puede llevar eje sólido">🔩 Eje</span>' : ''
+        equipo.puedeLlevarEjeSolido ? '<span class="meta-chip" title="Puede llevar eje sólido">🔩 Eje</span>' : '',
+        equipo.esCompuesto ? `<span class="meta-chip" title="Compuesto por ${((equipo.piezasCompuesto||[]).length)} pieza(s)">🧩 Compuesto</span>` : ''
       ].filter(Boolean).join(' ');
 
       return `

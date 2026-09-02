@@ -543,6 +543,36 @@
   }
   .equipo-pedido-row button.remove-equipo-pedido:hover{ color: var(--danger); }
 
+  .piezas-compuesto-list{
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .pieza-compuesto-row{
+    display: grid;
+    grid-template-columns: 1fr 80px auto;
+    gap: 8px;
+    align-items: start;
+  }
+  .pieza-compuesto-row .pieza-compuesto-cantidad{
+    font-family: inherit;
+    font-size: 13px;
+    padding: 7px 8px;
+    border: 1px solid #d4d7dc;
+    border-radius: var(--radius);
+    width: 100%;
+  }
+  .pieza-compuesto-row .remove-contacto{
+    background: transparent;
+    border: none;
+    color: var(--ink-soft);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 7px 4px;
+  }
+  .pieza-compuesto-row .remove-contacto:hover{ color: var(--danger); }
+
   .buscador-equipo{
     position: relative;
   }
@@ -1121,6 +1151,20 @@
               <input type="checkbox" id="equipo-lleva-eje">
               🔩 Puede llevar eje sólido
             </label>
+          </div>
+        </div>
+
+        <div id="grupo-acople-compuesto" style="display:none;">
+          <div class="form-group">
+            <label class="checkbox-box">
+              <input type="checkbox" id="equipo-es-compuesto">
+              🧩 Es compuesto (se arma con piezas de acople)
+            </label>
+          </div>
+          <div class="form-group" id="piezas-compuesto-wrap" style="display:none;">
+            <label>Piezas que lo componen</label>
+            <div class="piezas-compuesto-list" id="piezas-compuesto-list"></div>
+            <button type="button" class="btn-link" id="btn-add-pieza-compuesto">+ Agregar pieza</button>
           </div>
         </div>
 
