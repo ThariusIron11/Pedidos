@@ -32,6 +32,11 @@
   const inputVariante = document.getElementById('equipo-variante');
   const inputPeso     = document.getElementById('equipo-peso');
   const inputUsaSerial = document.getElementById('equipo-usa-serial');
+  const grupoBrazoEje = document.getElementById('grupo-brazo-eje');
+  const inputLlevaBrazo = document.getElementById('equipo-lleva-brazo');
+  const inputLlevaEje = document.getElementById('equipo-lleva-eje');
+
+  const TIPOS_CON_BRAZO_EJE = ['reductor', 'motoreductor'];
 
   let equiposCache = []; // [{id, ...datos}] — también expuesto en window.equiposCache
   let filtroTexto = '';
@@ -89,13 +94,24 @@
 
   const TIPOS_CON_SERIAL_POR_DEFECTO = ['motor', 'reductor', 'motovibrador'];
 
+  function actualizarVisibilidadBrazoEje() {
+    const tipo = buscarTipo(inputTipo.value);
+    const aplica = tipo && TIPOS_CON_BRAZO_EJE.includes(normalizar(tipo.nombre));
+    grupoBrazoEje.style.display = aplica ? 'block' : 'none';
+    if (!aplica) {
+      inputLlevaBrazo.checked = false;
+      inputLlevaEje.checked = false;
+    }
+  }
+
   inputTipo.addEventListener('change', () => {
     // Solo sugiere el valor por defecto al CREAR un equipo nuevo; al editar uno
     // existente se respeta lo que ya tenía guardado.
-    if (inputId.value) return;
-    const tipo = buscarTipo(inputTipo.value);
-    if (!tipo) return;
-    inputUsaSerial.checked = TIPOS_CON_SERIAL_POR_DEFECTO.includes(normalizar(tipo.nombre));
+    if (!inputId.value) {
+      const tipo = buscarTipo(inputTipo.value);
+      if (tipo) inputUsaSerial.checked = TIPOS_CON_SERIAL_POR_DEFECTO.includes(normalizar(tipo.nombre));
+    }
+    actualizarVisibilidadBrazoEje();
   });
 
   // ---------- Cargar / limpiar formulario ----------
@@ -108,6 +124,9 @@
     inputVariante.value = equipo?.variante || '';
     inputPeso.value = (equipo?.peso ?? '') === '' ? '' : String(equipo.peso);
     inputUsaSerial.checked = !!equipo?.usaSerial;
+    inputLlevaBrazo.checked = !!equipo?.puedeLlevarBrazo;
+    inputLlevaEje.checked = !!equipo?.puedeLlevarEjeSolido;
+    actualizarVisibilidadBrazoEje();
   }
 
   // ---------- Abrir / cerrar modal ----------
@@ -169,7 +188,9 @@
       tipoId: inputTipo.value,
       variante: inputVariante.value.trim(),
       peso: (peso === null || isNaN(peso)) ? null : peso,
-      usaSerial: inputUsaSerial.checked
+      usaSerial: inputUsaSerial.checked,
+      puedeLlevarBrazo: inputLlevaBrazo.checked,
+      puedeLlevarEjeSolido: inputLlevaEje.checked
     };
 
     if (!datos.nombre) {
@@ -265,9 +286,14 @@
       const faltaPeso = nombreEsAlertaPeso && (equipo.peso === null || equipo.peso === undefined);
       const faltaPesoTag = faltaPeso ? ' <span class="tag-falta-peso">⚖️ Falta peso</span>' : '';
 
+      const extrasHtml = [
+        equipo.puedeLlevarBrazo ? '<span class="meta-chip" title="Puede llevar brazo de reacción">🦾 Brazo</span>' : '',
+        equipo.puedeLlevarEjeSolido ? '<span class="meta-chip" title="Puede llevar eje sólido">🔩 Eje</span>' : ''
+      ].filter(Boolean).join(' ');
+
       return `
         <tr data-id="${equipo.id}">
-          <td>${escapeHtml(equipo.nombre)}</td>
+          <td>${escapeHtml(equipo.nombre)} ${extrasHtml}</td>
           <td>${tipoBadge}</td>
           <td>${varianteHtml}</td>
           <td>${formatearPeso(equipo.peso)}${faltaPesoTag}</td>
