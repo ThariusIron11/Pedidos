@@ -543,6 +543,34 @@
   }
   .equipo-pedido-row button.remove-equipo-pedido:hover{ color: var(--danger); }
 
+  .equipo-pedido-motoreductor{
+    background: #f3f6f4;
+    border: 1px dashed #b8cabf;
+    border-radius: var(--radius);
+    padding: 10px;
+  }
+  .motoreductor-selects{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .mini-label{
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    margin-bottom: 4px;
+  }
+  .chk-es-motoreductor{
+    display: inline-flex;
+    background: #ede7f6;
+    color: #6a1b9a;
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 12px;
+  }
+  .chk-es-motoreductor input{ accent-color: #6a1b9a; }
+
   .equipo-pedido-extra{
     display: flex;
     gap: 14px;
@@ -734,6 +762,22 @@
   }
   .equipo-card-serial.completo{ color: var(--ok); }
   .equipo-card-serial.pendiente{ color: var(--warn); }
+
+  .motoreductor-subitem{
+    padding: 8px 0;
+    border-bottom: 1px dashed rgba(0,0,0,0.08);
+  }
+  .motoreductor-subitem:last-child{ border-bottom: none; }
+
+  .seriales-grupo-titulo{
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin: 14px 0 8px 0;
+  }
+  .seriales-grupo-titulo:first-child{ margin-top: 0; }
 
   .seriales-campos-list{
     display: flex;

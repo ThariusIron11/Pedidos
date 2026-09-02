@@ -153,16 +153,60 @@
       equipos.map(eq => `<option value="${eq.id}" ${eq.id === equipoIdSeleccionado ? 'selected' : ''}>${escapeHtml(eq.nombre)}${eq.variante ? ' (' + escapeHtml(eq.variante) + ')' : ''}</option>`).join('');
   }
 
+  function opcionesEquiposPorTipoNombre(nombreTipoBuscado, equipoIdSeleccionado) {
+    const equipos = window.equiposCache || [];
+    const filtrados = equipos.filter(eq => {
+      const tipo = buscarTipoEquipo(eq.tipoId);
+      return tipo && normalizar(tipo.nombre) === nombreTipoBuscado;
+    });
+    const opciones = filtrados.length
+      ? filtrados.map(eq => `<option value="${eq.id}" ${eq.id === equipoIdSeleccionado ? 'selected' : ''}>${escapeHtml(eq.nombre)}${eq.variante ? ' (' + escapeHtml(eq.variante) + ')' : ''}</option>`).join('')
+      : '';
+    return `<option value="">${filtrados.length ? 'Selecciona...' : 'No hay equipos de este tipo en el catálogo'}</option>` + opciones;
+  }
+
+  function normalizar(str) {
+    return String(str ?? '')
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
   function nuevaFilaEquipoPedido(item) {
+    const esMotoreductor = item?.tipoLinea === 'motoreductor';
+
     const row = document.createElement('div');
     row.className = 'equipo-pedido-row-wrap';
     row.innerHTML = `
-      <div class="equipo-pedido-row">
-        <select class="equipo-pedido-select">${opcionesEquiposHtml(item?.equipoId)}</select>
+      <label class="extra-check chk-es-motoreductor" style="margin-bottom:8px;">
+        <input type="checkbox" class="equipo-pedido-es-motoreductor" ${esMotoreductor ? 'checked' : ''}>
+        🔗 Es Motoreductor (Motor + Reductor)
+      </label>
+
+      <div class="equipo-pedido-row bloque-individual" style="${esMotoreductor ? 'display:none;' : ''}">
+        <select class="equipo-pedido-select">${opcionesEquiposHtml(!esMotoreductor ? item?.equipoId : null)}</select>
         <input type="number" class="equipo-pedido-cantidad" min="1" step="1" placeholder="Cant." value="${item?.cantidad ?? 1}">
         <input type="text" class="equipo-pedido-oc" placeholder="Orden de compra (opcional)" value="${item?.ordenCompra ? escapeHtml(item.ordenCompra) : ''}">
         <button type="button" class="remove-equipo-pedido" title="Quitar equipo">✕</button>
       </div>
+
+      <div class="equipo-pedido-motoreductor" style="${esMotoreductor ? '' : 'display:none;'}">
+        <div class="motoreductor-selects">
+          <div>
+            <label class="mini-label">⚡ Motor</label>
+            <select class="equipo-pedido-motor">${opcionesEquiposPorTipoNombre('motor', esMotoreductor ? item?.motorEquipoId : null)}</select>
+          </div>
+          <div>
+            <label class="mini-label">⚙️ Reductor</label>
+            <select class="equipo-pedido-reductor">${opcionesEquiposPorTipoNombre('reductor', esMotoreductor ? item?.reductorEquipoId : null)}</select>
+          </div>
+        </div>
+        <div class="equipo-pedido-row" style="grid-template-columns: 80px 1fr auto; margin-top:8px;">
+          <input type="number" class="equipo-pedido-cantidad-mr" min="1" step="1" placeholder="Cant." value="${item?.cantidad ?? 1}">
+          <input type="text" class="equipo-pedido-oc-mr" placeholder="Orden de compra (opcional)" value="${item?.ordenCompra ? escapeHtml(item.ordenCompra) : ''}">
+          <button type="button" class="remove-equipo-pedido" title="Quitar equipo">✕</button>
+        </div>
+      </div>
+
       <div class="equipo-pedido-extra">
         <label class="extra-check chk-brazo" style="display:none;">
           <input type="checkbox" class="equipo-pedido-brazo" ${item?.llevaBrazo ? 'checked' : ''}>
@@ -178,22 +222,42 @@
         </label>
       </div>
     `;
-    row.querySelector('.remove-equipo-pedido').addEventListener('click', () => row.remove());
+    row.querySelectorAll('.remove-equipo-pedido').forEach(btn => btn.addEventListener('click', () => row.remove()));
 
-    const select = row.querySelector('.equipo-pedido-select');
+    const chkEsMotoreductor = row.querySelector('.equipo-pedido-es-motoreductor');
+    const bloqueIndividual = row.querySelector('.bloque-individual');
+    const bloqueMotoreductor = row.querySelector('.equipo-pedido-motoreductor');
+    const selectIndividual = row.querySelector('.equipo-pedido-select');
+    const selectMotor = row.querySelector('.equipo-pedido-motor');
+    const selectReductor = row.querySelector('.equipo-pedido-reductor');
+
+    function actualizarModo() {
+      const activo = chkEsMotoreductor.checked;
+      bloqueIndividual.style.display = activo ? 'none' : 'grid';
+      bloqueMotoreductor.style.display = activo ? 'block' : 'none';
+      actualizarExtrasVisibles();
+    }
+
     function actualizarExtrasVisibles() {
-      const equipo = buscarEquipoCatalogo(select.value);
+      // El brazo/eje siempre depende del REDUCTOR: en modo individual, si lo que
+      // eligieron ES un reductor; en modo motoreductor, del reductor seleccionado.
+      const equipoRelevante = chkEsMotoreductor.checked
+        ? buscarEquipoCatalogo(selectReductor.value)
+        : buscarEquipoCatalogo(selectIndividual.value);
       const chkBrazo = row.querySelector('.chk-brazo');
       const chkEje = row.querySelector('.chk-eje');
-      const mostrarBrazo = !!equipo?.puedeLlevarBrazo;
-      const mostrarEje = !!equipo?.puedeLlevarEjeSolido;
+      const mostrarBrazo = !!equipoRelevante?.puedeLlevarBrazo;
+      const mostrarEje = !!equipoRelevante?.puedeLlevarEjeSolido;
       chkBrazo.style.display = mostrarBrazo ? 'flex' : 'none';
       chkEje.style.display = mostrarEje ? 'flex' : 'none';
       if (!mostrarBrazo) chkBrazo.querySelector('input').checked = false;
       if (!mostrarEje) chkEje.querySelector('input').checked = false;
     }
-    select.addEventListener('change', actualizarExtrasVisibles);
-    actualizarExtrasVisibles(); // por si ya viene un equipo precargado (editar pedido)
+
+    chkEsMotoreductor.addEventListener('change', actualizarModo);
+    selectIndividual.addEventListener('change', actualizarExtrasVisibles);
+    selectReductor.addEventListener('change', actualizarExtrasVisibles);
+    actualizarModo(); // aplica el modo inicial y calcula brazo/eje visibles
 
     equiposPedidoList.appendChild(row);
   }
@@ -202,17 +266,29 @@
     const filas = equiposPedidoList.querySelectorAll('.equipo-pedido-row-wrap');
     const items = [];
     filas.forEach(fila => {
-      const equipoId = fila.querySelector('.equipo-pedido-select').value;
-      if (!equipoId) return; // ignora filas sin equipo elegido
-      const cantidad = parseInt(fila.querySelector('.equipo-pedido-cantidad').value, 10) || 1;
-      const ordenCompra = fila.querySelector('.equipo-pedido-oc').value.trim();
       const llevaBrazo = fila.querySelector('.equipo-pedido-brazo').checked;
       const llevaEje = fila.querySelector('.equipo-pedido-eje').checked;
       const preparado = fila.querySelector('.equipo-pedido-preparado').checked;
-      items.push({ equipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, preparado });
+      const esMotoreductor = fila.querySelector('.equipo-pedido-es-motoreductor').checked;
+
+      if (esMotoreductor) {
+        const motorEquipoId = fila.querySelector('.equipo-pedido-motor').value;
+        const reductorEquipoId = fila.querySelector('.equipo-pedido-reductor').value;
+        if (!motorEquipoId || !reductorEquipoId) return; // ignora filas incompletas
+        const cantidad = parseInt(fila.querySelector('.equipo-pedido-cantidad-mr').value, 10) || 1;
+        const ordenCompra = fila.querySelector('.equipo-pedido-oc-mr').value.trim();
+        items.push({ tipoLinea: 'motoreductor', motorEquipoId, reductorEquipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, preparado });
+      } else {
+        const equipoId = fila.querySelector('.equipo-pedido-select').value;
+        if (!equipoId) return; // ignora filas sin equipo elegido
+        const cantidad = parseInt(fila.querySelector('.equipo-pedido-cantidad').value, 10) || 1;
+        const ordenCompra = fila.querySelector('.equipo-pedido-oc').value.trim();
+        items.push({ tipoLinea: 'individual', equipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, preparado });
+      }
     });
     return items;
   }
+
 
   document.getElementById('btn-add-equipo-pedido').addEventListener('click', () => nuevaFilaEquipoPedido());
 
@@ -420,6 +496,110 @@
 
   const COLOR_PREPARADO = '#2f8f5b'; // mismo verde que --ok
 
+  function renderTarjetaIndividual(item, index) {
+    const equipo = buscarEquipoCatalogo(item.equipoId);
+    const tipo = equipo ? buscarTipoEquipo(equipo.tipoId) : null;
+    const preparado = !!item.preparado;
+    const color = preparado ? COLOR_PREPARADO : (tipo?.color || '#5b6472');
+    const icono = preparado ? '✅' : (tipo?.icono || '📦');
+    const nombreTipo = tipo?.nombre || 'Tipo desconocido';
+
+    const extrasNombre = [
+      item.llevaBrazo ? '+ Brazo de reacción' : '',
+      item.llevaEje ? '+ Eje sólido' : ''
+    ].filter(Boolean).map(t => ` ${escapeHtml(t)}`).join('');
+
+    const nombreEquipo = equipo
+      ? escapeHtml(equipo.nombre) + (equipo.variante ? ` <span class="tag-variante">${escapeHtml(equipo.variante)}</span>` : '') + extrasNombre
+      : '<span style="color:var(--danger);">Equipo no encontrado</span>';
+
+    const usaSerial = !!equipo?.usaSerial;
+    const ocHtml = item.ordenCompra
+      ? `<div class="equipo-card-oc">📄 OC: ${escapeHtml(item.ordenCompra)}</div>`
+      : '';
+    const metaChips = `<span class="meta-chip">${formatearPesoFicha(equipo?.peso)}</span>`;
+
+    return `
+      <div class="equipo-card ${usaSerial ? 'clicable' : ''} ${preparado ? 'preparado' : ''}" data-index="${index}" style="border-color:${color};">
+        <div class="equipo-card-header" style="background:${color};">
+          <span>${icono}</span><span>${escapeHtml(nombreTipo)} x ${item.cantidad}</span>
+          ${preparado ? '<span class="equipo-card-preparado-tag">Preparado</span>' : ''}
+        </div>
+        <div class="equipo-card-body" style="background:${color}15;">
+          <div>
+            <div class="equipo-card-nombre">${nombreEquipo}</div>
+            ${ocHtml}
+            <div class="equipo-card-meta">${metaChips}</div>
+          </div>
+          ${usaSerial ? resumenSeriales(item, item.cantidad) : ''}
+        </div>
+        <label class="equipo-card-preparado-toggle">
+          <input type="checkbox" class="chk-preparado-card" data-index="${index}" ${preparado ? 'checked' : ''}>
+          Marcar como preparado
+        </label>
+      </div>
+    `;
+  }
+
+  function renderTarjetaMotoreductor(item, index) {
+    const motor = buscarEquipoCatalogo(item.motorEquipoId);
+    const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
+    const tipoMotoreductor = (window.tiposEquipoCache || []).find(t => normalizar(t.nombre) === 'motoreductor');
+    const preparado = !!item.preparado;
+    const color = preparado ? COLOR_PREPARADO : (tipoMotoreductor?.color || '#2e7d32');
+    const icono = preparado ? '✅' : (tipoMotoreductor?.icono || '🔧');
+
+    const extrasReductor = [
+      item.llevaBrazo ? '+ Brazo de reacción' : '',
+      item.llevaEje ? '+ Eje sólido' : ''
+    ].filter(Boolean).map(t => ` ${escapeHtml(t)}`).join('');
+
+    const nombreMotor = motor
+      ? escapeHtml(motor.nombre) + (motor.variante ? ` <span class="tag-variante">${escapeHtml(motor.variante)}</span>` : '')
+      : '<span style="color:var(--danger);">Motor no encontrado</span>';
+    const nombreReductor = reductor
+      ? escapeHtml(reductor.nombre) + (reductor.variante ? ` <span class="tag-variante">${escapeHtml(reductor.variante)}</span>` : '') + extrasReductor
+      : '<span style="color:var(--danger);">Reductor no encontrado</span>';
+
+    const usaSerialMotor = !!motor?.usaSerial;
+    const usaSerialReductor = !!reductor?.usaSerial;
+    const esClicable = usaSerialMotor || usaSerialReductor;
+
+    const ocHtml = item.ordenCompra
+      ? `<div class="equipo-card-oc">📄 OC: ${escapeHtml(item.ordenCompra)}</div>`
+      : '';
+
+    return `
+      <div class="equipo-card ${esClicable ? 'clicable' : ''} ${preparado ? 'preparado' : ''}" data-index="${index}" style="border-color:${color};">
+        <div class="equipo-card-header" style="background:${color};">
+          <span>${icono}</span><span>Motoreductor x ${item.cantidad}</span>
+          ${preparado ? '<span class="equipo-card-preparado-tag">Preparado</span>' : ''}
+        </div>
+        <div class="equipo-card-body" style="background:${color}15; flex-direction:column; align-items:stretch;">
+          ${ocHtml}
+          <div class="motoreductor-subitem">
+            <div class="equipo-card-nombre">⚡ ${nombreMotor}</div>
+            <div class="equipo-card-meta">
+              <span class="meta-chip">${formatearPesoFicha(motor?.peso)}</span>
+            </div>
+            ${usaSerialMotor ? resumenSeriales({ seriales: item.serialesMotor }, item.cantidad) : ''}
+          </div>
+          <div class="motoreductor-subitem">
+            <div class="equipo-card-nombre">⚙️ ${nombreReductor}</div>
+            <div class="equipo-card-meta">
+              <span class="meta-chip">${formatearPesoFicha(reductor?.peso)}</span>
+            </div>
+            ${usaSerialReductor ? resumenSeriales({ seriales: item.serialesReductor }, item.cantidad) : ''}
+          </div>
+        </div>
+        <label class="equipo-card-preparado-toggle">
+          <input type="checkbox" class="chk-preparado-card" data-index="${index}" ${preparado ? 'checked' : ''}>
+          Marcar como preparado
+        </label>
+      </div>
+    `;
+  }
+
   function renderSeccionEquipos(pedido) {
     const equipos = pedido.equipos || [];
     if (!equipos.length) {
@@ -427,52 +607,9 @@
       return;
     }
 
-    fichaEquiposContenido.innerHTML = `<div class="equipos-cards-list">${equipos.map((item, index) => {
-      const equipo = buscarEquipoCatalogo(item.equipoId);
-      const tipo = equipo ? buscarTipoEquipo(equipo.tipoId) : null;
-      const preparado = !!item.preparado;
-      const color = preparado ? COLOR_PREPARADO : (tipo?.color || '#5b6472');
-      const icono = preparado ? '✅' : (tipo?.icono || '📦');
-      const nombreTipo = tipo?.nombre || 'Tipo desconocido';
-
-      const extrasNombre = [
-        item.llevaBrazo ? '+ Brazo de reacción' : '',
-        item.llevaEje ? '+ Eje sólido' : ''
-      ].filter(Boolean).map(t => ` ${escapeHtml(t)}`).join('');
-
-      const nombreEquipo = equipo
-        ? escapeHtml(equipo.nombre) + (equipo.variante ? ` <span class="tag-variante">${escapeHtml(equipo.variante)}</span>` : '') + extrasNombre
-        : '<span style="color:var(--danger);">Equipo no encontrado</span>';
-
-      const usaSerial = !!equipo?.usaSerial;
-      const ocHtml = item.ordenCompra
-        ? `<div class="equipo-card-oc">📄 OC: ${escapeHtml(item.ordenCompra)}</div>`
-        : '';
-      const metaChips = `
-        <span class="meta-chip">${formatearPesoFicha(equipo?.peso)}</span>
-      `;
-
-      return `
-        <div class="equipo-card ${usaSerial ? 'clicable' : ''} ${preparado ? 'preparado' : ''}" data-index="${index}" style="border-color:${color};">
-          <div class="equipo-card-header" style="background:${color};">
-            <span>${icono}</span><span>${escapeHtml(nombreTipo)} x ${item.cantidad}</span>
-            ${preparado ? '<span class="equipo-card-preparado-tag">Preparado</span>' : ''}
-          </div>
-          <div class="equipo-card-body" style="background:${color}15;">
-            <div>
-              <div class="equipo-card-nombre">${nombreEquipo}</div>
-              ${ocHtml}
-              <div class="equipo-card-meta">${metaChips}</div>
-            </div>
-            ${usaSerial ? resumenSeriales(item, item.cantidad) : ''}
-          </div>
-          <label class="equipo-card-preparado-toggle">
-            <input type="checkbox" class="chk-preparado-card" data-index="${index}" ${preparado ? 'checked' : ''}>
-            Marcar como preparado
-          </label>
-        </div>
-      `;
-    }).join('')}</div>`;
+    fichaEquiposContenido.innerHTML = `<div class="equipos-cards-list">${equipos.map((item, index) =>
+      item.tipoLinea === 'motoreductor' ? renderTarjetaMotoreductor(item, index) : renderTarjetaIndividual(item, index)
+    ).join('')}</div>`;
 
     fichaEquiposContenido.querySelectorAll('.equipo-card.clicable').forEach(card => {
       card.addEventListener('click', (e) => {
@@ -543,26 +680,43 @@
 
   let indexEquipoEnSeriales = null;
 
+  function camposSerialesHtml(prefijoClase, cantidad, serialesActuales, etiqueta) {
+    return `
+      <div class="seriales-grupo-titulo">${etiqueta}</div>
+      <div class="seriales-campos-list">${
+        Array.from({ length: cantidad }).map((_, i) => `
+          <div class="serial-campo">
+            <label>Unidad ${i + 1}</label>
+            <input type="text" class="${prefijoClase}" value="${serialesActuales[i] ? escapeHtml(serialesActuales[i]) : ''}" placeholder="Número de serial">
+          </div>
+        `).join('')
+      }</div>
+    `;
+  }
+
   function abrirModalSeriales(index) {
     const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
     if (!pedido) return;
     const item = (pedido.equipos || [])[index];
     if (!item) return;
-    const equipo = buscarEquipoCatalogo(item.equipoId);
 
     indexEquipoEnSeriales = index;
-    modalSerialesTitulo.textContent = `Seriales — ${equipo ? equipo.nombre : 'Equipo'}`;
-
     const cantidad = item.cantidad || 1;
-    const serialesActuales = item.seriales || [];
-    serialesCampos.innerHTML = `<div class="seriales-campos-list">${
-      Array.from({ length: cantidad }).map((_, i) => `
-        <div class="serial-campo">
-          <label>Unidad ${i + 1}</label>
-          <input type="text" class="serial-input" value="${serialesActuales[i] ? escapeHtml(serialesActuales[i]) : ''}" placeholder="Número de serial">
-        </div>
-      `).join('')
-    }</div>`;
+
+    if (item.tipoLinea === 'motoreductor') {
+      const motor = buscarEquipoCatalogo(item.motorEquipoId);
+      const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      modalSerialesTitulo.textContent = 'Seriales — Motoreductor';
+
+      let html = '';
+      if (motor?.usaSerial) html += camposSerialesHtml('serial-input-motor', cantidad, item.serialesMotor || [], `⚡ Motor — ${escapeHtml(motor.nombre)}`);
+      if (reductor?.usaSerial) html += camposSerialesHtml('serial-input-reductor', cantidad, item.serialesReductor || [], `⚙️ Reductor — ${escapeHtml(reductor.nombre)}`);
+      serialesCampos.innerHTML = html || '<div class="empty-equipos-pedido">Ninguna de las dos piezas usa número serial.</div>';
+    } else {
+      const equipo = buscarEquipoCatalogo(item.equipoId);
+      modalSerialesTitulo.textContent = `Seriales — ${equipo ? equipo.nombre : 'Equipo'}`;
+      serialesCampos.innerHTML = camposSerialesHtml('serial-input', cantidad, item.seriales || [], '');
+    }
 
     modalSeriales.classList.add('open');
   }
@@ -580,10 +734,24 @@
   btnGuardarSeriales.addEventListener('click', async () => {
     const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
     if (!pedido || indexEquipoEnSeriales === null) return;
+    const itemActual = (pedido.equipos || [])[indexEquipoEnSeriales];
+    if (!itemActual) return;
 
-    const nuevosSeriales = Array.from(serialesCampos.querySelectorAll('.serial-input')).map(inp => inp.value.trim());
+    let cambios;
+    if (itemActual.tipoLinea === 'motoreductor') {
+      const serialesMotor = Array.from(serialesCampos.querySelectorAll('.serial-input-motor')).map(inp => inp.value.trim());
+      const serialesReductor = Array.from(serialesCampos.querySelectorAll('.serial-input-reductor')).map(inp => inp.value.trim());
+      cambios = {
+        ...(serialesMotor.length ? { serialesMotor } : {}),
+        ...(serialesReductor.length ? { serialesReductor } : {})
+      };
+    } else {
+      const seriales = Array.from(serialesCampos.querySelectorAll('.serial-input')).map(inp => inp.value.trim());
+      cambios = { seriales };
+    }
+
     const equiposActualizados = (pedido.equipos || []).map((item, i) =>
-      i === indexEquipoEnSeriales ? { ...item, seriales: nuevosSeriales } : item
+      i === indexEquipoEnSeriales ? { ...item, ...cambios } : item
     );
 
     btnGuardarSeriales.disabled = true;
