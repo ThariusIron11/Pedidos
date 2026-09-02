@@ -155,26 +155,61 @@
 
   function nuevaFilaEquipoPedido(item) {
     const row = document.createElement('div');
-    row.className = 'equipo-pedido-row';
+    row.className = 'equipo-pedido-row-wrap';
     row.innerHTML = `
-      <select class="equipo-pedido-select">${opcionesEquiposHtml(item?.equipoId)}</select>
-      <input type="number" class="equipo-pedido-cantidad" min="1" step="1" placeholder="Cant." value="${item?.cantidad ?? 1}">
-      <input type="text" class="equipo-pedido-oc" placeholder="Orden de compra (opcional)" value="${item?.ordenCompra ? escapeHtml(item.ordenCompra) : ''}">
-      <button type="button" class="remove-equipo-pedido" title="Quitar equipo">✕</button>
+      <div class="equipo-pedido-row">
+        <select class="equipo-pedido-select">${opcionesEquiposHtml(item?.equipoId)}</select>
+        <input type="number" class="equipo-pedido-cantidad" min="1" step="1" placeholder="Cant." value="${item?.cantidad ?? 1}">
+        <input type="text" class="equipo-pedido-oc" placeholder="Orden de compra (opcional)" value="${item?.ordenCompra ? escapeHtml(item.ordenCompra) : ''}">
+        <button type="button" class="remove-equipo-pedido" title="Quitar equipo">✕</button>
+      </div>
+      <div class="equipo-pedido-extra">
+        <label class="extra-check chk-brazo" style="display:none;">
+          <input type="checkbox" class="equipo-pedido-brazo" ${item?.llevaBrazo ? 'checked' : ''}>
+          🦾 Lleva brazo de reacción
+        </label>
+        <label class="extra-check chk-eje" style="display:none;">
+          <input type="checkbox" class="equipo-pedido-eje" ${item?.llevaEje ? 'checked' : ''}>
+          🔩 Lleva eje sólido
+        </label>
+        <label class="extra-check chk-preparado">
+          <input type="checkbox" class="equipo-pedido-preparado" ${item?.preparado ? 'checked' : ''}>
+          ✅ Preparado
+        </label>
+      </div>
     `;
     row.querySelector('.remove-equipo-pedido').addEventListener('click', () => row.remove());
+
+    const select = row.querySelector('.equipo-pedido-select');
+    function actualizarExtrasVisibles() {
+      const equipo = buscarEquipoCatalogo(select.value);
+      const chkBrazo = row.querySelector('.chk-brazo');
+      const chkEje = row.querySelector('.chk-eje');
+      const mostrarBrazo = !!equipo?.puedeLlevarBrazo;
+      const mostrarEje = !!equipo?.puedeLlevarEjeSolido;
+      chkBrazo.style.display = mostrarBrazo ? 'flex' : 'none';
+      chkEje.style.display = mostrarEje ? 'flex' : 'none';
+      if (!mostrarBrazo) chkBrazo.querySelector('input').checked = false;
+      if (!mostrarEje) chkEje.querySelector('input').checked = false;
+    }
+    select.addEventListener('change', actualizarExtrasVisibles);
+    actualizarExtrasVisibles(); // por si ya viene un equipo precargado (editar pedido)
+
     equiposPedidoList.appendChild(row);
   }
 
   function leerEquiposDelFormulario() {
-    const filas = equiposPedidoList.querySelectorAll('.equipo-pedido-row');
+    const filas = equiposPedidoList.querySelectorAll('.equipo-pedido-row-wrap');
     const items = [];
     filas.forEach(fila => {
       const equipoId = fila.querySelector('.equipo-pedido-select').value;
       if (!equipoId) return; // ignora filas sin equipo elegido
       const cantidad = parseInt(fila.querySelector('.equipo-pedido-cantidad').value, 10) || 1;
       const ordenCompra = fila.querySelector('.equipo-pedido-oc').value.trim();
-      items.push({ equipoId, cantidad, ordenCompra });
+      const llevaBrazo = fila.querySelector('.equipo-pedido-brazo').checked;
+      const llevaEje = fila.querySelector('.equipo-pedido-eje').checked;
+      const preparado = fila.querySelector('.equipo-pedido-preparado').checked;
+      items.push({ equipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, preparado });
     });
     return items;
   }
@@ -383,6 +418,8 @@
     return `<span class="equipo-card-serial pendiente">🟡 ${seriales.map(escapeHtml).join(', ')} (${seriales.length}/${cantidad})</span>`;
   }
 
+  const COLOR_PREPARADO = '#2f8f5b'; // mismo verde que --ok
+
   function renderSeccionEquipos(pedido) {
     const equipos = pedido.equipos || [];
     if (!equipos.length) {
@@ -393,12 +430,18 @@
     fichaEquiposContenido.innerHTML = `<div class="equipos-cards-list">${equipos.map((item, index) => {
       const equipo = buscarEquipoCatalogo(item.equipoId);
       const tipo = equipo ? buscarTipoEquipo(equipo.tipoId) : null;
-      const color = tipo?.color || '#5b6472';
-      const icono = tipo?.icono || '📦';
+      const preparado = !!item.preparado;
+      const color = preparado ? COLOR_PREPARADO : (tipo?.color || '#5b6472');
+      const icono = preparado ? '✅' : (tipo?.icono || '📦');
       const nombreTipo = tipo?.nombre || 'Tipo desconocido';
 
+      const extrasNombre = [
+        item.llevaBrazo ? '+ Brazo de reacción' : '',
+        item.llevaEje ? '+ Eje sólido' : ''
+      ].filter(Boolean).map(t => ` ${escapeHtml(t)}`).join('');
+
       const nombreEquipo = equipo
-        ? escapeHtml(equipo.nombre) + (equipo.variante ? ` <span class="tag-variante">${escapeHtml(equipo.variante)}</span>` : '')
+        ? escapeHtml(equipo.nombre) + (equipo.variante ? ` <span class="tag-variante">${escapeHtml(equipo.variante)}</span>` : '') + extrasNombre
         : '<span style="color:var(--danger);">Equipo no encontrado</span>';
 
       const usaSerial = !!equipo?.usaSerial;
@@ -410,9 +453,10 @@
       `;
 
       return `
-        <div class="equipo-card ${usaSerial ? 'clicable' : ''}" data-index="${index}" style="border-color:${color};">
+        <div class="equipo-card ${usaSerial ? 'clicable' : ''} ${preparado ? 'preparado' : ''}" data-index="${index}" style="border-color:${color};">
           <div class="equipo-card-header" style="background:${color};">
             <span>${icono}</span><span>${escapeHtml(nombreTipo)} x ${item.cantidad}</span>
+            ${preparado ? '<span class="equipo-card-preparado-tag">Preparado</span>' : ''}
           </div>
           <div class="equipo-card-body" style="background:${color}15;">
             <div>
@@ -422,17 +466,44 @@
             </div>
             ${usaSerial ? resumenSeriales(item, item.cantidad) : ''}
           </div>
+          <label class="equipo-card-preparado-toggle">
+            <input type="checkbox" class="chk-preparado-card" data-index="${index}" ${preparado ? 'checked' : ''}>
+            Marcar como preparado
+          </label>
         </div>
       `;
     }).join('')}</div>`;
 
     fichaEquiposContenido.querySelectorAll('.equipo-card.clicable').forEach(card => {
-      card.addEventListener('click', () => abrirModalSeriales(parseInt(card.dataset.index, 10)));
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.equipo-card-preparado-toggle')) return; // el checkbox tiene su propia acción
+        abrirModalSeriales(parseInt(card.dataset.index, 10));
+      });
+    });
+
+    fichaEquiposContenido.querySelectorAll('.chk-preparado-card').forEach(chk => {
+      chk.addEventListener('click', (e) => e.stopPropagation());
+      chk.addEventListener('change', () => togglePreparado(parseInt(chk.dataset.index, 10), chk.checked));
     });
   }
 
   function buscarTipoEquipo(tipoId) {
     return (window.tiposEquipoCache || []).find(t => t.id === tipoId) || null;
+  }
+
+  async function togglePreparado(index, preparado) {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) return;
+    const equiposActualizados = (pedido.equipos || []).map((item, i) =>
+      i === index ? { ...item, preparado } : item
+    );
+    try {
+      await db.collection(COLECCION).doc(pedido.id).update({ equipos: equiposActualizados });
+      renderSeccionEquipos({ ...pedido, equipos: equiposActualizados });
+    } catch (err) {
+      console.error('Error actualizando estado preparado:', err);
+      alert('No se pudo actualizar. Revisa la consola.');
+    }
   }
 
   function abrirFicha(pedido) {
