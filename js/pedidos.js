@@ -153,22 +153,76 @@
       equipos.map(eq => `<option value="${eq.id}" ${eq.id === equipoIdSeleccionado ? 'selected' : ''}>${escapeHtml(eq.nombre)}${eq.variante ? ' (' + escapeHtml(eq.variante) + ')' : ''}</option>`).join('');
   }
 
-  function opcionesEquiposPorTipoNombre(nombreTipoBuscado, equipoIdSeleccionado) {
-    const equipos = window.equiposCache || [];
-    const filtrados = equipos.filter(eq => {
-      const tipo = buscarTipoEquipo(eq.tipoId);
-      return tipo && normalizar(tipo.nombre) === nombreTipoBuscado;
-    });
-    const opciones = filtrados.length
-      ? filtrados.map(eq => `<option value="${eq.id}" ${eq.id === equipoIdSeleccionado ? 'selected' : ''}>${escapeHtml(eq.nombre)}${eq.variante ? ' (' + escapeHtml(eq.variante) + ')' : ''}</option>`).join('')
-      : '';
-    return `<option value="">${filtrados.length ? 'Selecciona...' : 'No hay equipos de este tipo en el catálogo'}</option>` + opciones;
-  }
-
   function normalizar(str) {
     return String(str ?? '')
       .toLowerCase()
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
+  function nombreMostrableEquipo(eq) {
+    return eq.nombre + (eq.variante ? ` (${eq.variante})` : '');
+  }
+
+  // Buscador con autocompletar para elegir un equipo del catálogo, filtrado
+  // opcionalmente por tipo (usado para Motor/Reductor dentro de Motoreductor).
+  // El contenedor debe tener: input.buscador-input, input[type=hidden] (guarda
+  // el id elegido) y div.buscador-resultados.
+  function inicializarBuscadorEquipo(contenedor, { tipoNombre, seleccionInicialId, onChange }) {
+    const inputTexto = contenedor.querySelector('.buscador-input');
+    const inputValor = contenedor.querySelector('input[type="hidden"]');
+    const resultados = contenedor.querySelector('.buscador-resultados');
+
+    function catalogoFiltrado(texto) {
+      const equipos = window.equiposCache || [];
+      const porTipo = tipoNombre
+        ? equipos.filter(eq => normalizar(buscarTipoEquipo(eq.tipoId)?.nombre) === tipoNombre)
+        : equipos;
+      const t = normalizar(texto);
+      const coincidencias = t
+        ? porTipo.filter(eq => normalizar(eq.nombre + ' ' + (eq.variante || '')).includes(t))
+        : porTipo;
+      return coincidencias.slice(0, 8);
+    }
+
+    function mostrarResultados() {
+      const lista = catalogoFiltrado(inputTexto.value);
+      resultados.innerHTML = lista.length
+        ? lista.map(eq => `<div class="buscador-item" data-id="${eq.id}">${escapeHtml(nombreMostrableEquipo(eq))}</div>`).join('')
+        : `<div class="buscador-item-vacio">Sin coincidencias en el catálogo</div>`;
+      resultados.classList.add('open');
+      resultados.querySelectorAll('.buscador-item').forEach(el => {
+        el.addEventListener('mousedown', (e) => {
+          e.preventDefault(); // evita que el blur del input cierre la lista antes del click
+          const eq = (window.equiposCache || []).find(x => x.id === el.dataset.id);
+          if (eq) seleccionar(eq);
+        });
+      });
+    }
+
+    function seleccionar(eq) {
+      inputValor.value = eq.id;
+      inputTexto.value = nombreMostrableEquipo(eq);
+      resultados.classList.remove('open');
+      if (onChange) onChange(eq.id);
+    }
+
+    inputTexto.addEventListener('input', () => {
+      inputValor.value = ''; // hasta que elija algo de la lista, no hay selección válida
+      mostrarResultados();
+      if (onChange) onChange('');
+    });
+    inputTexto.addEventListener('focus', mostrarResultados);
+    inputTexto.addEventListener('blur', () => {
+      setTimeout(() => resultados.classList.remove('open'), 120);
+    });
+
+    if (seleccionInicialId) {
+      const eq = (window.equiposCache || []).find(x => x.id === seleccionInicialId);
+      if (eq) {
+        inputValor.value = eq.id;
+        inputTexto.value = nombreMostrableEquipo(eq);
+      }
+    }
   }
 
   function nuevaFilaEquipoPedido(item) {
@@ -193,11 +247,19 @@
         <div class="motoreductor-selects">
           <div>
             <label class="mini-label">⚡ Motor</label>
-            <select class="equipo-pedido-motor">${opcionesEquiposPorTipoNombre('motor', esMotoreductor ? item?.motorEquipoId : null)}</select>
+            <div class="buscador-equipo">
+              <input type="text" class="buscador-input" placeholder="Escribe para buscar motor..." autocomplete="off">
+              <input type="hidden" class="equipo-pedido-motor">
+              <div class="buscador-resultados"></div>
+            </div>
           </div>
           <div>
             <label class="mini-label">⚙️ Reductor</label>
-            <select class="equipo-pedido-reductor">${opcionesEquiposPorTipoNombre('reductor', esMotoreductor ? item?.reductorEquipoId : null)}</select>
+            <div class="buscador-equipo">
+              <input type="text" class="buscador-input" placeholder="Escribe para buscar reductor..." autocomplete="off">
+              <input type="hidden" class="equipo-pedido-reductor">
+              <div class="buscador-resultados"></div>
+            </div>
           </div>
         </div>
         <div class="equipo-pedido-row" style="grid-template-columns: 80px 1fr auto; margin-top:8px;">
@@ -228,7 +290,6 @@
     const bloqueIndividual = row.querySelector('.bloque-individual');
     const bloqueMotoreductor = row.querySelector('.equipo-pedido-motoreductor');
     const selectIndividual = row.querySelector('.equipo-pedido-select');
-    const selectMotor = row.querySelector('.equipo-pedido-motor');
     const selectReductor = row.querySelector('.equipo-pedido-reductor');
 
     function actualizarModo() {
@@ -256,8 +317,22 @@
 
     chkEsMotoreductor.addEventListener('change', actualizarModo);
     selectIndividual.addEventListener('change', actualizarExtrasVisibles);
-    selectReductor.addEventListener('change', actualizarExtrasVisibles);
     actualizarModo(); // aplica el modo inicial y calcula brazo/eje visibles
+
+    const contenedoresBuscador = row.querySelectorAll('.buscador-equipo');
+    const contenedorMotor = contenedoresBuscador[0];
+    const contenedorReductor = contenedoresBuscador[1];
+
+    inicializarBuscadorEquipo(contenedorMotor, {
+      tipoNombre: 'motor',
+      seleccionInicialId: esMotoreductor ? item?.motorEquipoId : null
+    });
+    inicializarBuscadorEquipo(contenedorReductor, {
+      tipoNombre: 'reductor',
+      seleccionInicialId: esMotoreductor ? item?.reductorEquipoId : null,
+      onChange: actualizarExtrasVisibles
+    });
+    actualizarExtrasVisibles(); // por si ya venía un reductor precargado (editar pedido)
 
     equiposPedidoList.appendChild(row);
   }
