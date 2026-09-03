@@ -879,6 +879,72 @@
   }
   .serial-campo input:focus{ outline: none; border-color: var(--copper); }
 
+  .equipos-envio-list{
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .equipo-envio-row{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #fafafb;
+    border: 1px solid #e2e4e9;
+    border-radius: var(--radius);
+    padding: 9px 12px;
+  }
+  .equipo-envio-row.sin-disponible{ opacity: 0.5; }
+  .equipo-envio-row label{
+    flex: 1;
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+  }
+  .equipo-envio-row .disponible-nota{
+    font-size: 11px;
+    color: var(--ink-soft);
+    font-weight: 400;
+  }
+  .equipo-envio-row input[type="number"]{
+    width: 70px;
+    font-family: inherit;
+    font-size: 13px;
+    padding: 6px 8px;
+    border: 1px solid #d4d7dc;
+    border-radius: var(--radius);
+  }
+  .equipo-envio-row input[type="checkbox"]{ accent-color: var(--copper); }
+
+  .tag-envio-armado{
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--warn);
+    background: #f3e6c9;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .tag-envio-despachado{
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ok);
+    background: #dcefe3;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+
+  .envio-vinculado-card{
+    background: #fafafb;
+    border: 1px solid #e2e4e9;
+    border-left: 3px solid var(--copper);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    cursor: pointer;
+  }
+  .envio-vinculado-card:hover{ background: #f3f1ee; }
+
   @media (max-width: 760px){
     .ficha-campos{ grid-template-columns: 1fr; }
     body{ flex-direction: column; }
@@ -946,9 +1012,36 @@
       </section>
 
       <section class="panel" id="panel-envios" data-title="Envíos / Despachos">
-        <div class="placeholder">
-          <strong>Pestaña Envíos / Despachos</strong>
-          Todavía no tiene contenido. La lógica va en js/envios.js.
+        <div class="panel-header">
+          <h2>Envíos</h2>
+        </div>
+
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+          <div class="form-group" style="max-width:220px; margin-bottom:0;">
+            <select id="filtro-estado-envios">
+              <option value="">Todos los estados</option>
+              <option value="armado">Armado</option>
+              <option value="despachado">Despachado</option>
+            </select>
+          </div>
+        </div>
+
+        <table class="data-table" id="tabla-envios">
+          <thead>
+            <tr>
+              <th>Quién se encarga</th>
+              <th>Remesa</th>
+              <th>Pedidos incluidos</th>
+              <th>Estado</th>
+              <th style="width:70px;"></th>
+            </tr>
+          </thead>
+          <tbody id="tabla-envios-body">
+            <!-- filas generadas por envios.js -->
+          </tbody>
+        </table>
+        <div class="empty-state" id="envios-empty" style="display:none;">
+          Todavía no hay envíos registrados. Se crean desde la ficha de un pedido, pestaña "Envío / Despacho".
         </div>
       </section>
 
@@ -1045,6 +1138,27 @@
         </table>
         <div class="empty-state" id="tipos-empty" style="display:none;">
           Todavía no hay tipos de equipo registrados.
+        </div>
+
+        <div class="panel-header" style="margin-top:32px;">
+          <h2>Empresas de envío</h2>
+          <button type="button" class="btn" id="btn-nueva-empresa-envio">+ Nueva empresa</button>
+        </div>
+
+        <table class="data-table" id="tabla-empresas-envio">
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>¿Da recibo?</th>
+              <th style="width:110px;"></th>
+            </tr>
+          </thead>
+          <tbody id="tabla-empresas-envio-body">
+            <!-- filas generadas por config.js -->
+          </tbody>
+        </table>
+        <div class="empty-state" id="empresas-envio-empty" style="display:none;">
+          Todavía no hay empresas de envío registradas. (La opción "Interno" siempre está disponible sin necesidad de configurarla aquí.)
         </div>
       </section>
     </div>
@@ -1216,6 +1330,33 @@
     </div>
   </div>
 
+  <!-- Modal: nueva/editar empresa de envío (usado por config.js) -->
+  <div class="modal-backdrop" id="modal-empresa-envio">
+    <div class="modal">
+      <h3 id="modal-empresa-envio-titulo">Nueva empresa de envío</h3>
+      <form id="form-empresa-envio">
+        <input type="hidden" id="empresa-envio-id">
+
+        <div class="form-group">
+          <label for="empresa-envio-nombre">Nombre</label>
+          <input type="text" id="empresa-envio-nombre" required placeholder="Ej: TCC, Dylogica, Paquetex...">
+        </div>
+
+        <div class="form-group">
+          <label class="checkbox-box">
+            <input type="checkbox" id="empresa-envio-da-recibo">
+            Esta empresa da recibo
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="btn-cancelar-empresa-envio">Cancelar</button>
+          <button type="submit" class="btn">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Modal: nuevo/editar pedido (usado por pedidos.js) -->
   <div class="modal-backdrop" id="modal-pedido">
     <div class="modal modal-wide">
@@ -1296,10 +1437,11 @@
       </div>
 
       <div class="subtab-panel" id="subtab-ficha-envio">
-        <div class="placeholder">
-          <strong>Envío / Despacho</strong>
-          Se habilitará cuando esté lista la pestaña Envíos.
+        <div class="panel-header" style="margin-bottom:14px;">
+          <h2 style="font-size:14px;">Envíos vinculados a este pedido</h2>
+          <button type="button" class="btn" id="btn-agregar-a-envio">+ Agregar a un envío</button>
         </div>
+        <div id="envios-vinculados-contenido"><!-- generado por pedidos.js --></div>
       </div>
 
       <div class="modal-actions">
@@ -1318,6 +1460,86 @@
         <button type="button" class="btn secondary" id="btn-cancelar-seriales">Cancelar</button>
         <button type="button" class="btn" id="btn-guardar-seriales">Guardar</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Modal: FICHA de envío (usado por envios.js) -->
+  <div class="modal-backdrop" id="modal-ficha-envio">
+    <div class="modal modal-ficha">
+      <div class="ficha-header" id="ficha-envio-header">
+        <div>
+          <div class="ficha-header-numero" id="ficha-envio-titulo">Envío</div>
+        </div>
+        <div class="ficha-header-tags" id="ficha-envio-estado-tag"></div>
+      </div>
+      <div style="padding:20px 26px;">
+        <div id="ficha-envio-contenido"><!-- generado por envios.js --></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" id="btn-cerrar-ficha-envio">Cerrar</button>
+        <button type="button" class="btn" id="btn-despachar-envio">Marcar como despachado</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: agregar el pedido actual a un envío (usado por pedidos.js) -->
+  <div class="modal-backdrop" id="modal-agregar-envio">
+    <div class="modal modal-wide">
+      <h3>Agregar a un envío</h3>
+      <form id="form-agregar-envio">
+        <div class="form-group">
+          <label for="envio-quien-encarga">¿Quién se encarga del envío?</label>
+          <select id="envio-quien-encarga">
+            <option value="interno">🏠 Interno</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="grupo-persona-recoge" style="display:none;">
+          <label for="envio-persona-recoge">¿Quién recoge?</label>
+          <input type="text" id="envio-persona-recoge" placeholder="Nombre de la persona (nuestro personal o el cliente)">
+        </div>
+
+        <div class="form-group">
+          <label>¿A qué envío va?</label>
+          <div class="tipo-pedido-toggle">
+            <label class="tipo-pedido-opcion">
+              <input type="radio" name="modo-envio" value="nuevo" checked>
+              Crear un envío nuevo
+            </label>
+            <label class="tipo-pedido-opcion">
+              <input type="radio" name="modo-envio" value="existente">
+              Usar un envío ya armado
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group" id="grupo-envio-existente" style="display:none;">
+          <label for="envio-existente-select">Envío existente</label>
+          <select id="envio-existente-select">
+            <option value="">Selecciona...</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="grupo-remesa" style="display:none;">
+          <label for="envio-remesa">Remesa de envío (opcional)</label>
+          <input type="text" id="envio-remesa" placeholder="Número de remesa, si ya la tienes">
+        </div>
+
+        <div class="form-group">
+          <label for="envio-remision">Remisión de este pedido en el envío</label>
+          <input type="text" id="envio-remision" required placeholder="Número de remisión (obligatorio)">
+        </div>
+
+        <div class="form-group">
+          <label>Equipos a incluir</label>
+          <div class="equipos-envio-list" id="equipos-envio-list"><!-- generado por pedidos.js --></div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="btn-cancelar-agregar-envio">Cancelar</button>
+          <button type="submit" class="btn">Guardar</button>
+        </div>
+      </form>
     </div>
   </div>
 

@@ -236,3 +236,186 @@
 
   sembrarTiposPorDefecto();
 })();
+
+// ================== Sección: Empresas de envío ==================
+// CRUD de empresas de envío sobre Firestore (colección "empresas_envio").
+// La opción "Interno" NO vive aquí — es una bandera especial que maneja
+// directamente pedidos.js/envios.js, sin necesidad de configurarla.
+//
+// Cada empresa: { nombre, daRecibo (boolean) }
+
+(function () {
+  const COLECCION = 'empresas_envio';
+
+  const tablaBody  = document.getElementById('tabla-empresas-envio-body');
+  const tablaEmpty = document.getElementById('empresas-envio-empty');
+  const modal       = document.getElementById('modal-empresa-envio');
+  const modalTitulo = document.getElementById('modal-empresa-envio-titulo');
+  const form         = document.getElementById('form-empresa-envio');
+
+  const inputId       = document.getElementById('empresa-envio-id');
+  const inputNombre   = document.getElementById('empresa-envio-nombre');
+  const inputDaRecibo = document.getElementById('empresa-envio-da-recibo');
+
+  window.empresasEnvioCache = []; // expuesto globalmente para Pedidos/Envíos
+  let borradorId = null;
+
+  function escapeHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function difundirCambio() {
+    document.dispatchEvent(new CustomEvent('empresas-envio:cambio', {
+      detail: { empresas: window.empresasEnvioCache }
+    }));
+  }
+
+  function cargarFormularioDesdeEmpresa(empresa) {
+    form.reset();
+    inputId.value = empresa ? empresa.id : '';
+    inputNombre.value = empresa?.nombre || '';
+    inputDaRecibo.checked = !!empresa?.daRecibo;
+  }
+
+  function abrirModalNuevo() {
+    if (borradorId === '') {
+      modalTitulo.textContent = 'Nueva empresa de envío';
+      modal.classList.add('open');
+      inputNombre.focus();
+      return;
+    }
+    modalTitulo.textContent = 'Nueva empresa de envío';
+    cargarFormularioDesdeEmpresa(null);
+    borradorId = '';
+    modal.classList.add('open');
+    inputNombre.focus();
+  }
+
+  function abrirModalEditar(empresa) {
+    if (borradorId === empresa.id) {
+      modalTitulo.textContent = 'Editar empresa de envío';
+      modal.classList.add('open');
+      inputNombre.focus();
+      return;
+    }
+    modalTitulo.textContent = 'Editar empresa de envío';
+    cargarFormularioDesdeEmpresa(empresa);
+    borradorId = empresa.id;
+    modal.classList.add('open');
+    inputNombre.focus();
+  }
+
+  function cerrarModalConservandoBorrador() {
+    modal.classList.remove('open');
+  }
+
+  function cancelarYLimpiar() {
+    form.reset();
+    borradorId = null;
+    modal.classList.remove('open');
+  }
+
+  document.getElementById('btn-nueva-empresa-envio').addEventListener('click', abrirModalNuevo);
+  document.getElementById('btn-cancelar-empresa-envio').addEventListener('click', cancelarYLimpiar);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) cerrarModalConservandoBorrador();
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const datos = {
+      nombre: inputNombre.value.trim(),
+      daRecibo: inputDaRecibo.checked
+    };
+
+    if (!datos.nombre) {
+      inputNombre.focus();
+      return;
+    }
+
+    const id = inputId.value;
+    const btnGuardar = form.querySelector('button[type="submit"]');
+    btnGuardar.disabled = true;
+    btnGuardar.textContent = 'Guardando...';
+
+    try {
+      if (id) {
+        await db.collection(COLECCION).doc(id).update(datos);
+      } else {
+        await db.collection(COLECCION).add(datos);
+      }
+      form.reset();
+      borradorId = null;
+      modal.classList.remove('open');
+    } catch (err) {
+      console.error('Error guardando empresa de envío:', err);
+      alert('No se pudo guardar la empresa de envío. Revisa la consola.');
+    } finally {
+      btnGuardar.disabled = false;
+      btnGuardar.textContent = 'Guardar';
+    }
+  });
+
+  async function eliminarEmpresa(empresa) {
+    const ok = confirm(`¿Eliminar "${empresa.nombre}"? Los envíos ya registrados con ella conservan su nombre guardado.`);
+    if (!ok) return;
+    try {
+      await db.collection(COLECCION).doc(empresa.id).delete();
+    } catch (err) {
+      console.error('Error eliminando empresa de envío:', err);
+      alert('No se pudo eliminar la empresa de envío. Revisa la consola.');
+    }
+  }
+
+  function renderTabla() {
+    if (!window.empresasEnvioCache.length) {
+      tablaBody.innerHTML = '';
+      tablaEmpty.style.display = 'block';
+      return;
+    }
+    tablaEmpty.style.display = 'none';
+
+    tablaBody.innerHTML = window.empresasEnvioCache.map(empresa => `
+      <tr data-id="${empresa.id}">
+        <td>${escapeHtml(empresa.nombre)}</td>
+        <td>${empresa.daRecibo ? '✅ Sí' : '— No'}</td>
+        <td>
+          <div class="row-actions">
+            <button type="button" class="btn-editar" data-id="${empresa.id}">Editar</button>
+            <button type="button" class="btn-eliminar danger" data-id="${empresa.id}">Eliminar</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+
+    tablaBody.querySelectorAll('.btn-editar').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const empresa = window.empresasEnvioCache.find(e => e.id === btn.dataset.id);
+        if (empresa) abrirModalEditar(empresa);
+      });
+    });
+    tablaBody.querySelectorAll('.btn-eliminar').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const empresa = window.empresasEnvioCache.find(e => e.id === btn.dataset.id);
+        if (empresa) eliminarEmpresa(empresa);
+      });
+    });
+  }
+
+  // Arranca de inmediato (no solo al entrar a Config), porque Pedidos/Envíos
+  // dependen de este catálogo para elegir quién se encarga del envío.
+  db.collection(COLECCION).orderBy('nombre').onSnapshot(
+    (snapshot) => {
+      window.empresasEnvioCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      renderTabla();
+      difundirCambio();
+    },
+    (err) => {
+      console.error('Error escuchando empresas de envío:', err);
+    }
+  );
+})();

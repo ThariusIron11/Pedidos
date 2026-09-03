@@ -745,6 +745,7 @@
 
     renderSeccionCliente(pedido);
     renderSeccionEquipos(pedido);
+    renderEnviosVinculados();
     resetFichaSubtabs();
 
     btnEditarDesdeFicha.dataset.id = pedido.id;
@@ -862,6 +863,284 @@
     }
   });
 
+  // ---------- Envío / Despacho (sub-pestaña de la Ficha) ----------
+  // Los envíos son documentos independientes (colección "envios", ver envios.js)
+  // porque VARIOS pedidos pueden compartir el mismo envío/remesa. Aquí solo se
+  // vinculan/consultan desde la ficha del pedido.
+
+  const COLECCION_ENVIOS = 'envios';
+  const btnAgregarAEnvio = document.getElementById('btn-agregar-a-envio');
+  const enviosVinculadosContenido = document.getElementById('envios-vinculados-contenido');
+
+  const modalAgregarEnvio = document.getElementById('modal-agregar-envio');
+  const formAgregarEnvio = document.getElementById('form-agregar-envio');
+  const selectQuienEncarga = document.getElementById('envio-quien-encarga');
+  const grupoPersonaRecoge = document.getElementById('grupo-persona-recoge');
+  const inputPersonaRecoge = document.getElementById('envio-persona-recoge');
+  const radiosModoEnvio = formAgregarEnvio.querySelectorAll('input[name="modo-envio"]');
+  const grupoEnvioExistente = document.getElementById('grupo-envio-existente');
+  const selectEnvioExistente = document.getElementById('envio-existente-select');
+  const grupoRemesa = document.getElementById('grupo-remesa');
+  const inputRemesaEnvio = document.getElementById('envio-remesa');
+  const inputRemisionEnvio = document.getElementById('envio-remision');
+  const equiposEnvioList = document.getElementById('equipos-envio-list');
+  const btnCancelarAgregarEnvio = document.getElementById('btn-cancelar-agregar-envio');
+
+  function nombreItemPedido(item) {
+    if (item.tipoLinea === 'motoreductor') {
+      const motor = buscarEquipoCatalogo(item.motorEquipoId);
+      const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      return `Motoreductor (${motor ? motor.nombre : '?'} + ${reductor ? reductor.nombre : '?'})`;
+    }
+    const equipo = buscarEquipoCatalogo(item.equipoId);
+    return equipo ? equipo.nombre + (equipo.variante ? ` (${equipo.variante})` : '') : 'Equipo no encontrado';
+  }
+
+  function cantidadReservadaEnEnvios(pedidoId, itemIndex, excluirEnvioId) {
+    let total = 0;
+    (window.enviosCache || []).forEach(envio => {
+      if (excluirEnvioId && envio.id === excluirEnvioId) return;
+      (envio.pedidos || []).forEach(pInfo => {
+        if (pInfo.pedidoId !== pedidoId) return;
+        (pInfo.items || []).forEach(it => {
+          if (it.itemIndex === itemIndex) total += it.cantidad || 0;
+        });
+      });
+    });
+    return total;
+  }
+
+  function nombreQuienEncargaEnvio(envio) {
+    if (envio.esInterno) return '🏠 Interno' + (envio.personaRecoge ? ` — ${escapeHtml(envio.personaRecoge)}` : '');
+    const empresa = (window.empresasEnvioCache || []).find(e => e.id === envio.empresaEnvioId);
+    return empresa ? escapeHtml(empresa.nombre) : '<span style="color:var(--danger);">Empresa no encontrada</span>';
+  }
+
+  function renderEnviosVinculados() {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) return;
+
+    const vinculados = (window.enviosCache || []).filter(envio =>
+      (envio.pedidos || []).some(pInfo => pInfo.pedidoId === pedido.id)
+    );
+
+    if (!vinculados.length) {
+      enviosVinculadosContenido.innerHTML = '<div class="empty-equipos-pedido">Este pedido todavía no está en ningún envío.</div>';
+      return;
+    }
+
+    enviosVinculadosContenido.innerHTML = vinculados.map(envio => {
+      const pInfo = (envio.pedidos || []).find(p => p.pedidoId === pedido.id);
+      const estadoTag = envio.estado === 'despachado'
+        ? '<span class="tag-envio-despachado">Despachado</span>'
+        : '<span class="tag-envio-armado">Armado</span>';
+      const itemsHtml = (pInfo?.items || []).map(it => {
+        const item = pedido.equipos?.[it.itemIndex];
+        return item ? `<div>${escapeHtml(nombreItemPedido(item))} — cant: ${it.cantidad}</div>` : '';
+      }).join('');
+
+      return `
+        <div class="envio-vinculado-card" data-envio-id="${envio.id}">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <strong style="font-size:13.5px;">${nombreQuienEncargaEnvio(envio)}</strong>
+            ${estadoTag}
+          </div>
+          <div style="font-size:12.5px; color:var(--ink-soft); margin-bottom:6px;">
+            ${envio.remesa ? `Remesa: ${escapeHtml(envio.remesa)} · ` : ''}Remisión: ${escapeHtml(pInfo?.remision || '—')}
+          </div>
+          <div style="font-size:12.5px;">${itemsHtml}</div>
+        </div>
+      `;
+    }).join('');
+
+    enviosVinculadosContenido.querySelectorAll('.envio-vinculado-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const id = card.dataset.envioId;
+        cerrarFicha();
+        if (window.abrirFichaEnvio) window.abrirFichaEnvio(id);
+      });
+    });
+  }
+
+  document.addEventListener('envios:cambio', () => {
+    if (pedidoIdEnFicha) renderEnviosVinculados();
+  });
+  document.addEventListener('empresas-envio:cambio', () => {
+    if (pedidoIdEnFicha) renderEnviosVinculados();
+  });
+
+  // ---------- Modal: agregar el pedido actual a un envío ----------
+
+  function poblarSelectQuienEncarga() {
+    const empresas = window.empresasEnvioCache || [];
+    const actual = selectQuienEncarga.value;
+    selectQuienEncarga.innerHTML = '<option value="interno">🏠 Interno</option>' +
+      empresas.map(e => `<option value="${e.id}">${escapeHtml(e.nombre)}</option>`).join('');
+    selectQuienEncarga.value = actual || 'interno';
+  }
+
+  function poblarSelectEnvioExistente() {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    const quien = selectQuienEncarga.value;
+    const candidatos = (window.enviosCache || []).filter(envio => {
+      if (envio.estado !== 'armado') return false;
+      if (quien === 'interno') return envio.esInterno;
+      return !envio.esInterno && envio.empresaEnvioId === quien;
+    });
+    if (!candidatos.length) {
+      selectEnvioExistente.innerHTML = '<option value="">No hay envíos armados con este criterio</option>';
+      return;
+    }
+    selectEnvioExistente.innerHTML = '<option value="">Selecciona...</option>' + candidatos.map(envio => {
+      const cant = (envio.pedidos || []).length;
+      const label = `${envio.remesa ? 'Remesa ' + envio.remesa : (envio.personaRecoge || 'Interno')} (${cant} ${cant === 1 ? 'pedido' : 'pedidos'})`;
+      return `<option value="${envio.id}">${escapeHtml(label)}</option>`;
+    }).join('');
+  }
+
+  function actualizarVisibilidadCamposEnvio() {
+    const esInterno = selectQuienEncarga.value === 'interno';
+    grupoPersonaRecoge.style.display = esInterno ? 'block' : 'none';
+
+    const modo = Array.from(radiosModoEnvio).find(r => r.checked)?.value || 'nuevo';
+    grupoEnvioExistente.style.display = modo === 'existente' ? 'block' : 'none';
+    grupoRemesa.style.display = (modo === 'nuevo' && !esInterno) ? 'block' : 'none';
+
+    if (modo === 'existente') poblarSelectEnvioExistente();
+  }
+
+  selectQuienEncarga.addEventListener('change', actualizarVisibilidadCamposEnvio);
+  radiosModoEnvio.forEach(r => r.addEventListener('change', actualizarVisibilidadCamposEnvio));
+
+  function poblarChecklistEquipos() {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) { equiposEnvioList.innerHTML = ''; return; }
+
+    const items = pedido.equipos || [];
+    if (!items.length) {
+      equiposEnvioList.innerHTML = '<div class="empty-equipos-pedido">Este pedido no tiene equipos.</div>';
+      return;
+    }
+
+    equiposEnvioList.innerHTML = items.map((item, index) => {
+      const total = item.cantidad || 0;
+      const reservado = cantidadReservadaEnEnvios(pedido.id, index);
+      const disponible = Math.max(0, total - reservado);
+      return `
+        <div class="equipo-envio-row ${disponible <= 0 ? 'sin-disponible' : ''}" data-index="${index}">
+          <input type="checkbox" class="equipo-envio-check" ${disponible <= 0 ? 'disabled' : ''}>
+          <label>
+            ${escapeHtml(nombreItemPedido(item))}
+            <span class="disponible-nota">Disponible: ${disponible} de ${total}</span>
+          </label>
+          <input type="number" class="equipo-envio-cantidad" min="1" max="${disponible}" value="${disponible}" ${disponible <= 0 ? 'disabled' : ''}>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function abrirModalAgregarEnvio() {
+    formAgregarEnvio.reset();
+    poblarSelectQuienEncarga();
+    poblarChecklistEquipos();
+    actualizarVisibilidadCamposEnvio();
+    modalAgregarEnvio.classList.add('open');
+  }
+
+  function cerrarModalAgregarEnvio() {
+    modalAgregarEnvio.classList.remove('open');
+  }
+
+  btnAgregarAEnvio.addEventListener('click', abrirModalAgregarEnvio);
+  btnCancelarAgregarEnvio.addEventListener('click', cerrarModalAgregarEnvio);
+  modalAgregarEnvio.addEventListener('click', (e) => {
+    if (e.target === modalAgregarEnvio) cerrarModalAgregarEnvio();
+  });
+
+  formAgregarEnvio.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) return;
+
+    const quien = selectQuienEncarga.value;
+    const esInterno = quien === 'interno';
+    const modo = Array.from(radiosModoEnvio).find(r => r.checked)?.value || 'nuevo';
+    const remision = inputRemisionEnvio.value.trim();
+
+    if (!remision) {
+      inputRemisionEnvio.focus();
+      return;
+    }
+    if (modo === 'existente' && !selectEnvioExistente.value) {
+      selectEnvioExistente.focus();
+      return;
+    }
+
+    const filas = equiposEnvioList.querySelectorAll('.equipo-envio-row');
+    const items = [];
+    filas.forEach(fila => {
+      const chk = fila.querySelector('.equipo-envio-check');
+      if (!chk.checked) return;
+      const cantidad = parseInt(fila.querySelector('.equipo-envio-cantidad').value, 10) || 0;
+      if (cantidad <= 0) return;
+      items.push({ itemIndex: parseInt(fila.dataset.index, 10), cantidad });
+    });
+
+    if (!items.length) {
+      alert('Selecciona al menos un equipo para agregar al envío.');
+      return;
+    }
+
+    const btnGuardar = formAgregarEnvio.querySelector('button[type="submit"]');
+    btnGuardar.disabled = true;
+    btnGuardar.textContent = 'Guardando...';
+
+    try {
+      if (modo === 'existente') {
+        const envio = (window.enviosCache || []).find(en => en.id === selectEnvioExistente.value);
+        if (!envio) throw new Error('Envío existente no encontrado');
+        const pedidosActuales = envio.pedidos || [];
+        const yaExiste = pedidosActuales.find(p => p.pedidoId === pedido.id);
+        let nuevosPedidos;
+        if (yaExiste) {
+          nuevosPedidos = pedidosActuales.map(p => {
+            if (p.pedidoId !== pedido.id) return p;
+            const itemsCombinados = [...(p.items || [])];
+            items.forEach(nuevo => {
+              const existente = itemsCombinados.find(it => it.itemIndex === nuevo.itemIndex);
+              if (existente) existente.cantidad += nuevo.cantidad;
+              else itemsCombinados.push(nuevo);
+            });
+            return { ...p, remision, items: itemsCombinados };
+          });
+        } else {
+          nuevosPedidos = [...pedidosActuales, { pedidoId: pedido.id, remision, items }];
+        }
+        await db.collection(COLECCION_ENVIOS).doc(envio.id).update({ pedidos: nuevosPedidos });
+      } else {
+        const nuevoEnvio = {
+          esInterno,
+          empresaEnvioId: esInterno ? null : quien,
+          personaRecoge: esInterno ? inputPersonaRecoge.value.trim() : '',
+          remesa: (!esInterno && inputRemesaEnvio.value.trim()) ? inputRemesaEnvio.value.trim() : '',
+          estado: 'armado',
+          fechaDespacho: null,
+          pedidos: [{ pedidoId: pedido.id, remision, items }],
+          creadoEn: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        await db.collection(COLECCION_ENVIOS).add(nuevoEnvio);
+      }
+      formAgregarEnvio.reset();
+      cerrarModalAgregarEnvio();
+    } catch (err) {
+      console.error('Error agregando el pedido al envío:', err);
+      alert('No se pudo guardar. Revisa la consola.');
+    } finally {
+      btnGuardar.disabled = false;
+      btnGuardar.textContent = 'Guardar';
+    }
+  });
+
   // ---------- Render de la tabla ----------
 
   function renderTabla() {
@@ -932,7 +1211,9 @@
     db.collection(COLECCION).onSnapshot(
       (snapshot) => {
         pedidosCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        window.pedidosCache = pedidosCache;
         renderTabla();
+        document.dispatchEvent(new CustomEvent('pedidos:cambio', { detail: { pedidos: pedidosCache } }));
       },
       (err) => {
         console.error('Error escuchando pedidos:', err);
