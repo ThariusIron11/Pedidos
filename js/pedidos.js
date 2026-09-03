@@ -930,13 +930,25 @@
     }
 
     enviosVinculadosContenido.innerHTML = vinculados.map(envio => {
-      const pInfo = (envio.pedidos || []).find(p => p.pedidoId === pedido.id);
+      const entradas = (envio.pedidos || []).filter(p => p.pedidoId === pedido.id);
       const estadoTag = envio.estado === 'despachado'
         ? '<span class="tag-envio-despachado">Despachado</span>'
         : '<span class="tag-envio-armado">Armado</span>';
-      const itemsHtml = (pInfo?.items || []).map(it => {
-        const item = pedido.equipos?.[it.itemIndex];
-        return item ? `<div class="item-linea"><span>${escapeHtml(nombreItemPedido(item))}</span><span>cant. ${it.cantidad}</span></div>` : '';
+
+      const remisionesHtml = entradas.map(pInfo => {
+        const itemsHtml = (pInfo.items || []).map(it => {
+          const item = pedido.equipos?.[it.itemIndex];
+          return item ? `<div class="item-linea"><span>${escapeHtml(nombreItemPedido(item))}</span><span>cant. ${it.cantidad}</span></div>` : '';
+        }).join('');
+        return `
+          <div class="remision-card">
+            <div class="remision-card-header">
+              <span class="remision-card-pedido">${envio.remesa ? 'Remesa ' + escapeHtml(envio.remesa) : 'Sin remesa'}</span>
+              <span class="remision-card-numero">Remisión ${escapeHtml(pInfo.remision || '—')}</span>
+            </div>
+            <div class="remision-card-items">${itemsHtml || 'Sin equipos'}</div>
+          </div>
+        `;
       }).join('');
 
       return `
@@ -945,13 +957,7 @@
             <strong style="font-size:13.5px;">${nombreQuienEncargaEnvio(envio)}</strong>
             ${estadoTag}
           </div>
-          <div class="remision-card" style="margin-bottom:0;">
-            <div class="remision-card-header">
-              <span class="remision-card-pedido">${envio.remesa ? 'Remesa ' + escapeHtml(envio.remesa) : 'Sin remesa'}</span>
-              <span class="remision-card-numero">Remisión ${escapeHtml(pInfo?.remision || '—')}</span>
-            </div>
-            <div class="remision-card-items">${itemsHtml || 'Sin equipos'}</div>
-          </div>
+          ${remisionesHtml}
         </div>
       `;
     }).join('');
@@ -959,8 +965,9 @@
     enviosVinculadosContenido.querySelectorAll('.envio-vinculado-card').forEach(card => {
       card.addEventListener('click', () => {
         const id = card.dataset.envioId;
+        const envio = (window.enviosCache || []).find(en => en.id === id);
         cerrarFicha();
-        if (window.abrirFichaEnvio) window.abrirFichaEnvio(id);
+        if (envio && window.abrirFichaEnvio) window.abrirFichaEnvio(envio);
       });
     });
   }
@@ -1102,25 +1109,12 @@
       if (modo === 'existente') {
         const envioRef = db.collection(COLECCION_ENVIOS).doc(selectEnvioExistente.value);
         const snap = await envioRef.get(); // se lee fresco de Firestore, no del caché local,
-        if (!snap.exists) throw new Error('Envío existente no encontrado');       // para no pisar remisiones de otros pedidos agregados justo antes
-        const envioFresco = snap.data();
-        const pedidosActuales = envioFresco.pedidos || [];
-        const yaExiste = pedidosActuales.find(p => p.pedidoId === pedido.id);
-        let nuevosPedidos;
-        if (yaExiste) {
-          nuevosPedidos = pedidosActuales.map(p => {
-            if (p.pedidoId !== pedido.id) return p;
-            const itemsCombinados = [...(p.items || [])];
-            items.forEach(nuevo => {
-              const existente = itemsCombinados.find(it => it.itemIndex === nuevo.itemIndex);
-              if (existente) existente.cantidad += nuevo.cantidad;
-              else itemsCombinados.push(nuevo);
-            });
-            return { ...p, remision, items: itemsCombinados };
-          });
-        } else {
-          nuevosPedidos = [...pedidosActuales, { pedidoId: pedido.id, remision, items }];
-        }
+        if (!snap.exists) throw new Error('Envío existente no encontrado'); // para no pisar remisiones de otros pedidos agregados justo antes
+        const pedidosActuales = snap.data().pedidos || [];
+        // Siempre se agrega como una remisión NUEVA y separada — un mismo pedido
+        // puede tener varias remisiones distintas dentro de un mismo envío
+        // (ej: por espacio físico limitado en la remisión física).
+        const nuevosPedidos = [...pedidosActuales, { pedidoId: pedido.id, remision, items }];
         await envioRef.update({ pedidos: nuevosPedidos });
       } else {
         const nuevoEnvio = {
