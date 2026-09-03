@@ -188,6 +188,8 @@
     color: var(--ink);
     border: 1px solid #d4d7dc;
   }
+  .btn.secondary.danger-text{ color: var(--danger); border-color: #ecc8c4; }
+  .btn.secondary.danger-text:hover{ background: #fdf2f1; }
 
   /* ---------- Tabla ---------- */
   table.data-table{
@@ -1475,9 +1477,13 @@
       <div style="padding:20px 26px;">
         <div id="ficha-envio-contenido"><!-- generado por envios.js --></div>
       </div>
-      <div class="modal-actions">
-        <button type="button" class="btn secondary" id="btn-cerrar-ficha-envio">Cerrar</button>
-        <button type="button" class="btn" id="btn-despachar-envio">Marcar como despachado</button>
+      <div class="modal-actions" style="justify-content:space-between;">
+        <button type="button" class="btn secondary danger-text" id="btn-cancelar-envio">Cancelar envío</button>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="btn secondary" id="btn-cerrar-ficha-envio">Cerrar</button>
+          <button type="button" class="btn secondary" id="btn-guardar-envio">Guardar cambios</button>
+          <button type="button" class="btn" id="btn-despachar-envio">Marcar como despachado</button>
+        </div>
       </div>
     </div>
   </div>

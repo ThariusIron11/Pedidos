@@ -31,6 +31,8 @@
   const fichaContenido = document.getElementById('ficha-envio-contenido');
   const btnCerrarFicha = document.getElementById('btn-cerrar-ficha-envio');
   const btnDespacharEnvio = document.getElementById('btn-despachar-envio');
+  const btnCancelarEnvio = document.getElementById('btn-cancelar-envio');
+  const btnGuardarEnvio = document.getElementById('btn-guardar-envio');
 
   window.enviosCache = [];
   let envioIdEnFicha = null;
@@ -108,17 +110,27 @@
     });
   }
 
-  // ---------- Ficha de envío ----------
+  // ---------- Ficha de envío (editable mientras esté "armado") ----------
+
+  function opcionesQuienEncargaHtml(envio) {
+    const empresas = window.empresasEnvioCache || [];
+    const opciones = '<option value="interno">🏠 Interno</option>' +
+      empresas.map(e => `<option value="${e.id}">${escapeHtml(e.nombre)}</option>`).join('');
+    return opciones;
+  }
 
   function abrirFicha(envio) {
     envioIdEnFicha = envio.id;
+    const despachado = envio.estado === 'despachado';
+    const remesaBloqueada = despachado && !!envio.remesa; // solo se bloquea si YA tiene remesa
+
     fichaTitulo.textContent = nombreQuienEncarga(envio).replace(/<[^>]+>/g, '');
-    fichaEstadoTag.innerHTML = envio.estado === 'despachado'
+    fichaEstadoTag.innerHTML = despachado
       ? '<span class="tag-envio-despachado">Despachado</span>'
       : '<span class="tag-envio-armado">Armado</span>';
 
     const pedidosIncluidos = envio.pedidos || [];
-    const filas = pedidosIncluidos.map(pInfo => {
+    const filas = pedidosIncluidos.map((pInfo, idx) => {
       const pedido = buscarPedido(pInfo.pedidoId);
       const compania = pedido ? buscarCompania(pedido.companiaId) : null;
       const nombrePedido = pedido ? `N${pedido.numero} - ${compania ? escapeHtml(compania.nombre) : 'Compañía no encontrada'}` : 'Pedido no encontrado';
@@ -140,22 +152,52 @@
 
       return `
         <div class="ficha-campo" style="margin-bottom:10px;">
-          <div class="campo-label">${nombrePedido} — Remisión: ${escapeHtml(pInfo.remision || '—')}</div>
-          <div class="campo-valor" style="font-weight:400; font-size:13px;">${itemsHtml || 'Sin equipos'}</div>
+          <div class="campo-label">${nombrePedido}</div>
+          <div class="form-group" style="margin:6px 0 8px 0;">
+            <label style="font-size:11px;">Remisión</label>
+            <input type="text" class="input-remision-envio" data-idx="${idx}" value="${escapeHtml(pInfo.remision || '')}" ${despachado ? 'disabled' : ''}>
+          </div>
+          <div style="font-size:13px;">${itemsHtml || 'Sin equipos'}</div>
         </div>
       `;
     }).join('');
 
     fichaContenido.innerHTML = `
-      <div class="ficha-campos" style="margin-bottom:16px;">
-        ${envio.remesa ? `<div class="ficha-campo"><div class="campo-label">Remesa</div><div class="campo-valor">${escapeHtml(envio.remesa)}</div></div>` : ''}
-        ${envio.esInterno && envio.personaRecoge ? `<div class="ficha-campo"><div class="campo-label">Quién recoge</div><div class="campo-valor">${escapeHtml(envio.personaRecoge)}</div></div>` : ''}
+      <div class="form-group">
+        <label>¿Quién se encarga?</label>
+        <select id="ficha-envio-quien-encarga" ${despachado ? 'disabled' : ''}>${opcionesQuienEncargaHtml(envio)}</select>
       </div>
-      <h4>Pedidos incluidos</h4>
+      <div class="form-group" id="ficha-envio-grupo-persona" style="display:none;">
+        <label>¿Quién recoge?</label>
+        <input type="text" id="ficha-envio-persona-recoge" value="${escapeHtml(envio.personaRecoge || '')}" ${despachado ? 'disabled' : ''}>
+      </div>
+      <div class="form-group" id="ficha-envio-grupo-remesa" style="display:none;">
+        <label>Remesa de envío</label>
+        <input type="text" id="ficha-envio-remesa" value="${escapeHtml(envio.remesa || '')}" placeholder="Número de remesa" ${remesaBloqueada ? 'disabled' : ''}>
+        ${despachado && !remesaBloqueada ? '<div class="hint-peso-calculado" style="display:block;">Todavía no tiene remesa — la puedes completar cuando la tengas.</div>' : ''}
+      </div>
+
+      <h4 style="margin-top:18px;">Pedidos incluidos</h4>
       ${filas || '<div class="empty-equipos-pedido">Sin pedidos.</div>'}
     `;
 
-    btnDespacharEnvio.style.display = envio.estado === 'despachado' ? 'none' : 'inline-block';
+    const selectQuien = document.getElementById('ficha-envio-quien-encarga');
+    const grupoPersona = document.getElementById('ficha-envio-grupo-persona');
+    const grupoRemesaFicha = document.getElementById('ficha-envio-grupo-remesa');
+
+    selectQuien.value = envio.esInterno ? 'interno' : (envio.empresaEnvioId || 'interno');
+
+    function actualizarGruposFicha() {
+      const esInterno = selectQuien.value === 'interno';
+      grupoPersona.style.display = esInterno ? 'block' : 'none';
+      grupoRemesaFicha.style.display = esInterno ? 'none' : 'block';
+    }
+    actualizarGruposFicha();
+    if (!despachado) selectQuien.addEventListener('change', actualizarGruposFicha);
+
+    btnCancelarEnvio.style.display = despachado ? 'none' : 'inline-block';
+    btnGuardarEnvio.style.display = (!despachado || !remesaBloqueada) ? 'inline-block' : 'none';
+    btnDespacharEnvio.style.display = despachado ? 'none' : 'inline-block';
     modalFicha.classList.add('open');
   }
 
@@ -174,7 +216,7 @@
   btnDespacharEnvio.addEventListener('click', async () => {
     const envio = window.enviosCache.find(en => en.id === envioIdEnFicha);
     if (!envio) return;
-    const ok = confirm('¿Marcar este envío como despachado? Después de esto queda fijo y ya no se podrá editar.');
+    const ok = confirm('¿Marcar este envío como despachado? Después de esto queda fijo (salvo la remesa, si todavía no la tiene) y ya no se podrá editar.');
     if (!ok) return;
     try {
       await db.collection(COLECCION).doc(envio.id).update({
@@ -185,6 +227,65 @@
     } catch (err) {
       console.error('Error despachando envío:', err);
       alert('No se pudo marcar como despachado. Revisa la consola.');
+    }
+  });
+
+  btnCancelarEnvio.addEventListener('click', async () => {
+    const envio = window.enviosCache.find(en => en.id === envioIdEnFicha);
+    if (!envio) return;
+    const ok = confirm('¿Cancelar este envío? Se eliminará y los equipos que tenía reservados vuelven a quedar disponibles para otros envíos.');
+    if (!ok) return;
+    try {
+      await db.collection(COLECCION).doc(envio.id).delete();
+      cerrarFicha();
+    } catch (err) {
+      console.error('Error cancelando envío:', err);
+      alert('No se pudo cancelar el envío. Revisa la consola.');
+    }
+  });
+
+  btnGuardarEnvio.addEventListener('click', async () => {
+    const envio = window.enviosCache.find(en => en.id === envioIdEnFicha);
+    if (!envio) return;
+    const despachado = envio.estado === 'despachado';
+
+    const cambios = {};
+
+    // Remesa: editable si está armado, o si está despachado pero sin remesa aún.
+    const inputRemesa = document.getElementById('ficha-envio-remesa');
+    if (inputRemesa && !inputRemesa.disabled) {
+      cambios.remesa = inputRemesa.value.trim();
+    }
+
+    // El resto de campos solo se tocan si el envío sigue armado.
+    if (!despachado) {
+      const selectQuien = document.getElementById('ficha-envio-quien-encarga');
+      const inputPersona = document.getElementById('ficha-envio-persona-recoge');
+      const esInterno = selectQuien.value === 'interno';
+      cambios.esInterno = esInterno;
+      cambios.empresaEnvioId = esInterno ? null : selectQuien.value;
+      cambios.personaRecoge = esInterno ? inputPersona.value.trim() : '';
+      if (esInterno) cambios.remesa = ''; // Interno no maneja remesa
+
+      const pedidosActualizados = (envio.pedidos || []).map((pInfo, idx) => {
+        const input = fichaContenido.querySelector(`.input-remision-envio[data-idx="${idx}"]`);
+        return input ? { ...pInfo, remision: input.value.trim() } : pInfo;
+      });
+      cambios.pedidos = pedidosActualizados;
+    }
+
+    const btnOriginal = btnGuardarEnvio.textContent;
+    btnGuardarEnvio.disabled = true;
+    btnGuardarEnvio.textContent = 'Guardando...';
+    try {
+      await db.collection(COLECCION).doc(envio.id).update(cambios);
+      cerrarFicha();
+    } catch (err) {
+      console.error('Error guardando cambios del envío:', err);
+      alert('No se pudo guardar. Revisa la consola.');
+    } finally {
+      btnGuardarEnvio.disabled = false;
+      btnGuardarEnvio.textContent = btnOriginal;
     }
   });
 
