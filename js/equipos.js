@@ -40,9 +40,11 @@
   const inputEsCompuesto = document.getElementById('equipo-es-compuesto');
   const piezasCompuestoWrap = document.getElementById('piezas-compuesto-wrap');
   const piezasCompuestoList = document.getElementById('piezas-compuesto-list');
+  const hintPesoCalculado = document.getElementById('hint-peso-calculado');
 
   const TIPOS_CON_BRAZO_EJE = ['reductor', 'motoreductor'];
-  const TIPOS_ACOPLE = ['acople', 'piezas de acople'];
+  const TIPO_ACOPLE_COMPUESTO = ['acople']; // solo este tag puede marcarse como compuesto
+  const TIPO_PIEZAS_ACOPLE = ['piezas de acople']; // de aquí se buscan las piezas que lo componen
 
   let equiposCache = []; // [{id, ...datos}] — también expuesto en window.equiposCache
   let filtroTexto = '';
@@ -67,6 +69,21 @@
   function formatearPeso(peso) {
     if (peso === undefined || peso === null || peso === '') return 'Sin peso';
     return `${peso} kg`;
+  }
+
+  // Para un Acople compuesto, el peso real es la suma de (peso de cada pieza x su
+  // cantidad). Si a alguna pieza le falta el peso, no se puede calcular (null).
+  function calcularPesoEquipo(equipo) {
+    if (!equipo?.esCompuesto || !(equipo.piezasCompuesto || []).length) {
+      return equipo?.peso ?? null;
+    }
+    let total = 0;
+    for (const p of equipo.piezasCompuesto) {
+      const pieza = equiposCache.find(eq => eq.id === p.piezaId);
+      if (!pieza || pieza.peso === undefined || pieza.peso === null) return null;
+      total += pieza.peso * (p.cantidad || 1);
+    }
+    return Math.round(total * 100) / 100;
   }
 
   function buscarTipo(tipoId) {
@@ -112,13 +129,58 @@
 
   function actualizarVisibilidadAcopleCompuesto() {
     const tipo = buscarTipo(inputTipo.value);
-    const aplica = tipo && TIPOS_ACOPLE.includes(normalizar(tipo.nombre));
+    const aplica = tipo && TIPO_ACOPLE_COMPUESTO.includes(normalizar(tipo.nombre));
     grupoAcopleCompuesto.style.display = aplica ? 'block' : 'none';
     if (!aplica) {
       inputEsCompuesto.checked = false;
       piezasCompuestoWrap.style.display = 'none';
       piezasCompuestoList.innerHTML = '';
     }
+  }
+
+  function actualizarPesoCompuesto() {
+    if (!inputEsCompuesto.checked) {
+      inputPeso.readOnly = false;
+      hintPesoCalculado.style.display = 'none';
+      return;
+    }
+    inputPeso.readOnly = true;
+    const filas = piezasCompuestoList.querySelectorAll('.pieza-compuesto-row');
+    let total = 0;
+    let completo = true;
+    let hayPiezas = false;
+    filas.forEach(fila => {
+      const piezaId = fila.querySelector('.pieza-compuesto-id').value;
+      if (!piezaId) return;
+      hayPiezas = true;
+      const cantidad = parseInt(fila.querySelector('.pieza-compuesto-cantidad').value, 10) || 1;
+      const pieza = equiposCache.find(eq => eq.id === piezaId);
+      if (!pieza || pieza.peso === undefined || pieza.peso === null) {
+        completo = false;
+      } else {
+        total += pieza.peso * cantidad;
+      }
+    });
+
+    if (!hayPiezas) {
+      inputPeso.value = '';
+      hintPesoCalculado.style.display = 'block';
+      hintPesoCalculado.className = 'hint-peso-calculado incompleto';
+      hintPesoCalculado.textContent = 'Agrega piezas para calcular el peso.';
+      return;
+    }
+    if (!completo) {
+      hintPesoCalculado.style.display = 'block';
+      hintPesoCalculado.className = 'hint-peso-calculado incompleto';
+      hintPesoCalculado.textContent = '⚠️ Falta el peso de alguna pieza — el total no se puede calcular todavía.';
+      inputPeso.value = '';
+      return;
+    }
+    const totalRedondeado = Math.round(total * 100) / 100;
+    inputPeso.value = String(totalRedondeado);
+    hintPesoCalculado.style.display = 'block';
+    hintPesoCalculado.className = 'hint-peso-calculado';
+    hintPesoCalculado.textContent = `✅ Calculado automáticamente: suma de sus ${filas.length} pieza(s).`;
   }
 
   inputEsCompuesto.addEventListener('change', () => {
@@ -129,6 +191,7 @@
     if (!inputEsCompuesto.checked) {
       piezasCompuestoList.innerHTML = '';
     }
+    actualizarPesoCompuesto();
   });
 
   function nombreMostrableEquipo(eq) {
@@ -147,7 +210,7 @@
       const porTipo = equiposCache.filter(eq => {
         if (eq.id === propioId) return false; // no puede componerse de sí mismo
         const tipo = buscarTipo(eq.tipoId);
-        return tipo && TIPOS_ACOPLE.includes(normalizar(tipo.nombre));
+        return tipo && TIPO_PIEZAS_ACOPLE.includes(normalizar(tipo.nombre));
       });
       const t = normalizar(texto);
       const coincidencias = t
@@ -175,6 +238,7 @@
       inputValor.value = eq.id;
       inputTexto.value = nombreMostrableEquipo(eq);
       resultados.classList.remove('open');
+      actualizarPesoCompuesto();
     }
 
     inputTexto.addEventListener('input', () => {
@@ -207,7 +271,11 @@
       <input type="number" class="pieza-compuesto-cantidad" min="1" step="1" placeholder="Cant." value="${pieza?.cantidad ?? 1}">
       <button type="button" class="remove-contacto" title="Quitar pieza">✕</button>
     `;
-    row.querySelector('.remove-contacto').addEventListener('click', () => row.remove());
+    row.querySelector('.remove-contacto').addEventListener('click', () => {
+      row.remove();
+      actualizarPesoCompuesto();
+    });
+    row.querySelector('.pieza-compuesto-cantidad').addEventListener('input', actualizarPesoCompuesto);
     piezasCompuestoList.appendChild(row);
     inicializarBuscadorPieza(row.querySelector('.buscador-equipo'), pieza?.piezaId);
   }
@@ -263,6 +331,7 @@
         nuevaFilaPiezaCompuesto();
       }
     }
+    actualizarPesoCompuesto();
   }
 
   // ---------- Abrir / cerrar modal ----------
@@ -431,15 +500,14 @@
       ].filter(Boolean).join(' ');
 
       return `
-        <tr data-id="${equipo.id}">
+        <tr data-id="${equipo.id}" class="fila-equipo-clicable">
           <td>${escapeHtml(equipo.nombre)} ${extrasHtml}</td>
           <td>${tipoBadge}</td>
           <td>${varianteHtml}</td>
-          <td>${formatearPeso(equipo.peso)}${faltaPesoTag}</td>
+          <td>${formatearPeso(calcularPesoEquipo(equipo))}${faltaPesoTag}</td>
           <td>${equipo.usaSerial ? '✅' : '—'}</td>
           <td>
             <div class="row-actions">
-              <button type="button" class="btn-editar" data-id="${equipo.id}">Editar</button>
               <button type="button" class="btn-eliminar danger" data-id="${equipo.id}">Eliminar</button>
             </div>
           </td>
@@ -447,9 +515,10 @@
       `;
     }).join('');
 
-    tablaBody.querySelectorAll('.btn-editar').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const equipo = equiposCache.find(eq => eq.id === btn.dataset.id);
+    tablaBody.querySelectorAll('tr.fila-equipo-clicable').forEach(tr => {
+      tr.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return; // los botones tienen su propio comportamiento
+        const equipo = equiposCache.find(eq => eq.id === tr.dataset.id);
         if (equipo) abrirModalEditar(equipo);
       });
     });

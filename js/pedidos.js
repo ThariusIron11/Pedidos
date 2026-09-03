@@ -558,6 +558,22 @@
     return `${peso} kg`;
   }
 
+  // Igual que en equipos.js: para un Acople compuesto, el peso real es la suma
+  // de (peso de cada pieza x su cantidad) — se recalcula aquí también porque
+  // esta pestaña usa su propio window.equiposCache.
+  function calcularPesoEquipo(equipo) {
+    if (!equipo?.esCompuesto || !(equipo.piezasCompuesto || []).length) {
+      return equipo?.peso ?? null;
+    }
+    let total = 0;
+    for (const p of equipo.piezasCompuesto) {
+      const pieza = buscarEquipoCatalogo(p.piezaId);
+      if (!pieza || pieza.peso === undefined || pieza.peso === null) return null;
+      total += pieza.peso * (p.cantidad || 1);
+    }
+    return Math.round(total * 100) / 100;
+  }
+
   function resumenSeriales(item, cantidad) {
     const seriales = (item.seriales || []).filter(s => s && s.trim());
     if (!seriales.length) {
@@ -592,7 +608,7 @@
     const ocHtml = item.ordenCompra
       ? `<div class="equipo-card-oc">📄 OC: ${escapeHtml(item.ordenCompra)}</div>`
       : '';
-    const metaChips = `<span class="meta-chip">${formatearPesoFicha(equipo?.peso)}</span>`;
+    const metaChips = `<span class="meta-chip">${formatearPesoFicha(calcularPesoEquipo(equipo))}</span>`;
 
     return `
       <div class="equipo-card ${usaSerial ? 'clicable' : ''} ${preparado ? 'preparado' : ''}" data-index="${index}" style="border-color:${color};">
