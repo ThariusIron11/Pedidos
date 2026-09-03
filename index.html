@@ -936,6 +936,56 @@
     border-radius: 999px;
   }
 
+  .remisiones-frame{
+    border: 1px dashed #d4d7dc;
+    border-radius: var(--radius);
+    padding: 12px;
+    background: #fbfaf8;
+  }
+  .remisiones-frame .remision-card:last-child{ margin-bottom: 0; }
+
+  .remision-card{
+    background: #fff;
+    border: 1px solid #e2e4e9;
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+  .remision-card-header{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .remision-card-pedido{
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .remision-card-numero{
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--copper);
+    background: var(--copper-soft);
+    padding: 2px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .remision-card-items{
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+  }
+  .remision-card-items .item-linea{
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
   .envio-vinculado-card{
     background: #fafafb;
     border: 1px solid #e2e4e9;

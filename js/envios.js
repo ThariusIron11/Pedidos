@@ -130,14 +130,14 @@
       : '<span class="tag-envio-armado">Armado</span>';
 
     const pedidosIncluidos = envio.pedidos || [];
-    const filas = pedidosIncluidos.map((pInfo, idx) => {
+    const filas = pedidosIncluidos.map((pInfo) => {
       const pedido = buscarPedido(pInfo.pedidoId);
       const compania = pedido ? buscarCompania(pedido.companiaId) : null;
       const nombrePedido = pedido ? `N${pedido.numero} - ${compania ? escapeHtml(compania.nombre) : 'Compañía no encontrada'}` : 'Pedido no encontrado';
 
       const itemsHtml = (pInfo.items || []).map(it => {
         const item = pedido?.equipos?.[it.itemIndex];
-        if (!item) return `<div>Ítem no encontrado (cant. ${it.cantidad})</div>`;
+        if (!item) return `<div class="item-linea"><span>Ítem no encontrado</span><span>cant. ${it.cantidad}</span></div>`;
         let nombre;
         if (item.tipoLinea === 'motoreductor') {
           const motor = buscarEquipoCatalogo(item.motorEquipoId);
@@ -147,17 +147,20 @@
           const equipo = buscarEquipoCatalogo(item.equipoId);
           nombre = equipo ? escapeHtml(equipo.nombre) : 'Equipo no encontrado';
         }
-        return `<div>${nombre} — cant. en este envío: ${it.cantidad}</div>`;
+        return `<div class="item-linea"><span>${nombre}</span><span>cant. ${it.cantidad}</span></div>`;
       }).join('');
 
       return `
-        <div class="ficha-campo" style="margin-bottom:10px;">
-          <div class="campo-label">${nombrePedido}</div>
-          <div class="form-group" style="margin:6px 0 8px 0;">
-            <label style="font-size:11px;">Remisión</label>
-            <input type="text" class="input-remision-envio" data-idx="${idx}" value="${escapeHtml(pInfo.remision || '')}" ${despachado ? 'disabled' : ''}>
+        <div class="remision-card">
+          <div class="remision-card-header">
+            <span class="remision-card-pedido">${nombrePedido}</span>
+            <span class="remision-card-numero">Remisión ${escapeHtml(pInfo.remision || '—')}</span>
           </div>
-          <div style="font-size:13px;">${itemsHtml || 'Sin equipos'}</div>
+          <div class="form-group" style="margin:0 0 8px 0;">
+            <label style="font-size:11px;">Editar remisión</label>
+            <input type="text" class="input-remision-envio" data-pedidoid="${pInfo.pedidoId}" value="${escapeHtml(pInfo.remision || '')}" ${despachado ? 'disabled' : ''}>
+          </div>
+          <div class="remision-card-items">${itemsHtml || 'Sin equipos'}</div>
         </div>
       `;
     }).join('');
@@ -178,7 +181,9 @@
       </div>
 
       <h4 style="margin-top:18px;">Pedidos incluidos</h4>
-      ${filas || '<div class="empty-equipos-pedido">Sin pedidos.</div>'}
+      <div class="remisiones-frame">
+        ${filas || '<div class="empty-equipos-pedido">Sin pedidos.</div>'}
+      </div>
     `;
 
     const selectQuien = document.getElementById('ficha-envio-quien-encarga');
@@ -266,19 +271,27 @@
       cambios.empresaEnvioId = esInterno ? null : selectQuien.value;
       cambios.personaRecoge = esInterno ? inputPersona.value.trim() : '';
       if (esInterno) cambios.remesa = ''; // Interno no maneja remesa
-
-      const pedidosActualizados = (envio.pedidos || []).map((pInfo, idx) => {
-        const input = fichaContenido.querySelector(`.input-remision-envio[data-idx="${idx}"]`);
-        return input ? { ...pInfo, remision: input.value.trim() } : pInfo;
-      });
-      cambios.pedidos = pedidosActualizados;
     }
 
     const btnOriginal = btnGuardarEnvio.textContent;
     btnGuardarEnvio.disabled = true;
     btnGuardarEnvio.textContent = 'Guardando...';
     try {
-      await db.collection(COLECCION).doc(envio.id).update(cambios);
+      const envioRef = db.collection(COLECCION).doc(envio.id);
+
+      // Las remisiones se leen frescas de Firestore y se fusionan por pedidoId
+      // (no por índice), para no pisar pedidos que otra sesión haya agregado
+      // a este mismo envío mientras esta ficha estaba abierta.
+      if (!despachado) {
+        const snap = await envioRef.get();
+        const pedidosFrescos = snap.exists ? (snap.data().pedidos || []) : [];
+        cambios.pedidos = pedidosFrescos.map(pInfo => {
+          const input = fichaContenido.querySelector(`.input-remision-envio[data-pedidoid="${pInfo.pedidoId}"]`);
+          return input ? { ...pInfo, remision: input.value.trim() } : pInfo;
+        });
+      }
+
+      await envioRef.update(cambios);
       cerrarFicha();
     } catch (err) {
       console.error('Error guardando cambios del envío:', err);

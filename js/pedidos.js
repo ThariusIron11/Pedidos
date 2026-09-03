@@ -936,19 +936,22 @@
         : '<span class="tag-envio-armado">Armado</span>';
       const itemsHtml = (pInfo?.items || []).map(it => {
         const item = pedido.equipos?.[it.itemIndex];
-        return item ? `<div>${escapeHtml(nombreItemPedido(item))} — cant: ${it.cantidad}</div>` : '';
+        return item ? `<div class="item-linea"><span>${escapeHtml(nombreItemPedido(item))}</span><span>cant. ${it.cantidad}</span></div>` : '';
       }).join('');
 
       return `
         <div class="envio-vinculado-card" data-envio-id="${envio.id}">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
             <strong style="font-size:13.5px;">${nombreQuienEncargaEnvio(envio)}</strong>
             ${estadoTag}
           </div>
-          <div style="font-size:12.5px; color:var(--ink-soft); margin-bottom:6px;">
-            ${envio.remesa ? `Remesa: ${escapeHtml(envio.remesa)} · ` : ''}Remisión: ${escapeHtml(pInfo?.remision || '—')}
+          <div class="remision-card" style="margin-bottom:0;">
+            <div class="remision-card-header">
+              <span class="remision-card-pedido">${envio.remesa ? 'Remesa ' + escapeHtml(envio.remesa) : 'Sin remesa'}</span>
+              <span class="remision-card-numero">Remisión ${escapeHtml(pInfo?.remision || '—')}</span>
+            </div>
+            <div class="remision-card-items">${itemsHtml || 'Sin equipos'}</div>
           </div>
-          <div style="font-size:12.5px;">${itemsHtml}</div>
         </div>
       `;
     }).join('');
@@ -1097,9 +1100,11 @@
 
     try {
       if (modo === 'existente') {
-        const envio = (window.enviosCache || []).find(en => en.id === selectEnvioExistente.value);
-        if (!envio) throw new Error('Envío existente no encontrado');
-        const pedidosActuales = envio.pedidos || [];
+        const envioRef = db.collection(COLECCION_ENVIOS).doc(selectEnvioExistente.value);
+        const snap = await envioRef.get(); // se lee fresco de Firestore, no del caché local,
+        if (!snap.exists) throw new Error('Envío existente no encontrado');       // para no pisar remisiones de otros pedidos agregados justo antes
+        const envioFresco = snap.data();
+        const pedidosActuales = envioFresco.pedidos || [];
         const yaExiste = pedidosActuales.find(p => p.pedidoId === pedido.id);
         let nuevosPedidos;
         if (yaExiste) {
@@ -1116,7 +1121,7 @@
         } else {
           nuevosPedidos = [...pedidosActuales, { pedidoId: pedido.id, remision, items }];
         }
-        await db.collection(COLECCION_ENVIOS).doc(envio.id).update({ pedidos: nuevosPedidos });
+        await envioRef.update({ pedidos: nuevosPedidos });
       } else {
         const nuevoEnvio = {
           esInterno,
