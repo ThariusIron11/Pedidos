@@ -36,6 +36,7 @@
 
   window.enviosCache = [];
   let envioIdEnFicha = null;
+  let volverAPedidoId = null; // si la ficha se abrió desde dentro de un pedido, aquí queda su id
 
   function escapeHtml(str) {
     return String(str ?? '')
@@ -119,8 +120,9 @@
     return opciones;
   }
 
-  function abrirFicha(envio) {
+  function abrirFicha(envio, opciones) {
     envioIdEnFicha = envio.id;
+    volverAPedidoId = opciones?.volverAPedidoId || null;
     const despachado = envio.estado === 'despachado';
     const remesaBloqueada = despachado && !!envio.remesa; // solo se bloquea si YA tiene remesa
 
@@ -137,7 +139,8 @@
 
       const itemsHtml = (pInfo.items || []).map(it => {
         const item = pedido?.equipos?.[it.itemIndex];
-        if (!item) return `<div class="item-linea"><span>Ítem no encontrado</span><span>cant. ${it.cantidad}</span></div>`;
+        const detalleCantidad = it.unidades ? `unidad(es): ${it.unidades.map(u => u + 1).join(', ')}` : `cant. ${it.cantidad}`;
+        if (!item) return `<div class="item-linea"><span>Ítem no encontrado</span><span>${detalleCantidad}</span></div>`;
         let nombre;
         if (item.tipoLinea === 'motoreductor') {
           const motor = buscarEquipoCatalogo(item.motorEquipoId);
@@ -147,7 +150,7 @@
           const equipo = buscarEquipoCatalogo(item.equipoId);
           nombre = equipo ? escapeHtml(equipo.nombre) : 'Equipo no encontrado';
         }
-        return `<div class="item-linea"><span>${nombre}</span><span>cant. ${it.cantidad}</span></div>`;
+        return `<div class="item-linea"><span>${nombre}</span><span>${detalleCantidad}</span></div>`;
       }).join('');
 
       return `
@@ -211,6 +214,13 @@
   function cerrarFicha() {
     modalFicha.classList.remove('open');
     envioIdEnFicha = null;
+    if (volverAPedidoId && window.abrirFichaPedido) {
+      const idPedido = volverAPedidoId;
+      volverAPedidoId = null;
+      window.abrirFichaPedido(idPedido, 'envio');
+    } else {
+      volverAPedidoId = null;
+    }
   }
 
   btnCerrarFicha.addEventListener('click', cerrarFicha);

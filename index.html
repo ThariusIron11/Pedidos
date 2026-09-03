@@ -881,6 +881,29 @@
   }
   .serial-campo input:focus{ outline: none; border-color: var(--copper); }
 
+  .equipo-envio-group{
+    background: #fafafb;
+    border: 1px solid #e2e4e9;
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  .equipo-envio-group-titulo{
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .unidad-envio-row{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    padding: 5px 0;
+    cursor: pointer;
+  }
+  .unidad-envio-row.sin-disponible{ opacity: 0.5; cursor: default; }
+  .unidad-envio-row input[type="checkbox"]{ accent-color: var(--copper); }
+
   .equipos-envio-list{
     display: flex;
     flex-direction: column;
@@ -1544,18 +1567,6 @@
       <h3>Agregar a un envío</h3>
       <form id="form-agregar-envio">
         <div class="form-group">
-          <label for="envio-quien-encarga">¿Quién se encarga del envío?</label>
-          <select id="envio-quien-encarga">
-            <option value="interno">🏠 Interno</option>
-          </select>
-        </div>
-
-        <div class="form-group" id="grupo-persona-recoge" style="display:none;">
-          <label for="envio-persona-recoge">¿Quién recoge?</label>
-          <input type="text" id="envio-persona-recoge" placeholder="Nombre de la persona (nuestro personal o el cliente)">
-        </div>
-
-        <div class="form-group">
           <label>¿A qué envío va?</label>
           <div class="tipo-pedido-toggle">
             <label class="tipo-pedido-opcion">
@@ -1569,16 +1580,30 @@
           </div>
         </div>
 
+        <div id="grupo-envio-nuevo">
+          <div class="form-group">
+            <label for="envio-quien-encarga">¿Quién se encarga del envío?</label>
+            <select id="envio-quien-encarga">
+              <option value="interno">🏠 Interno</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="grupo-persona-recoge" style="display:none;">
+            <label for="envio-persona-recoge">¿Quién recoge?</label>
+            <input type="text" id="envio-persona-recoge" placeholder="Nombre de la persona (nuestro personal o el cliente)">
+          </div>
+
+          <div class="form-group" id="grupo-remesa" style="display:none;">
+            <label for="envio-remesa">Remesa de envío (opcional)</label>
+            <input type="text" id="envio-remesa" placeholder="Número de remesa, si ya la tienes">
+          </div>
+        </div>
+
         <div class="form-group" id="grupo-envio-existente" style="display:none;">
-          <label for="envio-existente-select">Envío existente</label>
+          <label for="envio-existente-select">Envío existente (armado)</label>
           <select id="envio-existente-select">
             <option value="">Selecciona...</option>
           </select>
-        </div>
-
-        <div class="form-group" id="grupo-remesa" style="display:none;">
-          <label for="envio-remesa">Remesa de envío (opcional)</label>
-          <input type="text" id="envio-remesa" placeholder="Número de remesa, si ya la tienes">
         </div>
 
         <div class="form-group">

@@ -109,6 +109,11 @@
     fichaSubtabPanels.forEach((p, i) => p.classList.toggle('active', i === 0));
   }
 
+  function activarFichaSubtab(nombre) {
+    fichaSubtabButtons.forEach(b => b.classList.toggle('active', b.dataset.subtab === nombre));
+    fichaSubtabPanels.forEach(p => p.classList.toggle('active', p.id === 'subtab-' + nombre));
+  }
+
   // ---------- Select de compañía / contacto ----------
 
   function poblarSelectCompanias() {
@@ -734,7 +739,7 @@
     }
   }
 
-  function abrirFicha(pedido) {
+  function abrirFicha(pedido, subtabInicial) {
     pedidoIdEnFicha = pedido.id;
     const tipoInfo = TIPO_PEDIDO_LABEL[pedido.tipo] || TIPO_PEDIDO_LABEL.normal;
     const compania = buscarCompania(pedido.companiaId);
@@ -746,11 +751,19 @@
     renderSeccionCliente(pedido);
     renderSeccionEquipos(pedido);
     renderEnviosVinculados();
-    resetFichaSubtabs();
+    if (subtabInicial) activarFichaSubtab(subtabInicial);
+    else resetFichaSubtabs();
 
     btnEditarDesdeFicha.dataset.id = pedido.id;
     modalFicha.classList.add('open');
   }
+
+  // Permite reabrir la ficha de un pedido desde otro archivo (envios.js), por
+  // ejemplo al cerrar/guardar/cancelar un envío que se abrió desde aquí.
+  window.abrirFichaPedido = function (pedidoId, subtabInicial) {
+    const pedido = pedidosCache.find(p => p.id === pedidoId);
+    if (pedido) abrirFicha(pedido, subtabInicial);
+  };
 
   function cerrarFicha() {
     modalFicha.classList.remove('open');
@@ -874,6 +887,7 @@
 
   const modalAgregarEnvio = document.getElementById('modal-agregar-envio');
   const formAgregarEnvio = document.getElementById('form-agregar-envio');
+  const grupoEnvioNuevo = document.getElementById('grupo-envio-nuevo');
   const selectQuienEncarga = document.getElementById('envio-quien-encarga');
   const grupoPersonaRecoge = document.getElementById('grupo-persona-recoge');
   const inputPersonaRecoge = document.getElementById('envio-persona-recoge');
@@ -910,6 +924,44 @@
     return total;
   }
 
+  // Un ítem se selecciona por UNIDAD individual (checkbox por unidad) cuando
+  // usa número serial — así se sabe exactamente cuál unidad va en cuál remisión,
+  // porque puede que no todas quepan en una sola.
+  function itemUsaSerialPorUnidad(item) {
+    if (item.tipoLinea === 'motoreductor') {
+      const motor = buscarEquipoCatalogo(item.motorEquipoId);
+      const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      return !!(motor?.usaSerial || reductor?.usaSerial);
+    }
+    const equipo = buscarEquipoCatalogo(item.equipoId);
+    return !!equipo?.usaSerial;
+  }
+
+  function unidadesReservadasEnEnvios(pedidoId, itemIndex, excluirEnvioId) {
+    const set = new Set();
+    (window.enviosCache || []).forEach(envio => {
+      if (excluirEnvioId && envio.id === excluirEnvioId) return;
+      (envio.pedidos || []).forEach(pInfo => {
+        if (pInfo.pedidoId !== pedidoId) return;
+        (pInfo.items || []).forEach(it => {
+          if (it.itemIndex !== itemIndex) return;
+          (it.unidades || []).forEach(u => set.add(u));
+        });
+      });
+    });
+    return set;
+  }
+
+  function etiquetaUnidad(item, unidadIdx) {
+    if (item.tipoLinea === 'motoreductor') {
+      const sm = item.serialesMotor?.[unidadIdx];
+      const sr = item.serialesReductor?.[unidadIdx];
+      return `Unidad ${unidadIdx + 1}` + ((sm || sr) ? ` — Motor: ${escapeHtml(sm || '—')} / Reductor: ${escapeHtml(sr || '—')}` : ' — sin serial asignado');
+    }
+    const serial = item.seriales?.[unidadIdx];
+    return `Unidad ${unidadIdx + 1}` + (serial ? ` — Serial: ${escapeHtml(serial)}` : ' — sin serial asignado');
+  }
+
   function nombreQuienEncargaEnvio(envio) {
     if (envio.esInterno) return '🏠 Interno' + (envio.personaRecoge ? ` — ${escapeHtml(envio.personaRecoge)}` : '');
     const empresa = (window.empresasEnvioCache || []).find(e => e.id === envio.empresaEnvioId);
@@ -938,7 +990,7 @@
       const remisionesHtml = entradas.map(pInfo => {
         const itemsHtml = (pInfo.items || []).map(it => {
           const item = pedido.equipos?.[it.itemIndex];
-          return item ? `<div class="item-linea"><span>${escapeHtml(nombreItemPedido(item))}</span><span>cant. ${it.cantidad}</span></div>` : '';
+          return item ? `<div class="item-linea"><span>${escapeHtml(nombreItemPedido(item))}</span><span>${it.unidades ? `unidad(es): ${it.unidades.map(u => u + 1).join(', ')}` : `cant. ${it.cantidad}`}</span></div>` : '';
         }).join('');
         return `
           <div class="remision-card">
@@ -966,8 +1018,9 @@
       card.addEventListener('click', () => {
         const id = card.dataset.envioId;
         const envio = (window.enviosCache || []).find(en => en.id === id);
+        const idPedidoOrigen = pedidoIdEnFicha; // cerrarFicha() lo pone en null, así que se guarda antes
         cerrarFicha();
-        if (envio && window.abrirFichaEnvio) window.abrirFichaEnvio(envio);
+        if (envio && window.abrirFichaEnvio) window.abrirFichaEnvio(envio, { volverAPedidoId: idPedidoOrigen });
       });
     });
   }
@@ -990,33 +1043,32 @@
   }
 
   function poblarSelectEnvioExistente() {
-    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
-    const quien = selectQuienEncarga.value;
-    const candidatos = (window.enviosCache || []).filter(envio => {
-      if (envio.estado !== 'armado') return false;
-      if (quien === 'interno') return envio.esInterno;
-      return !envio.esInterno && envio.empresaEnvioId === quien;
-    });
+    const candidatos = (window.enviosCache || []).filter(envio => envio.estado === 'armado');
     if (!candidatos.length) {
-      selectEnvioExistente.innerHTML = '<option value="">No hay envíos armados con este criterio</option>';
+      selectEnvioExistente.innerHTML = '<option value="">No hay envíos armados todavía</option>';
       return;
     }
     selectEnvioExistente.innerHTML = '<option value="">Selecciona...</option>' + candidatos.map(envio => {
       const cant = (envio.pedidos || []).length;
-      const label = `${envio.remesa ? 'Remesa ' + envio.remesa : (envio.personaRecoge || 'Interno')} (${cant} ${cant === 1 ? 'pedido' : 'pedidos'})`;
+      const quien = nombreQuienEncargaEnvio(envio).replace(/<[^>]+>/g, '');
+      const label = `${quien}${envio.remesa ? ' — Remesa ' + envio.remesa : ''} (${cant} ${cant === 1 ? 'pedido' : 'pedidos'})`;
       return `<option value="${envio.id}">${escapeHtml(label)}</option>`;
     }).join('');
   }
 
   function actualizarVisibilidadCamposEnvio() {
-    const esInterno = selectQuienEncarga.value === 'interno';
-    grupoPersonaRecoge.style.display = esInterno ? 'block' : 'none';
-
     const modo = Array.from(radiosModoEnvio).find(r => r.checked)?.value || 'nuevo';
-    grupoEnvioExistente.style.display = modo === 'existente' ? 'block' : 'none';
-    grupoRemesa.style.display = (modo === 'nuevo' && !esInterno) ? 'block' : 'none';
 
-    if (modo === 'existente') poblarSelectEnvioExistente();
+    grupoEnvioNuevo.style.display = modo === 'nuevo' ? 'block' : 'none';
+    grupoEnvioExistente.style.display = modo === 'existente' ? 'block' : 'none';
+
+    if (modo === 'nuevo') {
+      const esInterno = selectQuienEncarga.value === 'interno';
+      grupoPersonaRecoge.style.display = esInterno ? 'block' : 'none';
+      grupoRemesa.style.display = esInterno ? 'none' : 'block';
+    } else {
+      poblarSelectEnvioExistente(); // ahora lista TODOS los armados, sin filtrar por quién se encarga
+    }
   }
 
   selectQuienEncarga.addEventListener('change', actualizarVisibilidadCamposEnvio);
@@ -1034,6 +1086,26 @@
 
     equiposEnvioList.innerHTML = items.map((item, index) => {
       const total = item.cantidad || 0;
+
+      if (itemUsaSerialPorUnidad(item)) {
+        const reservadas = unidadesReservadasEnEnvios(pedido.id, index);
+        const unidadesHtml = Array.from({ length: total }).map((_, u) => {
+          const reservada = reservadas.has(u);
+          return `
+            <label class="unidad-envio-row ${reservada ? 'sin-disponible' : ''}">
+              <input type="checkbox" class="equipo-envio-unidad" data-index="${index}" data-unidad="${u}" ${reservada ? 'disabled' : ''}>
+              ${etiquetaUnidad(item, u)}${reservada ? ' (ya asignada a otro envío)' : ''}
+            </label>
+          `;
+        }).join('');
+        return `
+          <div class="equipo-envio-group">
+            <div class="equipo-envio-group-titulo">${escapeHtml(nombreItemPedido(item))} — elige unidades</div>
+            ${unidadesHtml}
+          </div>
+        `;
+      }
+
       const reservado = cantidadReservadaEnEnvios(pedido.id, index);
       const disponible = Math.max(0, total - reservado);
       return `
@@ -1094,6 +1166,18 @@
       const cantidad = parseInt(fila.querySelector('.equipo-envio-cantidad').value, 10) || 0;
       if (cantidad <= 0) return;
       items.push({ itemIndex: parseInt(fila.dataset.index, 10), cantidad });
+    });
+
+    // Ítems con serial: se agrupan las unidades marcadas por índice de ítem.
+    const unidadesPorIndice = {};
+    equiposEnvioList.querySelectorAll('.equipo-envio-unidad:checked').forEach(chk => {
+      const idx = parseInt(chk.dataset.index, 10);
+      const unidad = parseInt(chk.dataset.unidad, 10);
+      if (!unidadesPorIndice[idx]) unidadesPorIndice[idx] = [];
+      unidadesPorIndice[idx].push(unidad);
+    });
+    Object.entries(unidadesPorIndice).forEach(([idx, unidades]) => {
+      items.push({ itemIndex: parseInt(idx, 10), unidades, cantidad: unidades.length });
     });
 
     if (!items.length) {
