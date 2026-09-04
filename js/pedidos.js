@@ -590,6 +590,23 @@
     return `<span class="equipo-card-serial pendiente">🟡 ${seriales.map(escapeHtml).join(', ')} (${seriales.length}/${cantidad})</span>`;
   }
 
+  // Para un Motoreductor: combina el serial del motor y del reductor de cada
+  // unidad en una sola línea "motor / reductor". Con cantidad > 1 se enumera
+  // por unidad, para saber cuál motor va emparejado con cuál reductor.
+  function resumenSerialesMotoreductor(item, cantidad) {
+    const filas = Array.from({ length: cantidad }).map((_, i) => {
+      const sm = (item.serialesMotor?.[i] || '').trim();
+      const sr = (item.serialesReductor?.[i] || '').trim();
+      const completa = sm && sr;
+      const vacia = !sm && !sr;
+      const icono = completa ? '🔢' : (vacia ? '🔴' : '🟡');
+      const clase = completa ? 'completo' : 'pendiente';
+      const prefijo = cantidad > 1 ? `Unidad ${i + 1}: ` : '';
+      return `<div class="equipo-card-serial ${clase}" style="display:block;">${icono} ${prefijo}${escapeHtml(sm || '—')} / ${escapeHtml(sr || '—')}</div>`;
+    }).join('');
+    return `<div class="serial-par-lista">${filas}</div>`;
+  }
+
   const COLOR_PREPARADO = '#2f8f5b'; // mismo verde que --ok
   const COLOR_COMPLETADO = '#1c2128'; // graphite — para distinguirlo claramente de "preparado"
 
@@ -709,15 +726,19 @@
             <div class="equipo-card-meta">
               <span class="meta-chip">${formatearPesoFicha(motor?.peso)}</span>
             </div>
-            ${usaSerialMotor ? resumenSeriales({ seriales: item.serialesMotor }, item.cantidad) : ''}
           </div>
           <div class="motoreductor-subitem">
             <div class="equipo-card-nombre">⚙️ ${nombreReductor}</div>
             <div class="equipo-card-meta">
               <span class="meta-chip">${formatearPesoFicha(reductor?.peso)}</span>
             </div>
-            ${usaSerialReductor ? resumenSeriales({ seriales: item.serialesReductor }, item.cantidad) : ''}
           </div>
+          ${(usaSerialMotor || usaSerialReductor) ? `
+            <div class="motoreductor-subitem" style="border-bottom:none;">
+              <div class="equipo-card-nombre" style="font-size:12px; color:var(--ink-soft); margin-bottom:4px;">Serial motor / Serial reductor</div>
+              ${resumenSerialesMotoreductor(item, item.cantidad)}
+            </div>
+          ` : ''}
         </div>
         <label class="equipo-card-preparado-toggle">
           <input type="checkbox" class="chk-preparado-card" data-index="${index}" ${preparado ? 'checked' : ''} ${completado ? 'disabled' : ''}>
