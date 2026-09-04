@@ -1038,6 +1038,31 @@
   }
   .envio-vinculado-card:hover{ background: #f3f1ee; }
 
+  .btn-devolucion{
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    background: #fdf2f1;
+    color: var(--danger);
+    border: 1px solid #ecc8c4;
+    border-radius: var(--radius);
+    padding: 7px 9px;
+    cursor: pointer;
+  }
+  .btn-devolucion:hover{ background: #fbe4e2; }
+
+  .serial-campo input.serial-duplicado{
+    border-color: var(--danger);
+    background: #fdf2f1;
+  }
+  .serial-duplicado-aviso{
+    font-size: 11px;
+    color: var(--danger);
+    margin-top: 4px;
+    line-height: 1.4;
+  }
+
   @media (max-width: 760px){
     .ficha-campos{ grid-template-columns: 1fr; }
     body{ flex-direction: column; }

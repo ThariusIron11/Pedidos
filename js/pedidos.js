@@ -838,7 +838,7 @@
 
   let indexEquipoEnSeriales = null;
 
-  function camposSerialesHtml(prefijoClase, cantidad, serialesActuales, etiqueta, unidadesBloqueadas) {
+  function camposSerialesHtml(prefijoClase, campoNombre, cantidad, serialesActuales, etiqueta, unidadesBloqueadas) {
     return `
       <div class="seriales-grupo-titulo">${etiqueta}</div>
       <div class="seriales-campos-list">${
@@ -847,12 +847,137 @@
           return `
             <div class="serial-campo">
               <label>Unidad ${i + 1}${bloqueada ? ' 🔒 (ya despachada)' : ''}</label>
-              <input type="text" class="${prefijoClase}" value="${serialesActuales[i] ? escapeHtml(serialesActuales[i]) : ''}" placeholder="Número de serial" ${bloqueada ? 'disabled' : ''}>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <input type="text" class="serial-input-campo ${prefijoClase}" data-campo="${campoNombre}" data-unidad="${i}" value="${serialesActuales[i] ? escapeHtml(serialesActuales[i]) : ''}" placeholder="Número de serial" ${bloqueada ? 'disabled' : ''} style="flex:1;">
+                ${bloqueada ? `<button type="button" class="btn-devolucion" data-campo="${campoNombre}" data-unidad="${i}" title="Registrar devolución de esta unidad">↩️ Devolución</button>` : ''}
+              </div>
+              <div class="serial-duplicado-aviso" style="display:none;"></div>
             </div>
           `;
         }).join('')
       }</div>
     `;
+  }
+
+  // Busca en TODOS los pedidos (en progreso o despachados) dónde más se usa
+  // este número de serial, para que no se repita por error.
+  // "Categoría" de un uso de serial = el tipo de equipo real detrás de ese
+  // campo (Motor, Reductor, Sprocket, etc.). Dos seriales solo se consideran
+  // en conflicto si son de la MISMA categoría — un Motor y un Reductor pueden
+  // coincidir en el mismo número sin problema, pero dos Reductores no.
+  function categoriaDeUso(item, campo) {
+    let equipo;
+    if (campo === 'motor') equipo = buscarEquipoCatalogo(item.motorEquipoId);
+    else if (campo === 'reductor') equipo = buscarEquipoCatalogo(item.reductorEquipoId);
+    else equipo = buscarEquipoCatalogo(item.equipoId);
+    const tipo = equipo ? buscarTipoEquipo(equipo.tipoId) : null;
+    return tipo ? normalizar(tipo.nombre) : null;
+  }
+
+  function buscarUsosDeSerial(serial, excluir, categoriaActual) {
+    serial = (serial || '').trim();
+    if (!serial || !categoriaActual) return [];
+    const usos = [];
+
+    function revisarLista(pedido, item, indexItem, lista, campo) {
+      if (categoriaDeUso(item, campo) !== categoriaActual) return; // categoría distinta: no es conflicto
+      (lista || []).forEach((s, u) => {
+        if (!s || s.trim() !== serial) return;
+        if (excluir && pedido.id === excluir.pedidoId && indexItem === excluir.indexItem && campo === excluir.campo && u === excluir.unidad) return;
+        usos.push({ pedido, item, campo, unidad: u });
+      });
+    }
+
+    pedidosCache.forEach(pedido => {
+      (pedido.equipos || []).forEach((item, indexItem) => {
+        if (item.tipoLinea === 'motoreductor') {
+          revisarLista(pedido, item, indexItem, item.serialesMotor, 'motor');
+          revisarLista(pedido, item, indexItem, item.serialesReductor, 'reductor');
+        } else {
+          revisarLista(pedido, item, indexItem, item.seriales, 'individual');
+        }
+      });
+    });
+    return usos;
+  }
+
+  function describirUsoSerial(uso) {
+    const compania = buscarCompania(uso.pedido.companiaId);
+    const nombreCompania = compania ? compania.nombre : 'Compañía no encontrada';
+    const yaDespachado = (uso.item.unidadesCompletadas || []).includes(uso.unidad);
+    const campoTexto = uso.campo === 'motor' ? ' (Motor)' : uso.campo === 'reductor' ? ' (Reductor)' : '';
+    return `N${uso.pedido.numero} - ${nombreCompania}${campoTexto} — ${yaDespachado ? 'Despachado' : 'En progreso'}`;
+  }
+
+  function conectarValidacionSerialesDuplicados() {
+    const pedidoActual = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    const itemActual = pedidoActual ? (pedidoActual.equipos || [])[indexEquipoEnSeriales] : null;
+    if (!itemActual) return;
+
+    serialesCampos.querySelectorAll('.serial-input-campo').forEach(input => {
+      input.addEventListener('input', () => {
+        const aviso = input.closest('.serial-campo').querySelector('.serial-duplicado-aviso');
+        const campo = input.dataset.campo;
+        const excluir = {
+          pedidoId: pedidoIdEnFicha,
+          indexItem: indexEquipoEnSeriales,
+          campo,
+          unidad: parseInt(input.dataset.unidad, 10)
+        };
+        const categoriaActual = categoriaDeUso(itemActual, campo);
+        const usos = buscarUsosDeSerial(input.value, excluir, categoriaActual);
+        if (usos.length) {
+          aviso.style.display = 'block';
+          aviso.textContent = `⚠️ Este serial ya está en: ${usos.map(describirUsoSerial).join(' · ')}`;
+          input.classList.add('serial-duplicado');
+        } else {
+          aviso.style.display = 'none';
+          aviso.textContent = '';
+          input.classList.remove('serial-duplicado');
+        }
+      });
+    });
+  }
+
+  // Devolución de una unidad ya despachada: libera su serial (queda vacío,
+  // ya no cuenta como "en uso" en ningún otro lado) y la unidad vuelve a
+  // quedar editable/no completada. En un motoreductor, la devolución de la
+  // unidad libera motor Y reductor juntos (van emparejados como una unidad).
+  async function registrarDevolucion(pedidoId, indexItem, campo, unidad) {
+    const ok = confirm(`¿Registrar devolución de la Unidad ${unidad + 1}? El serial quedará libre para poder reutilizarse.`);
+    if (!ok) return;
+
+    const pedido = pedidosCache.find(p => p.id === pedidoId);
+    if (!pedido) return;
+    const item = (pedido.equipos || [])[indexItem];
+    if (!item) return;
+
+    const itemActualizado = { ...item };
+    itemActualizado.unidadesCompletadas = (item.unidadesCompletadas || []).filter(u => u !== unidad);
+    if (item.tipoLinea === 'motoreductor') {
+      if (itemActualizado.serialesMotor) {
+        itemActualizado.serialesMotor = [...itemActualizado.serialesMotor];
+        itemActualizado.serialesMotor[unidad] = '';
+      }
+      if (itemActualizado.serialesReductor) {
+        itemActualizado.serialesReductor = [...itemActualizado.serialesReductor];
+        itemActualizado.serialesReductor[unidad] = '';
+      }
+    } else if (itemActualizado.seriales) {
+      itemActualizado.seriales = [...itemActualizado.seriales];
+      itemActualizado.seriales[unidad] = '';
+    }
+
+    const equiposActualizados = (pedido.equipos || []).map((it, i) => i === indexItem ? itemActualizado : it);
+
+    try {
+      await db.collection(COLECCION).doc(pedidoId).update({ equipos: equiposActualizados });
+      abrirModalSeriales(indexItem); // refresca el modal con la unidad ya liberada
+      renderSeccionEquipos({ ...pedido, equipos: equiposActualizados }); // refresca la tarjeta detrás
+    } catch (err) {
+      console.error('Error registrando devolución:', err);
+      alert('No se pudo registrar la devolución. Revisa la consola.');
+    }
   }
 
   function abrirModalSeriales(index) {
@@ -871,14 +996,21 @@
       modalSerialesTitulo.textContent = 'Seriales — Motoreductor';
 
       let html = '';
-      if (motor?.usaSerial) html += camposSerialesHtml('serial-input-motor', cantidad, item.serialesMotor || [], `⚡ Motor — ${escapeHtml(motor.nombre)}`, unidadesBloqueadas);
-      if (reductor?.usaSerial) html += camposSerialesHtml('serial-input-reductor', cantidad, item.serialesReductor || [], `⚙️ Reductor — ${escapeHtml(reductor.nombre)}`, unidadesBloqueadas);
+      if (motor?.usaSerial) html += camposSerialesHtml('serial-input-motor', 'motor', cantidad, item.serialesMotor || [], `⚡ Motor — ${escapeHtml(motor.nombre)}`, unidadesBloqueadas);
+      if (reductor?.usaSerial) html += camposSerialesHtml('serial-input-reductor', 'reductor', cantidad, item.serialesReductor || [], `⚙️ Reductor — ${escapeHtml(reductor.nombre)}`, unidadesBloqueadas);
       serialesCampos.innerHTML = html || '<div class="empty-equipos-pedido">Ninguna de las dos piezas usa número serial.</div>';
     } else {
       const equipo = buscarEquipoCatalogo(item.equipoId);
       modalSerialesTitulo.textContent = `Seriales — ${equipo ? equipo.nombre : 'Equipo'}`;
-      serialesCampos.innerHTML = camposSerialesHtml('serial-input', cantidad, item.seriales || [], '', unidadesBloqueadas);
+      serialesCampos.innerHTML = camposSerialesHtml('serial-input', 'individual', cantidad, item.seriales || [], '', unidadesBloqueadas);
     }
+    conectarValidacionSerialesDuplicados();
+
+    serialesCampos.querySelectorAll('.btn-devolucion').forEach(btn => {
+      btn.addEventListener('click', () => {
+        registrarDevolucion(pedido.id, index, btn.dataset.campo, parseInt(btn.dataset.unidad, 10));
+      });
+    });
 
     modalSeriales.classList.add('open');
   }
@@ -898,6 +1030,11 @@
     if (!pedido || indexEquipoEnSeriales === null) return;
     const itemActual = (pedido.equipos || [])[indexEquipoEnSeriales];
     if (!itemActual) return;
+
+    if (serialesCampos.querySelector('.serial-duplicado')) {
+      const seguir = confirm('Hay al menos un serial repetido con otro pedido (ver aviso en rojo). ¿Guardar de todas formas?');
+      if (!seguir) return;
+    }
 
     let cambios;
     if (itemActual.tipoLinea === 'motoreductor') {
