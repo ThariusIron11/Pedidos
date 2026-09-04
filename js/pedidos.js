@@ -591,13 +591,30 @@
   }
 
   const COLOR_PREPARADO = '#2f8f5b'; // mismo verde que --ok
+  const COLOR_COMPLETADO = '#1c2128'; // graphite — para distinguirlo claramente de "preparado"
+
+  // Un ítem queda "completado" cuando TODA su cantidad (o todas sus unidades,
+  // si usa serial) ya salió en algún envío despachado. Se guarda en Firestore
+  // al momento de despachar (ver envios.js), acá solo se lee/calcula.
+  function estaItemCompletado(item) {
+    const total = item.cantidad || 0;
+    if (!total) return false;
+    if (item.unidadesCompletadas) return item.unidadesCompletadas.length >= total;
+    return (item.cantidadCompletada || 0) >= total;
+  }
+
+  function pedidoEstaCompletado(pedido) {
+    const equipos = pedido.equipos || [];
+    return equipos.length > 0 && equipos.every(estaItemCompletado);
+  }
 
   function renderTarjetaIndividual(item, index) {
     const equipo = buscarEquipoCatalogo(item.equipoId);
     const tipo = equipo ? buscarTipoEquipo(equipo.tipoId) : null;
     const preparado = !!item.preparado;
-    const color = preparado ? COLOR_PREPARADO : (tipo?.color || '#5b6472');
-    const icono = preparado ? '✅' : (tipo?.icono || '📦');
+    const completado = estaItemCompletado(item);
+    const color = completado ? COLOR_COMPLETADO : (preparado ? COLOR_PREPARADO : (tipo?.color || '#5b6472'));
+    const icono = completado ? '🔒' : (preparado ? '✅' : (tipo?.icono || '📦'));
     const nombreTipo = tipo?.nombre || 'Tipo desconocido';
 
     const extrasNombre = [
@@ -616,10 +633,10 @@
     const metaChips = `<span class="meta-chip">${formatearPesoFicha(calcularPesoEquipo(equipo))}</span>`;
 
     return `
-      <div class="equipo-card ${usaSerial ? 'clicable' : ''} ${preparado ? 'preparado' : ''}" data-index="${index}" style="border-color:${color};">
+      <div class="equipo-card ${(usaSerial && !completado) ? 'clicable' : ''} ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''}" data-index="${index}" style="border-color:${color};">
         <div class="equipo-card-header" style="background:${color};">
           <span>${icono}</span><span>${escapeHtml(nombreTipo)} x ${item.cantidad}</span>
-          ${preparado ? '<span class="equipo-card-preparado-tag">Preparado</span>' : ''}
+          ${completado ? '<span class="equipo-card-preparado-tag">Completado</span>' : (preparado ? '<span class="equipo-card-preparado-tag">Preparado</span>' : '')}
         </div>
         <div class="equipo-card-body" style="background:${color}15;">
           <div>
@@ -630,8 +647,8 @@
           ${usaSerial ? resumenSeriales(item, item.cantidad) : ''}
         </div>
         <label class="equipo-card-preparado-toggle">
-          <input type="checkbox" class="chk-preparado-card" data-index="${index}" ${preparado ? 'checked' : ''}>
-          Marcar como preparado
+          <input type="checkbox" class="chk-preparado-card" data-index="${index}" ${preparado ? 'checked' : ''} ${completado ? 'disabled' : ''}>
+          ${completado ? 'Preparado (bloqueado, ya se despachó)' : 'Marcar como preparado'}
         </label>
       </div>
     `;
@@ -642,8 +659,9 @@
     const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
     const tipoMotoreductor = (window.tiposEquipoCache || []).find(t => normalizar(t.nombre) === 'motoreductor');
     const preparado = !!item.preparado;
-    const color = preparado ? COLOR_PREPARADO : (tipoMotoreductor?.color || '#2e7d32');
-    const icono = preparado ? '✅' : (tipoMotoreductor?.icono || '🔧');
+    const completado = estaItemCompletado(item);
+    const color = completado ? COLOR_COMPLETADO : (preparado ? COLOR_PREPARADO : (tipoMotoreductor?.color || '#2e7d32'));
+    const icono = completado ? '🔒' : (preparado ? '✅' : (tipoMotoreductor?.icono || '🔧'));
 
     const extrasReductor = [
       item.llevaBrazo ? '+ Brazo de reacción' : '',
@@ -659,17 +677,17 @@
 
     const usaSerialMotor = !!motor?.usaSerial;
     const usaSerialReductor = !!reductor?.usaSerial;
-    const esClicable = usaSerialMotor || usaSerialReductor;
+    const esClicable = (usaSerialMotor || usaSerialReductor) && !completado;
 
     const ocHtml = item.ordenCompra
       ? `<div class="equipo-card-oc">📄 OC: ${escapeHtml(item.ordenCompra)}</div>`
       : '';
 
     return `
-      <div class="equipo-card ${esClicable ? 'clicable' : ''} ${preparado ? 'preparado' : ''}" data-index="${index}" style="border-color:${color};">
+      <div class="equipo-card ${esClicable ? 'clicable' : ''} ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''}" data-index="${index}" style="border-color:${color};">
         <div class="equipo-card-header" style="background:${color};">
           <span>${icono}</span><span>Motoreductor x ${item.cantidad}</span>
-          ${preparado ? '<span class="equipo-card-preparado-tag">Preparado</span>' : ''}
+          ${completado ? '<span class="equipo-card-preparado-tag">Completado</span>' : (preparado ? '<span class="equipo-card-preparado-tag">Preparado</span>' : '')}
         </div>
         <div class="equipo-card-body" style="background:${color}15; flex-direction:column; align-items:stretch;">
           ${ocHtml}
@@ -689,8 +707,8 @@
           </div>
         </div>
         <label class="equipo-card-preparado-toggle">
-          <input type="checkbox" class="chk-preparado-card" data-index="${index}" ${preparado ? 'checked' : ''}>
-          Marcar como preparado
+          <input type="checkbox" class="chk-preparado-card" data-index="${index}" ${preparado ? 'checked' : ''} ${completado ? 'disabled' : ''}>
+          ${completado ? 'Preparado (bloqueado, ya se despachó)' : 'Marcar como preparado'}
         </label>
       </div>
     `;
@@ -746,7 +764,8 @@
     const nombreCompania = compania ? compania.nombre : 'Compañía no encontrada';
 
     fichaHeaderNumero.textContent = `N${pedido.numero} - ${nombreCompania}`;
-    fichaHeaderTags.innerHTML = `<span class="${tipoInfo.clase}">${tipoInfo.texto}</span>`;
+    fichaHeaderTags.innerHTML = `<span class="${tipoInfo.clase}">${tipoInfo.texto}</span>` +
+      (pedidoEstaCompletado(pedido) ? '<span class="tag-pedido-completado">COMPLETADO</span>' : '');
 
     renderSeccionCliente(pedido);
     renderSeccionEquipos(pedido);
@@ -1247,7 +1266,10 @@
           <td><strong>${pedido.numero}</strong></td>
           <td>${nombreCompania}</td>
           <td>${pedido.contacto ? escapeHtml(pedido.contacto) : '<span style="color:var(--ink-soft);">—</span>'}</td>
-          <td><span class="${tipoInfo.clase}">${tipoInfo.texto}</span></td>
+          <td>
+            <span class="${tipoInfo.clase}">${tipoInfo.texto}</span>
+            ${pedidoEstaCompletado(pedido) ? '<span class="tag-pedido-completado">COMPLETADO</span>' : ''}
+          </td>
           <td>${cantidadEquipos} ${cantidadEquipos === 1 ? 'equipo' : 'equipos'}</td>
           <td>
             <div class="row-actions">

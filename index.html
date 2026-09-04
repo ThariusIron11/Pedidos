@@ -713,6 +713,16 @@
     padding: 2px 8px;
     border-radius: 999px;
   }
+  .tag-pedido-completado{
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--graphite);
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-left: 6px;
+  }
 
   /* ---------- Ficha de pedido (solo lectura) ---------- */
   .ficha-seccion{
@@ -798,6 +808,8 @@
   }
   .equipo-card-preparado-toggle input{ accent-color: var(--ok); }
   .equipo-card.preparado .equipo-card-preparado-toggle{ color: var(--ok); font-weight: 700; }
+  .equipo-card.completado .equipo-card-preparado-toggle{ color: var(--ink); font-weight: 700; cursor: default; }
+  .equipo-card.completado .equipo-card-preparado-toggle input{ accent-color: var(--ink); cursor: default; }
   .equipo-card-body{
     display: flex;
     align-items: center;

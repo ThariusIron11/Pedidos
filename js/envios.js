@@ -231,17 +231,51 @@
   btnDespacharEnvio.addEventListener('click', async () => {
     const envio = window.enviosCache.find(en => en.id === envioIdEnFicha);
     if (!envio) return;
-    const ok = confirm('¿Marcar este envío como despachado? Después de esto queda fijo (salvo la remesa, si todavía no la tiene) y ya no se podrá editar.');
+    const ok = confirm('¿Marcar este envío como despachado? Los equipos que lleva quedarán marcados como completados y fijos, y ya no se podrán editar.');
     if (!ok) return;
+
+    btnDespacharEnvio.disabled = true;
     try {
       await db.collection(COLECCION).doc(envio.id).update({
         estado: 'despachado',
         fechaDespacho: firebase.firestore.FieldValue.serverTimestamp()
       });
+
+      // Marca en cada pedido involucrado los equipos/unidades que llevaba este
+      // despacho como completados (y "preparado" si no lo estaba). Se trackea
+      // por cantidad o por unidad individual, por si el ítem se reparte entre
+      // varios envíos/remisiones parciales.
+      const pedidoIds = [...new Set((envio.pedidos || []).map(p => p.pedidoId))];
+      for (const pedidoId of pedidoIds) {
+        const entradas = (envio.pedidos || []).filter(p => p.pedidoId === pedidoId);
+        const pedidoRef = db.collection('pedidos').doc(pedidoId);
+        const snap = await pedidoRef.get();
+        if (!snap.exists) continue;
+
+        const equipos = [...(snap.data().equipos || [])];
+        entradas.forEach(entrada => {
+          (entrada.items || []).forEach(it => {
+            const item = equipos[it.itemIndex];
+            if (!item) return;
+            if (it.unidades && it.unidades.length) {
+              const completadas = new Set(item.unidadesCompletadas || []);
+              it.unidades.forEach(u => completadas.add(u));
+              item.unidadesCompletadas = Array.from(completadas);
+            } else {
+              item.cantidadCompletada = Math.min(item.cantidad || 0, (item.cantidadCompletada || 0) + (it.cantidad || 0));
+            }
+            item.preparado = true;
+          });
+        });
+        await pedidoRef.update({ equipos });
+      }
+
       cerrarFicha();
     } catch (err) {
       console.error('Error despachando envío:', err);
       alert('No se pudo marcar como despachado. Revisa la consola.');
+    } finally {
+      btnDespacharEnvio.disabled = false;
     }
   });
 
