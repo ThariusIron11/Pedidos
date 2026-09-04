@@ -603,6 +603,14 @@
     return (item.cantidadCompletada || 0) >= total;
   }
 
+  // Cuántas unidades de este ítem ya salieron despachadas (puede ser parcial:
+  // ej. 1 de 2). Se usa para lockear SOLO esa porción, no el ítem completo.
+  function conteoCompletadoItem(item) {
+    const total = item.cantidad || 0;
+    const hecho = item.unidadesCompletadas ? item.unidadesCompletadas.length : (item.cantidadCompletada || 0);
+    return { hecho: Math.min(hecho, total), total };
+  }
+
   function pedidoEstaCompletado(pedido) {
     const equipos = pedido.equipos || [];
     return equipos.length > 0 && equipos.every(estaItemCompletado);
@@ -630,7 +638,9 @@
     const ocHtml = item.ordenCompra
       ? `<div class="equipo-card-oc">📄 OC: ${escapeHtml(item.ordenCompra)}</div>`
       : '';
-    const metaChips = `<span class="meta-chip">${formatearPesoFicha(calcularPesoEquipo(equipo))}</span>`;
+    const { hecho, total } = conteoCompletadoItem(item);
+    const chipParcial = (hecho > 0 && hecho < total) ? `<span class="meta-chip" title="Ya se despachó parte de este ítem">🔒 ${hecho}/${total} despachado</span>` : '';
+    const metaChips = `<span class="meta-chip">${formatearPesoFicha(calcularPesoEquipo(equipo))}</span>${chipParcial}`;
 
     return `
       <div class="equipo-card ${(usaSerial && !completado) ? 'clicable' : ''} ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''}" data-index="${index}" style="border-color:${color};">
@@ -682,12 +692,15 @@
     const ocHtml = item.ordenCompra
       ? `<div class="equipo-card-oc">📄 OC: ${escapeHtml(item.ordenCompra)}</div>`
       : '';
+    const { hecho, total } = conteoCompletadoItem(item);
+    const chipParcial = (hecho > 0 && hecho < total) ? `<span class="meta-chip" title="Ya se despachó parte de este ítem">🔒 ${hecho}/${total} despachado</span>` : '';
 
     return `
       <div class="equipo-card ${esClicable ? 'clicable' : ''} ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''}" data-index="${index}" style="border-color:${color};">
         <div class="equipo-card-header" style="background:${color};">
           <span>${icono}</span><span>Motoreductor x ${item.cantidad}</span>
           ${completado ? '<span class="equipo-card-preparado-tag">Completado</span>' : (preparado ? '<span class="equipo-card-preparado-tag">Preparado</span>' : '')}
+          ${chipParcial}
         </div>
         <div class="equipo-card-body" style="background:${color}15; flex-direction:column; align-items:stretch;">
           ${ocHtml}
@@ -804,16 +817,19 @@
 
   let indexEquipoEnSeriales = null;
 
-  function camposSerialesHtml(prefijoClase, cantidad, serialesActuales, etiqueta) {
+  function camposSerialesHtml(prefijoClase, cantidad, serialesActuales, etiqueta, unidadesBloqueadas) {
     return `
       <div class="seriales-grupo-titulo">${etiqueta}</div>
       <div class="seriales-campos-list">${
-        Array.from({ length: cantidad }).map((_, i) => `
-          <div class="serial-campo">
-            <label>Unidad ${i + 1}</label>
-            <input type="text" class="${prefijoClase}" value="${serialesActuales[i] ? escapeHtml(serialesActuales[i]) : ''}" placeholder="Número de serial">
-          </div>
-        `).join('')
+        Array.from({ length: cantidad }).map((_, i) => {
+          const bloqueada = (unidadesBloqueadas || []).includes(i);
+          return `
+            <div class="serial-campo">
+              <label>Unidad ${i + 1}${bloqueada ? ' 🔒 (ya despachada)' : ''}</label>
+              <input type="text" class="${prefijoClase}" value="${serialesActuales[i] ? escapeHtml(serialesActuales[i]) : ''}" placeholder="Número de serial" ${bloqueada ? 'disabled' : ''}>
+            </div>
+          `;
+        }).join('')
       }</div>
     `;
   }
@@ -826,6 +842,7 @@
 
     indexEquipoEnSeriales = index;
     const cantidad = item.cantidad || 1;
+    const unidadesBloqueadas = item.unidadesCompletadas || []; // ya despachadas: no editables
 
     if (item.tipoLinea === 'motoreductor') {
       const motor = buscarEquipoCatalogo(item.motorEquipoId);
@@ -833,13 +850,13 @@
       modalSerialesTitulo.textContent = 'Seriales — Motoreductor';
 
       let html = '';
-      if (motor?.usaSerial) html += camposSerialesHtml('serial-input-motor', cantidad, item.serialesMotor || [], `⚡ Motor — ${escapeHtml(motor.nombre)}`);
-      if (reductor?.usaSerial) html += camposSerialesHtml('serial-input-reductor', cantidad, item.serialesReductor || [], `⚙️ Reductor — ${escapeHtml(reductor.nombre)}`);
+      if (motor?.usaSerial) html += camposSerialesHtml('serial-input-motor', cantidad, item.serialesMotor || [], `⚡ Motor — ${escapeHtml(motor.nombre)}`, unidadesBloqueadas);
+      if (reductor?.usaSerial) html += camposSerialesHtml('serial-input-reductor', cantidad, item.serialesReductor || [], `⚙️ Reductor — ${escapeHtml(reductor.nombre)}`, unidadesBloqueadas);
       serialesCampos.innerHTML = html || '<div class="empty-equipos-pedido">Ninguna de las dos piezas usa número serial.</div>';
     } else {
       const equipo = buscarEquipoCatalogo(item.equipoId);
       modalSerialesTitulo.textContent = `Seriales — ${equipo ? equipo.nombre : 'Equipo'}`;
-      serialesCampos.innerHTML = camposSerialesHtml('serial-input', cantidad, item.seriales || [], '');
+      serialesCampos.innerHTML = camposSerialesHtml('serial-input', cantidad, item.seriales || [], '', unidadesBloqueadas);
     }
 
     modalSeriales.classList.add('open');
