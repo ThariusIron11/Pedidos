@@ -657,7 +657,9 @@
       : '';
     const { hecho, total } = conteoCompletadoItem(item);
     const chipParcial = (hecho > 0 && hecho < total) ? `<span class="meta-chip" title="Ya se despachó parte de este ítem">🔒 ${hecho}/${total} despachado</span>` : '';
-    const metaChips = `<span class="meta-chip">${formatearPesoFicha(calcularPesoEquipo(equipo))}</span>${chipParcial}`;
+    const cantDevueltas = (item.unidadesDevueltas || []).length;
+    const chipDevuelto = cantDevueltas ? `<span class="meta-chip chip-devuelto" title="Unidad(es) devuelta(s)">🔵 ${cantDevueltas} devuelta${cantDevueltas > 1 ? 's' : ''}</span>` : '';
+    const metaChips = `<span class="meta-chip">${formatearPesoFicha(calcularPesoEquipo(equipo))}</span>${chipParcial}${chipDevuelto}`;
 
     return `
       <div class="equipo-card ${(usaSerial && !completado) ? 'clicable' : ''} ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''}" data-index="${index}" style="border-color:${color};">
@@ -711,13 +713,15 @@
       : '';
     const { hecho, total } = conteoCompletadoItem(item);
     const chipParcial = (hecho > 0 && hecho < total) ? `<span class="meta-chip" title="Ya se despachó parte de este ítem">🔒 ${hecho}/${total} despachado</span>` : '';
+    const cantDevueltas = (item.unidadesDevueltas || []).length;
+    const chipDevuelto = cantDevueltas ? `<span class="meta-chip chip-devuelto" title="Unidad(es) devuelta(s)">🔵 ${cantDevueltas} devuelta${cantDevueltas > 1 ? 's' : ''}</span>` : '';
 
     return `
       <div class="equipo-card ${esClicable ? 'clicable' : ''} ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''}" data-index="${index}" style="border-color:${color};">
         <div class="equipo-card-header" style="background:${color};">
           <span>${icono}</span><span>Motoreductor x ${item.cantidad}</span>
           ${completado ? '<span class="equipo-card-preparado-tag">Completado</span>' : (preparado ? '<span class="equipo-card-preparado-tag">Preparado</span>' : '')}
-          ${chipParcial}
+          ${chipParcial}${chipDevuelto}
         </div>
         <div class="equipo-card-body" style="background:${color}15; flex-direction:column; align-items:stretch;">
           ${ocHtml}
@@ -838,18 +842,21 @@
 
   let indexEquipoEnSeriales = null;
 
-  function camposSerialesHtml(prefijoClase, campoNombre, cantidad, serialesActuales, etiqueta, unidadesBloqueadas) {
+  function camposSerialesHtml(prefijoClase, campoNombre, cantidad, serialesActuales, etiqueta, unidadesCompletadas, unidadesDevueltas) {
     return `
       <div class="seriales-grupo-titulo">${etiqueta}</div>
       <div class="seriales-campos-list">${
         Array.from({ length: cantidad }).map((_, i) => {
-          const bloqueada = (unidadesBloqueadas || []).includes(i);
+          const devuelta = (unidadesDevueltas || []).includes(i);
+          const completada = (unidadesCompletadas || []).includes(i);
+          const bloqueada = devuelta || completada;
+          const etiquetaUnidad = devuelta ? ' 🔵 (devuelto)' : (completada ? ' 🔒 (ya despachada)' : '');
           return `
-            <div class="serial-campo">
-              <label>Unidad ${i + 1}${bloqueada ? ' 🔒 (ya despachada)' : ''}</label>
+            <div class="serial-campo ${devuelta ? 'devuelto' : ''}">
+              <label>Unidad ${i + 1}${etiquetaUnidad}</label>
               <div style="display:flex; gap:6px; align-items:center;">
                 <input type="text" class="serial-input-campo ${prefijoClase}" data-campo="${campoNombre}" data-unidad="${i}" value="${serialesActuales[i] ? escapeHtml(serialesActuales[i]) : ''}" placeholder="Número de serial" ${bloqueada ? 'disabled' : ''} style="flex:1;">
-                ${bloqueada ? `<button type="button" class="btn-devolucion" data-campo="${campoNombre}" data-unidad="${i}" title="Registrar devolución de esta unidad">↩️ Devolución</button>` : ''}
+                ${(completada && !devuelta) ? `<button type="button" class="btn-devolucion" data-campo="${campoNombre}" data-unidad="${i}" title="Registrar devolución de esta unidad">↩️ Devolución</button>` : ''}
               </div>
               <div class="serial-duplicado-aviso" style="display:none;"></div>
             </div>
@@ -883,6 +890,7 @@
       if (categoriaDeUso(item, campo) !== categoriaActual) return; // categoría distinta: no es conflicto
       (lista || []).forEach((s, u) => {
         if (!s || s.trim() !== serial) return;
+        if ((item.unidadesDevueltas || []).includes(u)) return; // devuelto: el serial queda libre otra vez
         if (excluir && pedido.id === excluir.pedidoId && indexItem === excluir.indexItem && campo === excluir.campo && u === excluir.unidad) return;
         usos.push({ pedido, item, campo, unidad: u });
       });
@@ -944,7 +952,7 @@
   // quedar editable/no completada. En un motoreductor, la devolución de la
   // unidad libera motor Y reductor juntos (van emparejados como una unidad).
   async function registrarDevolucion(pedidoId, indexItem, campo, unidad) {
-    const ok = confirm(`¿Registrar devolución de la Unidad ${unidad + 1}? El serial quedará libre para poder reutilizarse.`);
+    const ok = confirm(`¿Registrar devolución de la Unidad ${unidad + 1}? Queda marcada como devuelta y bloqueada para reenvío, pero el serial se conserva (para poder rastrearla) y deja de contar como "en uso".`);
     if (!ok) return;
 
     const pedido = pedidosCache.find(p => p.id === pedidoId);
@@ -953,26 +961,18 @@
     if (!item) return;
 
     const itemActualizado = { ...item };
+    // Sale de "completado" (ya no cuenta como entregado) pero entra a
+    // "devuelto" (sigue lockeada, no se puede volver a enviar esa unidad).
+    // El serial NO se borra — se conserva para poder rastrear de qué pedido
+    // se hizo la devolución si alguien pregunta más adelante.
     itemActualizado.unidadesCompletadas = (item.unidadesCompletadas || []).filter(u => u !== unidad);
-    if (item.tipoLinea === 'motoreductor') {
-      if (itemActualizado.serialesMotor) {
-        itemActualizado.serialesMotor = [...itemActualizado.serialesMotor];
-        itemActualizado.serialesMotor[unidad] = '';
-      }
-      if (itemActualizado.serialesReductor) {
-        itemActualizado.serialesReductor = [...itemActualizado.serialesReductor];
-        itemActualizado.serialesReductor[unidad] = '';
-      }
-    } else if (itemActualizado.seriales) {
-      itemActualizado.seriales = [...itemActualizado.seriales];
-      itemActualizado.seriales[unidad] = '';
-    }
+    itemActualizado.unidadesDevueltas = Array.from(new Set([...(item.unidadesDevueltas || []), unidad]));
 
     const equiposActualizados = (pedido.equipos || []).map((it, i) => i === indexItem ? itemActualizado : it);
 
     try {
       await db.collection(COLECCION).doc(pedidoId).update({ equipos: equiposActualizados });
-      abrirModalSeriales(indexItem); // refresca el modal con la unidad ya liberada
+      abrirModalSeriales(indexItem); // refresca el modal mostrando la unidad como devuelta
       renderSeccionEquipos({ ...pedido, equipos: equiposActualizados }); // refresca la tarjeta detrás
     } catch (err) {
       console.error('Error registrando devolución:', err);
@@ -988,7 +988,8 @@
 
     indexEquipoEnSeriales = index;
     const cantidad = item.cantidad || 1;
-    const unidadesBloqueadas = item.unidadesCompletadas || []; // ya despachadas: no editables
+    const unidadesCompletadas = item.unidadesCompletadas || [];
+    const unidadesDevueltas = item.unidadesDevueltas || [];
 
     if (item.tipoLinea === 'motoreductor') {
       const motor = buscarEquipoCatalogo(item.motorEquipoId);
@@ -996,13 +997,13 @@
       modalSerialesTitulo.textContent = 'Seriales — Motoreductor';
 
       let html = '';
-      if (motor?.usaSerial) html += camposSerialesHtml('serial-input-motor', 'motor', cantidad, item.serialesMotor || [], `⚡ Motor — ${escapeHtml(motor.nombre)}`, unidadesBloqueadas);
-      if (reductor?.usaSerial) html += camposSerialesHtml('serial-input-reductor', 'reductor', cantidad, item.serialesReductor || [], `⚙️ Reductor — ${escapeHtml(reductor.nombre)}`, unidadesBloqueadas);
+      if (motor?.usaSerial) html += camposSerialesHtml('serial-input-motor', 'motor', cantidad, item.serialesMotor || [], `⚡ Motor — ${escapeHtml(motor.nombre)}`, unidadesCompletadas, unidadesDevueltas);
+      if (reductor?.usaSerial) html += camposSerialesHtml('serial-input-reductor', 'reductor', cantidad, item.serialesReductor || [], `⚙️ Reductor — ${escapeHtml(reductor.nombre)}`, unidadesCompletadas, unidadesDevueltas);
       serialesCampos.innerHTML = html || '<div class="empty-equipos-pedido">Ninguna de las dos piezas usa número serial.</div>';
     } else {
       const equipo = buscarEquipoCatalogo(item.equipoId);
       modalSerialesTitulo.textContent = `Seriales — ${equipo ? equipo.nombre : 'Equipo'}`;
-      serialesCampos.innerHTML = camposSerialesHtml('serial-input', 'individual', cantidad, item.seriales || [], '', unidadesBloqueadas);
+      serialesCampos.innerHTML = camposSerialesHtml('serial-input', 'individual', cantidad, item.seriales || [], '', unidadesCompletadas, unidadesDevueltas);
     }
     conectarValidacionSerialesDuplicados();
 
