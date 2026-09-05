@@ -55,6 +55,13 @@
     return empresa ? escapeHtml(empresa.nombre) : '<span style="color:var(--danger);">Empresa no encontrada</span>';
   }
 
+  // Para envíos Interno no existe una remesa real de transportadora — se usa
+  // el nombre de la persona encargada de recogerlo en su lugar.
+  function remesaMostrable(envio) {
+    if (envio.esInterno) return envio.personaRecoge ? escapeHtml(envio.personaRecoge) : 'Interno (sin encargado aún)';
+    return envio.remesa ? escapeHtml(envio.remesa) : null;
+  }
+
   function buscarPedido(pedidoId) {
     return (window.pedidosCache || []).find(p => p.id === pedidoId) || null;
   }
@@ -95,7 +102,7 @@
       return `
         <tr data-id="${envio.id}" class="fila-pedido-clicable">
           <td>${nombreQuienEncarga(envio)}</td>
-          <td>${envio.remesa ? escapeHtml(envio.remesa) : '<span style="color:var(--ink-soft);">—</span>'}</td>
+          <td>${remesaMostrable(envio) || '<span style="color:var(--ink-soft);">—</span>'}</td>
           <td>${cantidadPedidos} ${cantidadPedidos === 1 ? 'pedido' : 'pedidos'}</td>
           <td>${estadoTag}</td>
           <td></td>
