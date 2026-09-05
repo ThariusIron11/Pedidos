@@ -152,10 +152,17 @@
 
   // ---------- Lista de equipos dentro del pedido ----------
 
-  function opcionesEquiposHtml(equipoIdSeleccionado) {
+  function opcionesEquiposHtml(equipoIdSeleccionado, tipoIdFiltro) {
     const equipos = window.equiposCache || [];
+    const filtrados = tipoIdFiltro ? equipos.filter(eq => eq.tipoId === tipoIdFiltro) : equipos;
     return '<option value="">Selecciona un equipo...</option>' +
-      equipos.map(eq => `<option value="${eq.id}" ${eq.id === equipoIdSeleccionado ? 'selected' : ''}>${escapeHtml(eq.nombre)}${eq.variante ? ' (' + escapeHtml(eq.variante) + ')' : ''}</option>`).join('');
+      filtrados.map(eq => `<option value="${eq.id}" ${eq.id === equipoIdSeleccionado ? 'selected' : ''}>${escapeHtml(eq.nombre)}${eq.variante ? ' (' + escapeHtml(eq.variante) + ')' : ''}</option>`).join('');
+  }
+
+  function opcionesTiposFiltroHtml(tipoIdSeleccionado) {
+    const tipos = window.tiposEquipoCache || [];
+    return '<option value="">Todos los tipos</option>' +
+      tipos.map(t => `<option value="${t.id}" ${t.id === tipoIdSeleccionado ? 'selected' : ''}>${t.icono ? t.icono + ' ' : ''}${escapeHtml(t.nombre)}</option>`).join('');
   }
 
   function normalizar(str) {
@@ -230,18 +237,20 @@
     }
   }
 
-  function nuevaFilaEquipoPedido(item) {
+  function nuevaFilaEquipoPedido(item, originalIndex) {
     const esMotoreductor = item?.tipoLinea === 'motoreductor';
 
     const row = document.createElement('div');
     row.className = 'equipo-pedido-row-wrap';
+    if (originalIndex !== undefined) row.dataset.originalIndex = String(originalIndex);
     row.innerHTML = `
       <label class="extra-check chk-es-motoreductor" style="margin-bottom:8px;">
         <input type="checkbox" class="equipo-pedido-es-motoreductor" ${esMotoreductor ? 'checked' : ''}>
         🔗 Es Motoreductor (Motor + Reductor)
       </label>
 
-      <div class="equipo-pedido-row bloque-individual" style="${esMotoreductor ? 'display:none;' : ''}">
+      <div class="equipo-pedido-row bloque-individual tiene-filtro" style="${esMotoreductor ? 'display:none;' : ''}">
+        <select class="equipo-pedido-tipo-filtro">${opcionesTiposFiltroHtml()}</select>
         <select class="equipo-pedido-select">${opcionesEquiposHtml(!esMotoreductor ? item?.equipoId : null)}</select>
         <input type="number" class="equipo-pedido-cantidad" min="1" step="1" placeholder="Cant." value="${item?.cantidad ?? 1}">
         <input type="text" class="equipo-pedido-oc" placeholder="Orden de compra (opcional)" value="${item?.ordenCompra ? escapeHtml(item.ordenCompra) : ''}">
@@ -291,11 +300,35 @@
     `;
     row.querySelectorAll('.remove-equipo-pedido').forEach(btn => btn.addEventListener('click', () => row.remove()));
 
+    // Si el ítem ya tiene algo despachado (parcial o total), no se puede quitar
+    // de la lista — no tiene lógica borrar algo que ya salió.
+    const yaDespachadoAlgo = item ? conteoCompletadoItem(item).hecho > 0 : false;
+    if (yaDespachadoAlgo) {
+      row.querySelectorAll('.remove-equipo-pedido').forEach(btn => {
+        btn.disabled = true;
+        btn.title = 'No se puede quitar: ya se despachó parte de este equipo';
+        btn.style.opacity = '0.35';
+        btn.style.cursor = 'not-allowed';
+      });
+      row.querySelectorAll('.equipo-pedido-cantidad, .equipo-pedido-cantidad-mr').forEach(inp => {
+        inp.min = String(conteoCompletadoItem(item).hecho);
+      });
+    }
+
     const chkEsMotoreductor = row.querySelector('.equipo-pedido-es-motoreductor');
     const bloqueIndividual = row.querySelector('.bloque-individual');
     const bloqueMotoreductor = row.querySelector('.equipo-pedido-motoreductor');
     const selectIndividual = row.querySelector('.equipo-pedido-select');
+    const selectTipoFiltro = row.querySelector('.equipo-pedido-tipo-filtro');
     const selectReductor = row.querySelector('.equipo-pedido-reductor');
+
+    selectTipoFiltro.addEventListener('change', () => {
+      const actual = selectIndividual.value;
+      selectIndividual.innerHTML = opcionesEquiposHtml(null, selectTipoFiltro.value);
+      if ([...selectIndividual.options].some(o => o.value === actual)) selectIndividual.value = actual;
+      else selectIndividual.value = '';
+      actualizarExtrasVisibles();
+    });
 
     function actualizarModo() {
       const activo = chkEsMotoreductor.checked;
@@ -343,6 +376,9 @@
   }
 
   function leerEquiposDelFormulario() {
+    const pedidoOriginal = pedidosCache.find(p => p.id === inputId.value);
+    const equiposOriginales = pedidoOriginal?.equipos || [];
+
     const filas = equiposPedidoList.querySelectorAll('.equipo-pedido-row-wrap');
     const items = [];
     filas.forEach(fila => {
@@ -351,20 +387,41 @@
       const preparado = fila.querySelector('.equipo-pedido-preparado').checked;
       const esMotoreductor = fila.querySelector('.equipo-pedido-es-motoreductor').checked;
 
+      let item;
       if (esMotoreductor) {
         const motorEquipoId = fila.querySelector('.equipo-pedido-motor').value;
         const reductorEquipoId = fila.querySelector('.equipo-pedido-reductor').value;
         if (!motorEquipoId || !reductorEquipoId) return; // ignora filas incompletas
         const cantidad = parseInt(fila.querySelector('.equipo-pedido-cantidad-mr').value, 10) || 1;
         const ordenCompra = fila.querySelector('.equipo-pedido-oc-mr').value.trim();
-        items.push({ tipoLinea: 'motoreductor', motorEquipoId, reductorEquipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, preparado });
+        item = { tipoLinea: 'motoreductor', motorEquipoId, reductorEquipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, preparado };
       } else {
         const equipoId = fila.querySelector('.equipo-pedido-select').value;
         if (!equipoId) return; // ignora filas sin equipo elegido
         const cantidad = parseInt(fila.querySelector('.equipo-pedido-cantidad').value, 10) || 1;
         const ordenCompra = fila.querySelector('.equipo-pedido-oc').value.trim();
-        items.push({ tipoLinea: 'individual', equipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, preparado });
+        item = { tipoLinea: 'individual', equipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, preparado };
       }
+
+      // CRÍTICO: este formulario no tiene campos para los números de serial ni
+      // para el rastreo de completado/devuelto — si no se preservan aquí desde
+      // el pedido original, se perderían cada vez que se guarda el pedido
+      // (por ejemplo, al agregar un equipo nuevo se sobrescribiría TODO el
+      // arreglo de equipos, borrando los seriales de los demás).
+      const origIdxRaw = fila.dataset.originalIndex;
+      if (origIdxRaw !== undefined && origIdxRaw !== '') {
+        const original = equiposOriginales[parseInt(origIdxRaw, 10)];
+        if (original) {
+          if (original.seriales) item.seriales = original.seriales;
+          if (original.serialesMotor) item.serialesMotor = original.serialesMotor;
+          if (original.serialesReductor) item.serialesReductor = original.serialesReductor;
+          if (original.unidadesCompletadas) item.unidadesCompletadas = original.unidadesCompletadas;
+          if (original.unidadesDevueltas) item.unidadesDevueltas = original.unidadesDevueltas;
+          if (original.cantidadCompletada !== undefined) item.cantidadCompletada = original.cantidadCompletada;
+        }
+      }
+
+      items.push(item);
     });
     return items;
   }
@@ -374,10 +431,12 @@
 
   document.addEventListener('equipos-catalogo:cambio', () => {
     // Refresca las opciones de los selects de equipo ya presentes en el formulario,
-    // conservando lo que cada uno tenía seleccionado.
-    equiposPedidoList.querySelectorAll('.equipo-pedido-select').forEach(sel => {
+    // conservando lo que cada uno tenía seleccionado (y su filtro de tipo, si tiene).
+    equiposPedidoList.querySelectorAll('.equipo-pedido-row-wrap').forEach(row => {
+      const sel = row.querySelector('.equipo-pedido-select');
+      const filtro = row.querySelector('.equipo-pedido-tipo-filtro');
       const actual = sel.value;
-      sel.innerHTML = opcionesEquiposHtml(actual);
+      sel.innerHTML = opcionesEquiposHtml(actual, filtro ? filtro.value : null);
       sel.value = actual;
     });
     renderTabla();
@@ -399,7 +458,7 @@
 
     const items = pedido?.equipos || [];
     if (items.length) {
-      items.forEach(item => nuevaFilaEquipoPedido(item));
+      items.forEach((item, idx) => nuevaFilaEquipoPedido(item, idx));
     } else {
       nuevaFilaEquipoPedido();
     }
@@ -812,6 +871,9 @@
     else resetFichaSubtabs();
 
     btnEditarDesdeFicha.dataset.id = pedido.id;
+    const completado = pedidoEstaCompletado(pedido);
+    btnEditarDesdeFicha.disabled = completado;
+    btnEditarDesdeFicha.title = completado ? 'Pedido completado: no editable, solo se pueden registrar devoluciones' : '';
     modalFicha.classList.add('open');
   }
 
@@ -1163,6 +1225,13 @@
     return empresa ? escapeHtml(empresa.nombre) : '<span style="color:var(--danger);">Empresa no encontrada</span>';
   }
 
+  // Para envíos Interno no hay remesa real de transportadora — se muestra el
+  // nombre de la persona encargada de recogerlo en su lugar.
+  function remesaMostrable(envio) {
+    if (envio.esInterno) return envio.personaRecoge ? escapeHtml(envio.personaRecoge) : 'Interno (sin encargado aún)';
+    return envio.remesa ? escapeHtml(envio.remesa) : null;
+  }
+
   function renderEnviosVinculados() {
     const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
     if (!pedido) return;
@@ -1190,7 +1259,7 @@
         return `
           <div class="remision-card">
             <div class="remision-card-header">
-              <span class="remision-card-pedido">${envio.remesa ? 'Remesa ' + escapeHtml(envio.remesa) : 'Sin remesa'}</span>
+              <span class="remision-card-pedido">${envio.esInterno ? '🏠 ' + remesaMostrable(envio) : (envio.remesa ? 'Remesa ' + escapeHtml(envio.remesa) : 'Sin remesa')}</span>
               <span class="remision-card-numero">Remisión ${escapeHtml(pInfo.remision || '—')}</span>
             </div>
             <div class="remision-card-items">${itemsHtml || 'Sin equipos'}</div>
@@ -1449,7 +1518,7 @@
           <td>${cantidadEquipos} ${cantidadEquipos === 1 ? 'equipo' : 'equipos'}</td>
           <td>
             <div class="row-actions">
-              <button type="button" class="btn-editar" data-id="${pedido.id}">Editar</button>
+              <button type="button" class="btn-editar" data-id="${pedido.id}" ${pedidoEstaCompletado(pedido) ? 'disabled title="Pedido completado: no editable, solo se pueden registrar devoluciones desde la ficha"' : ''}>Editar</button>
               <button type="button" class="btn-eliminar danger" data-id="${pedido.id}">Eliminar</button>
             </div>
           </td>
