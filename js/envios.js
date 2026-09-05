@@ -139,26 +139,24 @@
       : '<span class="tag-envio-armado">Armado</span>';
 
     const pedidosIncluidos = envio.pedidos || [];
-    const filas = pedidosIncluidos.map((pInfo) => {
+    const filas = pedidosIncluidos.map((pInfo, idxRemision) => {
       const pedido = buscarPedido(pInfo.pedidoId);
       const compania = pedido ? buscarCompania(pedido.companiaId) : null;
       const nombrePedido = pedido ? `N${pedido.numero} - ${compania ? escapeHtml(compania.nombre) : 'Compañía no encontrada'}` : 'Pedido no encontrado';
 
-      const itemsHtml = (pInfo.items || []).map(it => {
+      const itemsHtml = (pInfo.items || []).map((it, idxItem) => {
         const item = pedido?.equipos?.[it.itemIndex];
         const detalleCantidad = it.unidades ? `unidad(es): ${it.unidades.map(u => u + 1).join(', ')}` : `cant. ${it.cantidad}`;
-        if (!item) return `<div class="item-linea"><span>Ítem no encontrado</span><span>${detalleCantidad}</span></div>`;
-        let nombre;
-        if (item.tipoLinea === 'motoreductor') {
-          const motor = buscarEquipoCatalogo(item.motorEquipoId);
-          const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
-          nombre = `Motoreductor (${motor ? escapeHtml(motor.nombre) : '?'} + ${reductor ? escapeHtml(reductor.nombre) : '?'})`;
-        } else {
-          const equipo = buscarEquipoCatalogo(item.equipoId);
-          nombre = equipo ? escapeHtml(equipo.nombre) : 'Equipo no encontrado';
-        }
-        return `<div class="item-linea"><span>${nombre}</span><span>${detalleCantidad}</span></div>`;
+        const nombre = !item
+          ? 'Ítem no encontrado'
+          : item.tipoLinea === 'motoreductor'
+            ? `Motoreductor (${buscarEquipoCatalogo(item.motorEquipoId)?.nombre || '?'} + ${buscarEquipoCatalogo(item.reductorEquipoId)?.nombre || '?'})`
+            : (buscarEquipoCatalogo(item.equipoId)?.nombre || 'Equipo no encontrado');
+        const btnRetirarItem = despachado ? '' : `<button type="button" class="btn-retirar-item" data-idx-remision="${idxRemision}" data-idx-item="${idxItem}" title="Retirar este equipo de la remisión">✕</button>`;
+        return `<div class="item-linea"><span>${nombre}</span><span style="display:flex; align-items:center; gap:6px;">${detalleCantidad}${btnRetirarItem}</span></div>`;
       }).join('');
+
+      const btnRetirarRemision = despachado ? '' : `<button type="button" class="btn-retirar-remision" data-idx-remision="${idxRemision}" title="Retirar esta remisión completa, con todos sus equipos">🗑️ Retirar remisión</button>`;
 
       return `
         <div class="remision-card">
@@ -171,6 +169,7 @@
             <input type="text" class="input-remision-envio" data-pedidoid="${pInfo.pedidoId}" value="${escapeHtml(pInfo.remision || '')}" ${despachado ? 'disabled' : ''}>
           </div>
           <div class="remision-card-items">${itemsHtml || 'Sin equipos'}</div>
+          ${btnRetirarRemision ? `<div style="margin-top:8px; text-align:right;">${btnRetirarRemision}</div>` : ''}
         </div>
       `;
     }).join('');
@@ -210,10 +209,66 @@
     actualizarGruposFicha();
     if (!despachado) selectQuien.addEventListener('change', actualizarGruposFicha);
 
+    if (!despachado) {
+      fichaContenido.querySelectorAll('.btn-retirar-remision').forEach(btn => {
+        btn.addEventListener('click', () => retirarRemision(parseInt(btn.dataset.idxRemision, 10)));
+      });
+      fichaContenido.querySelectorAll('.btn-retirar-item').forEach(btn => {
+        btn.addEventListener('click', () => retirarItemDeRemision(parseInt(btn.dataset.idxRemision, 10), parseInt(btn.dataset.idxItem, 10)));
+      });
+    }
+
     btnCancelarEnvio.style.display = despachado ? 'none' : 'inline-block';
     btnGuardarEnvio.style.display = (!despachado || !remesaBloqueada) ? 'inline-block' : 'none';
     btnDespacharEnvio.style.display = despachado ? 'none' : 'inline-block';
     modalFicha.classList.add('open');
+  }
+
+  // Retira una remisión completa (con todos sus equipos) del envío.
+  async function retirarRemision(idxRemision) {
+    const ok = confirm('¿Retirar esta remisión completa del envío? Todos sus equipos volverán a quedar disponibles.');
+    if (!ok) return;
+    const idPedidoOrigen = volverAPedidoId;
+    try {
+      const envioRef = db.collection(COLECCION).doc(envioIdEnFicha);
+      const snap = await envioRef.get();
+      if (!snap.exists) return;
+      const pedidosActuales = snap.data().pedidos || [];
+      const nuevosPedidos = pedidosActuales.filter((_, i) => i !== idxRemision);
+      await envioRef.update({ pedidos: nuevosPedidos });
+      const envioActualizado = { id: envioIdEnFicha, ...snap.data(), pedidos: nuevosPedidos };
+      abrirFicha(envioActualizado, { volverAPedidoId: idPedidoOrigen });
+    } catch (err) {
+      console.error('Error retirando remisión:', err);
+      alert('No se pudo retirar la remisión. Revisa la consola.');
+    }
+  }
+
+  // Retira un equipo específico de una remisión. Si era el último equipo de
+  // esa remisión, se retira la remisión completa (ya quedaría vacía).
+  async function retirarItemDeRemision(idxRemision, idxItem) {
+    const ok = confirm('¿Retirar este equipo de la remisión? Vuelve a quedar disponible para otro envío.');
+    if (!ok) return;
+    const idPedidoOrigen = volverAPedidoId;
+    try {
+      const envioRef = db.collection(COLECCION).doc(envioIdEnFicha);
+      const snap = await envioRef.get();
+      if (!snap.exists) return;
+      const pedidosActuales = snap.data().pedidos || [];
+      let nuevosPedidos = pedidosActuales.map((p, i) => {
+        if (i !== idxRemision) return p;
+        const itemsRestantes = (p.items || []).filter((_, j) => j !== idxItem);
+        return { ...p, items: itemsRestantes };
+      });
+      // Si la remisión se quedó sin equipos, se retira por completo.
+      nuevosPedidos = nuevosPedidos.filter(p => (p.items || []).length > 0);
+      await envioRef.update({ pedidos: nuevosPedidos });
+      const envioActualizado = { id: envioIdEnFicha, ...snap.data(), pedidos: nuevosPedidos };
+      abrirFicha(envioActualizado, { volverAPedidoId: idPedidoOrigen });
+    } catch (err) {
+      console.error('Error retirando equipo de la remisión:', err);
+      alert('No se pudo retirar el equipo. Revisa la consola.');
+    }
   }
 
   window.abrirFichaEnvio = abrirFicha; // permite abrir la ficha de un envío desde pedidos.js

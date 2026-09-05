@@ -1006,6 +1006,30 @@
     border-radius: 999px;
   }
 
+  .btn-retirar-remision{
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    background: #fdf2f1;
+    color: var(--danger);
+    border: 1px solid #ecc8c4;
+    border-radius: var(--radius);
+    padding: 5px 9px;
+    cursor: pointer;
+  }
+  .btn-retirar-remision:hover{ background: #fbe4e2; }
+
+  .item-linea .btn-retirar-item{
+    background: transparent;
+    border: none;
+    color: var(--ink-soft);
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    padding: 2px 4px;
+  }
+  .item-linea .btn-retirar-item:hover{ color: var(--danger); }
+
   .remisiones-frame{
     border: 1px dashed #d4d7dc;
     border-radius: var(--radius);
@@ -1681,9 +1705,24 @@
           </select>
         </div>
 
-        <div class="form-group">
+        <div class="form-group" id="grupo-remision-existente" style="display:none;">
+          <label>Este pedido ya tiene remisión(es) en este envío</label>
+          <div class="tipo-pedido-toggle">
+            <label class="tipo-pedido-opcion">
+              <input type="radio" name="modo-remision" value="existente" checked>
+              Agregar a una remisión ya creada
+            </label>
+            <label class="tipo-pedido-opcion">
+              <input type="radio" name="modo-remision" value="nueva">
+              Crear una remisión nueva y separada
+            </label>
+          </div>
+          <select id="remision-existente-select" style="margin-top:8px;"></select>
+        </div>
+
+        <div class="form-group" id="grupo-remision-nueva">
           <label for="envio-remision">Remisión de este pedido en el envío</label>
-          <input type="text" id="envio-remision" required placeholder="Número de remisión (obligatorio)">
+          <input type="text" id="envio-remision" placeholder="Número de remisión (obligatorio)">
         </div>
 
         <div class="form-group">
@@ -1724,15 +1763,15 @@
   <!-- Firebase (SDK compat, para poder usarlo con <script> normales sin bundler) -->
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-  <script src="js/firebase-init.js?v=2"></script>
+  <script src="js/firebase-init.js?v=5"></script>
 
   <!-- Un archivo JS por pestaña -->
-  <script src="js/config.js?v=2"></script>
-  <script src="js/clientes.js?v=2"></script>
-  <script src="js/equipos.js?v=2"></script>
-  <script src="js/pedidos.js?v=2"></script>
-  <script src="js/envios.js?v=2"></script>
-  <script src="js/historial.js?v=2"></script>
+  <script src="js/config.js?v=5"></script>
+  <script src="js/clientes.js?v=5"></script>
+  <script src="js/equipos.js?v=5"></script>
+  <script src="js/pedidos.js?v=5"></script>
+  <script src="js/envios.js?v=5"></script>
+  <script src="js/historial.js?v=5"></script>
 
 </body>
 </html>

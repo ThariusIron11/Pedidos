@@ -719,7 +719,7 @@
     const metaChips = `<span class="meta-chip">${formatearPesoFicha(calcularPesoEquipo(equipo))}</span>${chipParcial}${chipDevuelto}`;
 
     return `
-      <div class="equipo-card ${(usaSerial && !completado) ? 'clicable' : ''} ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''}" data-index="${index}" style="border-color:${color};">
+      <div class="equipo-card ${usaSerial ? 'clicable' : ''} ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''}" data-index="${index}" style="border-color:${color};">
         <div class="equipo-card-header" style="background:${color};">
           <span>${icono}</span><span>${escapeHtml(nombreTipo)} x ${item.cantidad}</span>
           ${completado ? '<span class="equipo-card-preparado-tag">Completado</span>' : (preparado ? '<span class="equipo-card-preparado-tag">Preparado</span>' : '')}
@@ -763,7 +763,7 @@
 
     const usaSerialMotor = !!motor?.usaSerial;
     const usaSerialReductor = !!reductor?.usaSerial;
-    const esClicable = (usaSerialMotor || usaSerialReductor) && !completado;
+    const esClicable = usaSerialMotor || usaSerialReductor;
 
     const ocHtml = item.ordenCompra
       ? `<div class="equipo-card-oc">📄 OC: ${escapeHtml(item.ordenCompra)}</div>`
