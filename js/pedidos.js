@@ -2000,6 +2000,7 @@
         <span class="buscador-item-sub">${(p.equipos || []).length} ${(p.equipos || []).length === 1 ? 'equipo' : 'equipos'}${pedidoEstaCompletado(p) ? ' · Completado' : ''}</span>
       </div>
     `).join('');
+    resultadosBuscadorPedidos.classList.add('open');
 
     resultadosBuscadorPedidos.querySelectorAll('.buscador-item').forEach(el => {
       el.addEventListener('mousedown', (e) => {
@@ -2044,6 +2045,7 @@
         <span class="buscador-item-sub">N° ${c.pedido.numero} · ${escapeHtml(c.nombreItem)}</span>
       </div>
     `).join('');
+    resultadosBuscadorSerial.classList.add('open');
 
     resultadosBuscadorSerial.querySelectorAll('.buscador-item').forEach(el => {
       el.addEventListener('mousedown', (e) => {

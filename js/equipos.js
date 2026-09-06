@@ -549,6 +549,7 @@
         <span class="buscador-item-sub">${escapeHtml(c.itemNombre)}</span>
       </div>
     `).join('');
+    resultadosBuscadorEquipos.classList.add('open');
 
     resultadosBuscadorEquipos.querySelectorAll('.buscador-item').forEach(el => {
       el.addEventListener('mousedown', (e) => {
