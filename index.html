@@ -1030,6 +1030,29 @@
   }
   .item-linea .btn-retirar-item:hover{ color: var(--danger); }
 
+  .filtro-estado-pedidos{
+    display: flex;
+    gap: 6px;
+  }
+  .chip-filtro-estado{
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    background: #fff;
+    color: var(--ink-soft);
+    border: 1px solid #d4d7dc;
+    border-radius: 999px;
+    padding: 7px 14px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .chip-filtro-estado:hover{ border-color: #b8bcc4; }
+  .chip-filtro-estado.active{
+    background: var(--graphite);
+    color: #fff;
+    border-color: var(--graphite);
+  }
+
   .ficha-envio-contenido-wrap{
     padding: 20px 26px;
     max-height: 60vh;
@@ -1171,6 +1194,17 @@
         <div class="panel-header">
           <h2>Pedidos</h2>
           <button type="button" class="btn" id="btn-nuevo-pedido">+ Nuevo pedido</button>
+        </div>
+
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">
+          <div class="form-group" style="max-width:300px; margin-bottom:0; flex:1;">
+            <input type="text" id="buscador-pedidos" placeholder="Buscar por equipo, cliente o N° de pedido...">
+          </div>
+          <div class="filtro-estado-pedidos" id="filtro-estado-pedidos">
+            <button type="button" class="chip-filtro-estado" data-estado="en_proceso">En proceso</button>
+            <button type="button" class="chip-filtro-estado" data-estado="completado">Completado</button>
+            <button type="button" class="chip-filtro-estado" data-estado="todos">Todos</button>
+          </div>
         </div>
 
         <table class="data-table" id="tabla-pedidos">
@@ -1771,15 +1805,15 @@
   <!-- Firebase (SDK compat, para poder usarlo con <script> normales sin bundler) -->
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-  <script src="js/firebase-init.js?v=6"></script>
+  <script src="js/firebase-init.js?v=7"></script>
 
   <!-- Un archivo JS por pestaña -->
-  <script src="js/config.js?v=6"></script>
-  <script src="js/clientes.js?v=6"></script>
-  <script src="js/equipos.js?v=6"></script>
-  <script src="js/pedidos.js?v=6"></script>
-  <script src="js/envios.js?v=6"></script>
-  <script src="js/historial.js?v=6"></script>
+  <script src="js/config.js?v=7"></script>
+  <script src="js/clientes.js?v=7"></script>
+  <script src="js/equipos.js?v=7"></script>
+  <script src="js/pedidos.js?v=7"></script>
+  <script src="js/envios.js?v=7"></script>
+  <script src="js/historial.js?v=7"></script>
 
 </body>
 </html>

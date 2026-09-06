@@ -1572,15 +1572,59 @@
 
   // ---------- Render de la tabla ----------
 
+  const buscadorPedidos = document.getElementById('buscador-pedidos');
+  const chipsFiltroEstado = document.querySelectorAll('.chip-filtro-estado');
+  let filtroEstadoPedidos = 'en_proceso'; // predeterminado
+  let filtroTextoPedidos = '';
+
+  chipsFiltroEstado.forEach(chip => {
+    chip.classList.toggle('active', chip.dataset.estado === filtroEstadoPedidos);
+    chip.addEventListener('click', () => {
+      filtroEstadoPedidos = chip.dataset.estado;
+      chipsFiltroEstado.forEach(c => c.classList.toggle('active', c === chip));
+      renderTabla();
+    });
+  });
+
+  buscadorPedidos.addEventListener('input', () => {
+    filtroTextoPedidos = normalizar(buscadorPedidos.value.trim());
+    renderTabla();
+  });
+
+  function pedidoCoincideConBusqueda(pedido) {
+    if (!filtroTextoPedidos) return true;
+    if (normalizar(String(pedido.numero)).includes(filtroTextoPedidos)) return true;
+    const compania = buscarCompania(pedido.companiaId);
+    if (compania && normalizar(compania.nombre).includes(filtroTextoPedidos)) return true;
+    return (pedido.equipos || []).some(item => normalizar(nombreItemPedido(item)).includes(filtroTextoPedidos));
+  }
+
   function renderTabla() {
     if (!pedidosCache.length) {
       tablaBody.innerHTML = '';
       tablaEmpty.style.display = 'block';
       return;
     }
+
+    const filtrados = pedidosCache
+      .filter(pedido => {
+        if (filtroEstadoPedidos === 'completado') return pedidoEstaCompletado(pedido);
+        if (filtroEstadoPedidos === 'en_proceso') return !pedidoEstaCompletado(pedido);
+        return true; // todos
+      })
+      .filter(pedidoCoincideConBusqueda);
+
+    if (!filtrados.length) {
+      tablaBody.innerHTML = '';
+      tablaEmpty.style.display = 'block';
+      tablaEmpty.textContent = pedidosCache.length
+        ? 'Ningún pedido coincide con el filtro/búsqueda.'
+        : 'Todavía no hay pedidos registrados.';
+      return;
+    }
     tablaEmpty.style.display = 'none';
 
-    const ordenados = [...pedidosCache].sort((a, b) => a.numero - b.numero);
+    const ordenados = [...filtrados].sort((a, b) => a.numero - b.numero);
 
     tablaBody.innerHTML = ordenados.map(pedido => {
       const compania = buscarCompania(pedido.companiaId);
