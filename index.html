@@ -240,6 +240,23 @@
   }
   table.data-table .row-actions button:hover{ color: var(--ink); border-color: #b8bcc4; }
   table.data-table .row-actions button.danger:hover{ color: var(--danger); border-color: var(--danger); }
+  table.data-table .row-actions button.btn-icon{
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  .buscador-item .buscador-item-sub{
+    display: block;
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    margin-top: 1px;
+  }
 
   .tag-reparaciones{
     display: inline-block;
@@ -1257,11 +1274,13 @@
         </div>
 
         <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">
-          <div class="form-group" style="max-width:300px; margin-bottom:0; flex:1;">
-            <input type="text" id="buscador-pedidos" placeholder="Buscar por equipo, cliente, contacto o N° de pedido...">
+          <div class="form-group" style="max-width:300px; margin-bottom:0; flex:1; position:relative;">
+            <input type="text" id="buscador-pedidos" placeholder="Buscar por equipo, cliente, contacto o N° de pedido..." autocomplete="off">
+            <div class="buscador-resultados" id="resultados-buscador-pedidos"></div>
           </div>
-          <div class="form-group" style="max-width:220px; margin-bottom:0; flex:1;">
-            <input type="text" id="buscador-serial-pedidos" placeholder="Buscar por número de serial...">
+          <div class="form-group" style="max-width:220px; margin-bottom:0; flex:1; position:relative;">
+            <input type="text" id="buscador-serial-pedidos" placeholder="Buscar por número de serial..." autocomplete="off">
+            <div class="buscador-resultados" id="resultados-buscador-serial-pedidos"></div>
           </div>
           <div class="filtro-estado-pedidos" id="filtro-estado-pedidos">
             <button type="button" class="chip-filtro-estado" data-estado="en_proceso">En proceso</button>
@@ -1361,8 +1380,9 @@
         </div>
 
         <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
-          <div class="form-group" style="max-width:280px; margin-bottom:0; flex:1;">
-            <input type="text" id="buscador-equipos" placeholder="Buscar equipo por nombre...">
+          <div class="form-group" style="max-width:280px; margin-bottom:0; flex:1; position:relative;">
+            <input type="text" id="buscador-equipos" placeholder="Buscar equipo por nombre..." autocomplete="off">
+            <div class="buscador-resultados" id="resultados-buscador-equipos"></div>
           </div>
           <div class="form-group" style="max-width:220px; margin-bottom:0;">
             <select id="filtro-tipo-equipos">

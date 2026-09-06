@@ -556,6 +556,28 @@
     };
 
     const id = inputId.value;
+
+    // Si estamos editando un pedido que YA tenía equipos pendientes, y el
+    // resultado de esta edición (ej: se quitó el equipo que faltaba, y lo
+    // que queda ya salió despachado) deja el pedido completo, se lo
+    // confirmamos al usuario antes de guardar: puede que no se haya dado
+    // cuenta de que esta edición equivale a completar el pedido.
+    if (id) {
+      const pedidoOriginal = pedidosCache.find(p => p.id === id);
+      const yaEstabaCompletado = pedidoOriginal ? pedidoEstaCompletado(pedidoOriginal) : false;
+      const quedaraCompletado = pedidoEstaCompletado({ equipos: datos.equipos });
+
+      if (!yaEstabaCompletado && quedaraCompletado) {
+        const confirmar = confirm(
+          `Con estos cambios, todos los equipos que quedan en el pedido N° ${pedidoOriginal?.numero ?? ''} ya están despachados.\n\n` +
+          `¿Desea completar este pedido?\n\n` +
+          `Aceptar = el pedido queda marcado como COMPLETADO.\n` +
+          `Cancelar = no se guarda ningún cambio.`
+        );
+        if (!confirmar) return; // No se guarda nada, el usuario sigue editando
+      }
+    }
+
     const btnGuardar = form.querySelector('button[type="submit"]');
     btnGuardar.disabled = true;
     btnGuardar.textContent = 'Guardando...';
@@ -594,6 +616,10 @@
   // ---------- Eliminar ----------
 
   async function eliminarPedido(pedido) {
+    if (pedidoTieneAlgoDespachado(pedido)) {
+      alert(`El pedido N° ${pedido.numero} ya tiene equipos despachados en un envío y no se puede eliminar.`);
+      return;
+    }
     const ok = confirm(`¿Eliminar el pedido N° ${pedido.numero}? Esta acción no se puede deshacer. El número quedará libre para un pedido nuevo.`);
     if (!ok) return;
     try {
@@ -773,6 +799,13 @@
 
   function pedidoTieneDevolucion(pedido) {
     return (pedido.equipos || []).some(item => devueltasCountItem(item) > 0);
+  }
+
+  // Un pedido ya no se puede eliminar si AL MENOS uno de sus equipos ya salió
+  // (parcial o totalmente) en algún envío despachado. No hace falta que el
+  // pedido esté completo del todo: basta con que ya haya algo despachado.
+  function pedidoTieneAlgoDespachado(pedido) {
+    return (pedido.equipos || []).some(item => conteoCompletadoItem(item).hecho > 0);
   }
 
   // ---------- Ficha de Devolución (vista reducida: solo lo devuelto) ----------
@@ -1861,9 +1894,23 @@
     });
   });
 
+  // Aplica el filtro de estado activo (chip: en proceso / completado /
+  // devolución / todos) a una lista de pedidos. La usan tanto la tabla como
+  // las sugerencias de autocompletar de los dos buscadores, para que las
+  // sugerencias siempre queden "atadas" al filtro visible en pantalla.
+  function pedidosPorFiltroEstado(lista) {
+    return lista.filter(pedido => {
+      if (filtroEstadoPedidos === 'completado') return pedidoEstaCompletado(pedido);
+      if (filtroEstadoPedidos === 'en_proceso') return !pedidoEstaCompletado(pedido);
+      if (filtroEstadoPedidos === 'devolucion') return pedidoTieneDevolucion(pedido);
+      return true; // todos
+    });
+  }
+
   buscadorPedidos.addEventListener('input', () => {
     filtroTextoPedidos = normalizar(buscadorPedidos.value.trim());
     renderTabla();
+    mostrarSugerenciasPedidos();
   });
 
   // Buscador aparte, exclusivamente por número de serial (motor, reductor o
@@ -1876,26 +1923,155 @@
     ].filter(Boolean);
   }
 
-  function pedidoCoincideConSerial(pedido) {
-    if (!filtroSerialPedidos) return true;
+  function pedidoCoincideConSerialTexto(pedido, texto) {
+    if (!texto) return true;
     return (pedido.equipos || []).some(item =>
-      serialesDelItem(item).some(s => normalizar(s).includes(filtroSerialPedidos))
+      serialesDelItem(item).some(s => normalizar(s).includes(texto))
     );
+  }
+
+  function pedidoCoincideConSerial(pedido) {
+    return pedidoCoincideConSerialTexto(pedido, filtroSerialPedidos);
   }
 
   buscadorSerialPedidos.addEventListener('input', () => {
     filtroSerialPedidos = normalizar(buscadorSerialPedidos.value.trim());
     renderTabla();
+    mostrarSugerenciasSerial();
   });
 
-  function pedidoCoincideConBusqueda(pedido) {
-    if (!filtroTextoPedidos) return true;
-    if (normalizar(String(pedido.numero)).includes(filtroTextoPedidos)) return true;
+  function pedidoCoincideConBusquedaTexto(pedido, texto) {
+    if (!texto) return true;
+    if (normalizar(String(pedido.numero)).includes(texto)) return true;
     const compania = buscarCompania(pedido.companiaId);
-    if (compania && normalizar(compania.nombre).includes(filtroTextoPedidos)) return true;
-    if (pedido.contacto && normalizar(pedido.contacto).includes(filtroTextoPedidos)) return true;
-    return (pedido.equipos || []).some(item => normalizar(nombreItemPedido(item)).includes(filtroTextoPedidos));
+    if (compania && normalizar(compania.nombre).includes(texto)) return true;
+    if (pedido.contacto && normalizar(pedido.contacto).includes(texto)) return true;
+    return (pedido.equipos || []).some(item => normalizar(nombreItemPedido(item)).includes(texto));
   }
+
+  function pedidoCoincideConBusqueda(pedido) {
+    return pedidoCoincideConBusquedaTexto(pedido, filtroTextoPedidos);
+  }
+
+  // ---------- Sugerencias de autocompletar (dropdown bajo cada buscador) ----------
+  // Ambos buscadores respetan el chip de estado activo: si está en "Todos"
+  // sugieren sobre todos los pedidos, pero si está en "Completado" o "En
+  // proceso" (o "Devolución"), solo sugieren dentro de ese subconjunto — el
+  // mismo criterio que ya aplica la tabla.
+
+  const resultadosBuscadorPedidos = document.getElementById('resultados-buscador-pedidos');
+  const resultadosBuscadorSerial = document.getElementById('resultados-buscador-serial-pedidos');
+
+  function etiquetaPedidoSugerencia(pedido) {
+    const compania = buscarCompania(pedido.companiaId);
+    const nombreCompania = compania ? compania.nombre : 'Compañía no encontrada';
+    const contacto = pedido.contacto ? ` · ${pedido.contacto}` : '';
+    return `N° ${pedido.numero} — ${nombreCompania}${contacto}`;
+  }
+
+  function irAPedidoDesdeSugerencia(pedido) {
+    if (filtroEstadoPedidos === 'devolucion') abrirFichaDevolucion(pedido);
+    else abrirFicha(pedido);
+  }
+
+  function ocultarResultados(el) {
+    el.classList.remove('open');
+    el.innerHTML = '';
+  }
+
+  function mostrarSugerenciasPedidos() {
+    const texto = filtroTextoPedidos;
+    if (!texto) return ocultarResultados(resultadosBuscadorPedidos);
+
+    const candidatos = pedidosPorFiltroEstado(pedidosCache)
+      .filter(p => pedidoCoincideConBusquedaTexto(p, texto))
+      .sort((a, b) => a.numero - b.numero)
+      .slice(0, 8);
+
+    if (!candidatos.length) {
+      resultadosBuscadorPedidos.innerHTML = `<div class="buscador-item-vacio">Sin pedidos que coincidan${filtroEstadoPedidos !== 'todos' ? ' con este filtro' : ''}</div>`;
+      resultadosBuscadorPedidos.classList.add('open');
+      return;
+    }
+
+    resultadosBuscadorPedidos.innerHTML = candidatos.map(p => `
+      <div class="buscador-item" data-id="${p.id}">
+        ${escapeHtml(etiquetaPedidoSugerencia(p))}
+        <span class="buscador-item-sub">${(p.equipos || []).length} ${(p.equipos || []).length === 1 ? 'equipo' : 'equipos'}${pedidoEstaCompletado(p) ? ' · Completado' : ''}</span>
+      </div>
+    `).join('');
+
+    resultadosBuscadorPedidos.querySelectorAll('.buscador-item').forEach(el => {
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const pedido = pedidosCache.find(p => p.id === el.dataset.id);
+        if (!pedido) return;
+        buscadorPedidos.value = String(pedido.numero);
+        filtroTextoPedidos = normalizar(String(pedido.numero));
+        ocultarResultados(resultadosBuscadorPedidos);
+        renderTabla();
+        irAPedidoDesdeSugerencia(pedido);
+      });
+    });
+  }
+
+  function mostrarSugerenciasSerial() {
+    const texto = filtroSerialPedidos;
+    if (!texto) return ocultarResultados(resultadosBuscadorSerial);
+
+    const candidatos = [];
+    pedidosPorFiltroEstado(pedidosCache).forEach(pedido => {
+      (pedido.equipos || []).forEach(item => {
+        serialesDelItem(item).forEach(serial => {
+          if (normalizar(serial).includes(texto)) {
+            candidatos.push({ serial, pedido, nombreItem: nombreItemPedido(item) });
+          }
+        });
+      });
+    });
+    candidatos.sort((a, b) => a.pedido.numero - b.pedido.numero);
+    const limitados = candidatos.slice(0, 8);
+
+    if (!limitados.length) {
+      resultadosBuscadorSerial.innerHTML = `<div class="buscador-item-vacio">Sin seriales que coincidan${filtroEstadoPedidos !== 'todos' ? ' con este filtro' : ''}</div>`;
+      resultadosBuscadorSerial.classList.add('open');
+      return;
+    }
+
+    resultadosBuscadorSerial.innerHTML = limitados.map((c, i) => `
+      <div class="buscador-item" data-idx="${i}">
+        ${escapeHtml(c.serial)}
+        <span class="buscador-item-sub">N° ${c.pedido.numero} · ${escapeHtml(c.nombreItem)}</span>
+      </div>
+    `).join('');
+
+    resultadosBuscadorSerial.querySelectorAll('.buscador-item').forEach(el => {
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const candidato = limitados[Number(el.dataset.idx)];
+        if (!candidato) return;
+        buscadorSerialPedidos.value = candidato.serial; // autocompleta con el serial exacto
+        filtroSerialPedidos = normalizar(candidato.serial);
+        ocultarResultados(resultadosBuscadorSerial);
+        renderTabla();
+        irAPedidoDesdeSugerencia(candidato.pedido);
+      });
+    });
+  }
+
+  buscadorPedidos.addEventListener('focus', mostrarSugerenciasPedidos);
+  buscadorPedidos.addEventListener('blur', () => setTimeout(() => ocultarResultados(resultadosBuscadorPedidos), 120));
+  buscadorSerialPedidos.addEventListener('focus', mostrarSugerenciasSerial);
+  buscadorSerialPedidos.addEventListener('blur', () => setTimeout(() => ocultarResultados(resultadosBuscadorSerial), 120));
+
+  // Si el usuario cambia el chip de estado con una búsqueda ya escrita, las
+  // sugerencias deben recalcularse también (no solo la tabla).
+  chipsFiltroEstado.forEach(chip => {
+    chip.addEventListener('click', () => {
+      mostrarSugerenciasPedidos();
+      mostrarSugerenciasSerial();
+    });
+  });
 
   function renderTabla() {
     if (!pedidosCache.length) {
@@ -1904,13 +2080,7 @@
       return;
     }
 
-    const filtrados = pedidosCache
-      .filter(pedido => {
-        if (filtroEstadoPedidos === 'completado') return pedidoEstaCompletado(pedido);
-        if (filtroEstadoPedidos === 'en_proceso') return !pedidoEstaCompletado(pedido);
-        if (filtroEstadoPedidos === 'devolucion') return pedidoTieneDevolucion(pedido);
-        return true; // todos
-      })
+    const filtrados = pedidosPorFiltroEstado(pedidosCache)
       .filter(pedidoCoincideConBusqueda)
       .filter(pedidoCoincideConSerial);
 
@@ -1947,8 +2117,8 @@
           <td>${cantidadEquipos} ${cantidadEquipos === 1 ? 'equipo' : 'equipos'}</td>
           <td>
             <div class="row-actions">
-              <button type="button" class="btn-editar" data-id="${pedido.id}" ${pedidoEstaCompletado(pedido) ? 'disabled title="Pedido completado: no editable, solo se pueden registrar devoluciones desde la ficha"' : ''}>Editar</button>
-              <button type="button" class="btn-eliminar danger" data-id="${pedido.id}">Eliminar</button>
+              <button type="button" class="btn-icon btn-editar" data-id="${pedido.id}" title="${pedidoEstaCompletado(pedido) ? 'Pedido completado: no editable, solo se pueden registrar devoluciones desde la ficha' : 'Editar'}" ${pedidoEstaCompletado(pedido) ? 'disabled' : ''}>✏️</button>
+              ${pedidoTieneAlgoDespachado(pedido) ? '' : `<button type="button" class="btn-icon btn-eliminar danger" data-id="${pedido.id}" title="Eliminar">🗑️</button>`}
             </div>
           </td>
         </tr>
