@@ -1149,6 +1149,10 @@
   const radiosModoEnvio = formAgregarEnvio.querySelectorAll('input[name="modo-envio"]');
   const grupoEnvioExistente = document.getElementById('grupo-envio-existente');
   const selectEnvioExistente = document.getElementById('envio-existente-select');
+  const grupoRemisionExistente = document.getElementById('grupo-remision-existente');
+  const radiosModoRemision = formAgregarEnvio.querySelectorAll('input[name="modo-remision"]');
+  const selectRemisionExistente = document.getElementById('remision-existente-select');
+  const grupoRemisionNueva = document.getElementById('grupo-remision-nueva');
   const grupoRemesa = document.getElementById('grupo-remesa');
   const inputRemesaEnvio = document.getElementById('envio-remesa');
   const inputRemisionEnvio = document.getElementById('envio-remision');
@@ -1318,6 +1322,47 @@
     }).join('');
   }
 
+  // Si el pedido actual ya tiene una o más remisiones dentro del envío elegido,
+  // ofrece sumar equipos a una de ellas en vez de crear una remisión separada.
+  async function actualizarGrupoRemisionExistente() {
+    const envioId = selectEnvioExistente.value;
+    if (!envioId || !pedidoIdEnFicha) {
+      grupoRemisionExistente.style.display = 'none';
+      grupoRemisionNueva.style.display = 'block';
+      inputRemisionEnvio.required = true;
+      return;
+    }
+
+    let pedidosFrescos = [];
+    try {
+      const snap = await db.collection(COLECCION_ENVIOS).doc(envioId).get();
+      if (snap.exists) pedidosFrescos = snap.data().pedidos || [];
+    } catch (err) {
+      console.error('Error consultando remisiones existentes del envío:', err);
+    }
+
+    const entradas = pedidosFrescos.filter(p => p.pedidoId === pedidoIdEnFicha);
+
+    if (!entradas.length) {
+      grupoRemisionExistente.style.display = 'none';
+      grupoRemisionNueva.style.display = 'block';
+      inputRemisionEnvio.required = true;
+      return;
+    }
+
+    grupoRemisionExistente.style.display = 'block';
+    selectRemisionExistente.innerHTML = entradas.map(p => {
+      const idxReal = pedidosFrescos.indexOf(p);
+      return `<option value="${idxReal}">Remisión ${escapeHtml(p.remision || '—')}</option>`;
+    }).join('');
+
+    const modoRemision = Array.from(radiosModoRemision).find(r => r.checked)?.value || 'existente';
+    grupoRemisionNueva.style.display = modoRemision === 'nueva' ? 'block' : 'none';
+    inputRemisionEnvio.required = modoRemision === 'nueva';
+  }
+
+  radiosModoRemision.forEach(r => r.addEventListener('change', actualizarGrupoRemisionExistente));
+
   function actualizarVisibilidadCamposEnvio() {
     const modo = Array.from(radiosModoEnvio).find(r => r.checked)?.value || 'nuevo';
 
@@ -1328,10 +1373,17 @@
       const esInterno = selectQuienEncarga.value === 'interno';
       grupoPersonaRecoge.style.display = esInterno ? 'block' : 'none';
       grupoRemesa.style.display = esInterno ? 'none' : 'block';
+      grupoRemisionExistente.style.display = 'none';
+      grupoRemisionNueva.style.display = 'block';
+      inputRemisionEnvio.required = true;
     } else {
       poblarSelectEnvioExistente(); // ahora lista TODOS los armados, sin filtrar por quién se encarga
+      actualizarGrupoRemisionExistente();
     }
   }
+
+  selectEnvioExistente.addEventListener('change', actualizarGrupoRemisionExistente);
+
 
   selectQuienEncarga.addEventListener('change', actualizarVisibilidadCamposEnvio);
   radiosModoEnvio.forEach(r => r.addEventListener('change', actualizarVisibilidadCamposEnvio));
@@ -1409,14 +1461,20 @@
     const quien = selectQuienEncarga.value;
     const esInterno = quien === 'interno';
     const modo = Array.from(radiosModoEnvio).find(r => r.checked)?.value || 'nuevo';
+    const modoRemision = Array.from(radiosModoRemision).find(r => r.checked)?.value || 'existente';
+    const usaRemisionExistente = modo === 'existente' && grupoRemisionExistente.style.display !== 'none' && modoRemision === 'existente';
     const remision = inputRemisionEnvio.value.trim();
 
-    if (!remision) {
+    if (!usaRemisionExistente && !remision) {
       inputRemisionEnvio.focus();
       return;
     }
     if (modo === 'existente' && !selectEnvioExistente.value) {
       selectEnvioExistente.focus();
+      return;
+    }
+    if (usaRemisionExistente && !selectRemisionExistente.value) {
+      selectRemisionExistente.focus();
       return;
     }
 
@@ -1457,10 +1515,36 @@
         const snap = await envioRef.get(); // se lee fresco de Firestore, no del caché local,
         if (!snap.exists) throw new Error('Envío existente no encontrado'); // para no pisar remisiones de otros pedidos agregados justo antes
         const pedidosActuales = snap.data().pedidos || [];
-        // Siempre se agrega como una remisión NUEVA y separada — un mismo pedido
-        // puede tener varias remisiones distintas dentro de un mismo envío
-        // (ej: por espacio físico limitado en la remisión física).
-        const nuevosPedidos = [...pedidosActuales, { pedidoId: pedido.id, remision, items }];
+
+        let nuevosPedidos;
+        if (usaRemisionExistente) {
+          // Suma los equipos elegidos a la MISMA remisión ya existente de este
+          // pedido (no crea una entrada separada).
+          const idxRemision = parseInt(selectRemisionExistente.value, 10);
+          nuevosPedidos = pedidosActuales.map((p, i) => {
+            if (i !== idxRemision) return p;
+            const itemsCombinados = [...(p.items || [])];
+            items.forEach(nuevo => {
+              const existente = itemsCombinados.find(it => it.itemIndex === nuevo.itemIndex && !!it.unidades === !!nuevo.unidades);
+              if (existente) {
+                if (nuevo.unidades) {
+                  existente.unidades = Array.from(new Set([...(existente.unidades || []), ...nuevo.unidades]));
+                  existente.cantidad = existente.unidades.length;
+                } else {
+                  existente.cantidad = (existente.cantidad || 0) + nuevo.cantidad;
+                }
+              } else {
+                itemsCombinados.push(nuevo);
+              }
+            });
+            return { ...p, items: itemsCombinados };
+          });
+        } else {
+          // Remisión NUEVA y separada — un mismo pedido puede tener varias
+          // remisiones distintas dentro de un mismo envío (ej: por espacio
+          // físico limitado en la remisión física).
+          nuevosPedidos = [...pedidosActuales, { pedidoId: pedido.id, remision, items }];
+        }
         await envioRef.update({ pedidos: nuevosPedidos });
       } else {
         const nuevoEnvio = {
