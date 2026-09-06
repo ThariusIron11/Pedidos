@@ -74,6 +74,21 @@
     return (window.equiposCache || []).find(eq => eq.id === equipoId) || null;
   }
 
+  // Texto a mostrar para una unidad puntual (identificada por su índice)
+  // dentro de un ítem que usa serial — su serial si ya está asignado, o un
+  // aviso si todavía no se ha registrado.
+  function etiquetaUnidadEnvio(item, unidadIdx) {
+    if (item.tipoLinea === 'motoreductor') {
+      const sm = (item.serialesMotor?.[unidadIdx] || '').trim();
+      const sr = (item.serialesReductor?.[unidadIdx] || '').trim();
+      return (sm || sr)
+        ? `Motor: ${escapeHtml(sm || '—')} / Reductor: ${escapeHtml(sr || '—')}`
+        : `Unidad ${unidadIdx + 1} (sin serial asignado)`;
+    }
+    const serial = (item.seriales?.[unidadIdx] || '').trim();
+    return serial ? `Serial: ${escapeHtml(serial)}` : `Unidad ${unidadIdx + 1} (sin serial asignado)`;
+  }
+
   // ---------- Filtro ----------
 
   filtroEstado.addEventListener('change', renderTabla);
@@ -146,14 +161,36 @@
 
       const itemsHtml = (pInfo.items || []).map((it, idxItem) => {
         const item = pedido?.equipos?.[it.itemIndex];
-        const detalleCantidad = it.unidades ? `unidad(es): ${it.unidades.map(u => u + 1).join(', ')}` : `cant. ${it.cantidad}`;
-        const nombre = !item
-          ? 'Ítem no encontrado'
-          : item.tipoLinea === 'motoreductor'
-            ? `Motoreductor (${buscarEquipoCatalogo(item.motorEquipoId)?.nombre || '?'} + ${buscarEquipoCatalogo(item.reductorEquipoId)?.nombre || '?'})`
-            : (buscarEquipoCatalogo(item.equipoId)?.nombre || 'Equipo no encontrado');
-        const btnRetirarItem = despachado ? '' : `<button type="button" class="btn-retirar-item" data-idx-remision="${idxRemision}" data-idx-item="${idxItem}" title="Retirar este equipo de la remisión">✕</button>`;
-        return `<div class="item-linea"><span>${nombre}</span><span style="display:flex; align-items:center; gap:6px;">${detalleCantidad}${btnRetirarItem}</span></div>`;
+
+        if (!item) {
+          // Ítem huérfano (ya no existe en el pedido): no hay forma de saber
+          // su tipo, así que solo se puede retirar por completo.
+          const detalleCantidad = it.unidades ? `unidad(es): ${it.unidades.map(u => u + 1).join(', ')}` : `cant. ${it.cantidad}`;
+          const btnRetirarItem = despachado ? '' : `<button type="button" class="btn-retirar-item" data-idx-remision="${idxRemision}" data-idx-item="${idxItem}" title="Retirar este equipo de la remisión">✕</button>`;
+          return `<div class="item-linea"><span>Ítem no encontrado</span><span style="display:flex; align-items:center; gap:6px;">${detalleCantidad}${btnRetirarItem}</span></div>`;
+        }
+
+        const nombre = item.tipoLinea === 'motoreductor'
+          ? `Motoreductor (${buscarEquipoCatalogo(item.motorEquipoId)?.nombre || '?'} + ${buscarEquipoCatalogo(item.reductorEquipoId)?.nombre || '?'})`
+          : (buscarEquipoCatalogo(item.equipoId)?.nombre || 'Equipo no encontrado');
+
+        // Equipo CON serial: se sabe exactamente cuál unidad es cuál, así que
+        // cada una se lista y se retira por separado.
+        if (it.unidades && it.unidades.length) {
+          return it.unidades.map(u => {
+            const btnRetirarUnidad = despachado ? '' : `<button type="button" class="btn-retirar-unidad" data-idx-remision="${idxRemision}" data-idx-item="${idxItem}" data-unidad="${u}" title="Retirar esta unidad de la remisión">✕</button>`;
+            return `<div class="item-linea"><span>${nombre}</span><span style="display:flex; align-items:center; gap:6px;">${etiquetaUnidadEnvio(item, u)}${btnRetirarUnidad}</span></div>`;
+          }).join('');
+        }
+
+        // Equipo SIN serial: las unidades son indistinguibles entre sí, así
+        // que se retira por cantidad (puede ser parcial, no solo todo o nada).
+        const controlCantidad = despachado ? '' : `
+              <span class="retirar-cantidad-control">
+                <input type="number" class="input-retirar-cantidad" min="1" max="${it.cantidad}" value="${it.cantidad}" title="Cantidad a retirar">
+                <button type="button" class="btn-retirar-cantidad" data-idx-remision="${idxRemision}" data-idx-item="${idxItem}" title="Retirar esta cantidad de la remisión">✕</button>
+              </span>`;
+        return `<div class="item-linea"><span>${nombre}</span><span style="display:flex; align-items:center; gap:6px;">cant. ${it.cantidad}${controlCantidad}</span></div>`;
       }).join('');
 
       const btnRetirarRemision = despachado ? '' : `<button type="button" class="btn-retirar-remision" data-idx-remision="${idxRemision}" title="Retirar esta remisión completa, con todos sus equipos">🗑️ Retirar remisión</button>`;
@@ -213,8 +250,28 @@
       fichaContenido.querySelectorAll('.btn-retirar-remision').forEach(btn => {
         btn.addEventListener('click', () => retirarRemision(parseInt(btn.dataset.idxRemision, 10)));
       });
+      // Ítems huérfanos (sin equipo asociado): se retiran completos.
       fichaContenido.querySelectorAll('.btn-retirar-item').forEach(btn => {
         btn.addEventListener('click', () => retirarItemDeRemision(parseInt(btn.dataset.idxRemision, 10), parseInt(btn.dataset.idxItem, 10)));
+      });
+      // Equipos CON serial: se retira una unidad puntual.
+      fichaContenido.querySelectorAll('.btn-retirar-unidad').forEach(btn => {
+        btn.addEventListener('click', () => retirarUnidadDeItem(
+          parseInt(btn.dataset.idxRemision, 10),
+          parseInt(btn.dataset.idxItem, 10),
+          parseInt(btn.dataset.unidad, 10)
+        ));
+      });
+      // Equipos SIN serial: se retira la cantidad indicada en el input vecino.
+      fichaContenido.querySelectorAll('.btn-retirar-cantidad').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const input = btn.closest('.retirar-cantidad-control')?.querySelector('.input-retirar-cantidad');
+          const max = input ? parseInt(input.max, 10) : 0;
+          let cantidad = input ? parseInt(input.value, 10) : NaN;
+          if (!Number.isFinite(cantidad) || cantidad < 1) cantidad = 1;
+          if (max && cantidad > max) cantidad = max;
+          retirarCantidadDeItem(parseInt(btn.dataset.idxRemision, 10), parseInt(btn.dataset.idxItem, 10), cantidad);
+        });
       });
     }
 
@@ -268,6 +325,71 @@
     } catch (err) {
       console.error('Error retirando equipo de la remisión:', err);
       alert('No se pudo retirar el equipo. Revisa la consola.');
+    }
+  }
+
+  // Retira una sola unidad (por su índice/serial) de un ítem con serial. Si
+  // era la última unidad de ese ítem, el ítem se retira por completo; si la
+  // remisión se queda sin ítems, ella también se retira.
+  async function retirarUnidadDeItem(idxRemision, idxItem, unidad) {
+    const ok = confirm('¿Retirar esta unidad de la remisión? Vuelve a quedar disponible para otro envío.');
+    if (!ok) return;
+    const idPedidoOrigen = volverAPedidoId;
+    try {
+      const envioRef = db.collection(COLECCION).doc(envioIdEnFicha);
+      const snap = await envioRef.get();
+      if (!snap.exists) return;
+      const pedidosActuales = snap.data().pedidos || [];
+      let nuevosPedidos = pedidosActuales.map((p, i) => {
+        if (i !== idxRemision) return p;
+        const itemsActualizados = (p.items || []).map((it, j) => {
+          if (j !== idxItem) return it;
+          const unidadesRestantes = (it.unidades || []).filter(u => u !== unidad);
+          return { ...it, unidades: unidadesRestantes, cantidad: unidadesRestantes.length };
+        }).filter(it => (it.unidades ? it.unidades.length > 0 : (it.cantidad || 0) > 0));
+        return { ...p, items: itemsActualizados };
+      });
+      nuevosPedidos = nuevosPedidos.filter(p => (p.items || []).length > 0);
+      await envioRef.update({ pedidos: nuevosPedidos });
+      const envioActualizado = { id: envioIdEnFicha, ...snap.data(), pedidos: nuevosPedidos };
+      abrirFicha(envioActualizado, { volverAPedidoId: idPedidoOrigen });
+    } catch (err) {
+      console.error('Error retirando unidad de la remisión:', err);
+      alert('No se pudo retirar la unidad. Revisa la consola.');
+    }
+  }
+
+  // Retira una cantidad puntual de un ítem SIN serial (las unidades son
+  // indistinguibles entre sí, así que solo importa el número, no cuál en
+  // concreto). Si la cantidad a retirar cubre todo lo que llevaba, el ítem
+  // se retira por completo; si la remisión se queda sin ítems, se retira ella.
+  async function retirarCantidadDeItem(idxRemision, idxItem, cantidadARetirar) {
+    if (!cantidadARetirar || cantidadARetirar < 1) return;
+    const plural = cantidadARetirar > 1;
+    const ok = confirm(`¿Retirar ${cantidadARetirar} unidad${plural ? 'es' : ''} de este equipo? Volverá${plural ? 'n' : ''} a quedar disponible${plural ? 's' : ''} para otro envío.`);
+    if (!ok) return;
+    const idPedidoOrigen = volverAPedidoId;
+    try {
+      const envioRef = db.collection(COLECCION).doc(envioIdEnFicha);
+      const snap = await envioRef.get();
+      if (!snap.exists) return;
+      const pedidosActuales = snap.data().pedidos || [];
+      let nuevosPedidos = pedidosActuales.map((p, i) => {
+        if (i !== idxRemision) return p;
+        const itemsActualizados = (p.items || []).map((it, j) => {
+          if (j !== idxItem) return it;
+          const nuevaCantidad = Math.max(0, (it.cantidad || 0) - cantidadARetirar);
+          return { ...it, cantidad: nuevaCantidad };
+        }).filter(it => (it.unidades ? it.unidades.length > 0 : (it.cantidad || 0) > 0));
+        return { ...p, items: itemsActualizados };
+      });
+      nuevosPedidos = nuevosPedidos.filter(p => (p.items || []).length > 0);
+      await envioRef.update({ pedidos: nuevosPedidos });
+      const envioActualizado = { id: envioIdEnFicha, ...snap.data(), pedidos: nuevosPedidos };
+      abrirFicha(envioActualizado, { volverAPedidoId: idPedidoOrigen });
+    } catch (err) {
+      console.error('Error retirando cantidad de la remisión:', err);
+      alert('No se pudo retirar la cantidad. Revisa la consola.');
     }
   }
 
