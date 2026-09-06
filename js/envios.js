@@ -323,10 +323,24 @@
               const completadas = new Set(item.unidadesCompletadas || []);
               it.unidades.forEach(u => completadas.add(u));
               item.unidadesCompletadas = Array.from(completadas);
+              // Las unidades que salen despachadas quedan también marcadas
+              // como preparadas (ya se sabe exactamente cuáles son).
+              const preparadas = new Set(item.unidadesPreparadas || []);
+              it.unidades.forEach(u => preparadas.add(u));
+              item.unidadesPreparadas = Array.from(preparadas);
             } else {
-              item.cantidadCompletada = Math.min(item.cantidad || 0, (item.cantidadCompletada || 0) + (it.cantidad || 0));
+              const nuevoCompletado = Math.min(item.cantidad || 0, (item.cantidadCompletada || 0) + (it.cantidad || 0));
+              item.cantidadCompletada = nuevoCompletado;
+              // Equipo sin serial: no se sabe cuál unidad concreta salió, así
+              // que se marcan como preparadas las unidades libres necesarias
+              // (las de índice más bajo disponible) hasta cubrir lo despachado.
+              const preparadasSet = new Set(item.unidadesPreparadas || []);
+              let necesarias = nuevoCompletado - preparadasSet.size;
+              for (let idx = 0; idx < (item.cantidad || 0) && necesarias > 0; idx++) {
+                if (!preparadasSet.has(idx)) { preparadasSet.add(idx); necesarias--; }
+              }
+              item.unidadesPreparadas = Array.from(preparadasSet);
             }
-            item.preparado = true;
           });
         });
         await pedidoRef.update({ equipos });

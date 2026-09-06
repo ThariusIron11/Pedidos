@@ -939,6 +939,55 @@
   }
   .serial-campo input:focus{ outline: none; border-color: var(--copper); }
 
+  .unidad-preparado-fila{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12.5px;
+    padding: 7px 0;
+    border-bottom: 1px dashed rgba(0,0,0,0.08);
+  }
+  .unidad-preparado-fila:last-child{ border-bottom: none; }
+  .chk-unidad-preparado{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .chk-unidad-preparado input{ accent-color: var(--ok); }
+  .unidad-estado-tag{
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--ink-soft);
+  }
+
+  .devolucion-item{
+    border: 1px solid #e2e4e9;
+    border-left: 3px solid #1f5c8a;
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    background: #f7fafc;
+  }
+  .devolucion-item-nombre{
+    font-size: 14.5px;
+    font-weight: 700;
+    color: var(--ink);
+    margin-bottom: 4px;
+  }
+  .devolucion-item-unidad{
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    padding: 3px 0;
+  }
+  .devolucion-item-unidad .serial-valor{
+    font-weight: 600;
+    color: #1f5c8a;
+  }
+
   .equipo-envio-group{
     background: #fafafb;
     border: 1px solid #e2e4e9;
@@ -1211,9 +1260,13 @@
           <div class="form-group" style="max-width:300px; margin-bottom:0; flex:1;">
             <input type="text" id="buscador-pedidos" placeholder="Buscar por equipo, cliente, contacto o N° de pedido...">
           </div>
+          <div class="form-group" style="max-width:220px; margin-bottom:0; flex:1;">
+            <input type="text" id="buscador-serial-pedidos" placeholder="Buscar por número de serial...">
+          </div>
           <div class="filtro-estado-pedidos" id="filtro-estado-pedidos">
             <button type="button" class="chip-filtro-estado" data-estado="en_proceso">En proceso</button>
             <button type="button" class="chip-filtro-estado" data-estado="completado">Completado</button>
+            <button type="button" class="chip-filtro-estado" data-estado="devolucion">Devolución</button>
             <button type="button" class="chip-filtro-estado" data-estado="todos">Todos</button>
           </div>
         </div>
@@ -1674,6 +1727,20 @@
       <div class="modal-actions">
         <button type="button" class="btn secondary" id="btn-cerrar-ficha-pedido">Cerrar</button>
         <button type="button" class="btn" id="btn-editar-desde-ficha">Editar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: FICHA de devolución (solo equipos con devolución de un pedido) -->
+  <div class="modal-backdrop" id="modal-ficha-devolucion">
+    <div class="modal">
+      <div class="ficha-header" id="ficha-devolucion-header">
+        <div class="ficha-header-numero" id="ficha-devolucion-numero">Devolución</div>
+        <div class="ficha-header-tags"><span class="tag-pedido-devolucion">DEVOLUCIÓN</span></div>
+      </div>
+      <div id="ficha-devolucion-contenido"><!-- generado por pedidos.js --></div>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" id="btn-cerrar-ficha-devolucion">Cerrar</button>
       </div>
     </div>
   </div>
