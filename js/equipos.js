@@ -451,13 +451,11 @@
   buscador.addEventListener('input', () => {
     filtroTexto = normalizar(buscador.value.trim());
     renderTabla();
-    mostrarSugerenciasPedidosDesdeEquipo();
   });
 
   filtroTipoSelect.addEventListener('change', () => {
     filtroTipoId = filtroTipoSelect.value;
     renderTabla();
-    mostrarSugerenciasPedidosDesdeEquipo();
   });
 
   function equipoCoincideConFiltros(equipo) {
@@ -465,105 +463,6 @@
     if (filtroTexto && !normalizar(equipo.nombre).includes(filtroTexto)) return false;
     return true;
   }
-
-  // ---------- Sugerencias: pedidos que usan un equipo que coincide ----------
-  // Debajo del buscador del catálogo, se listan los pedidos que incluyen un
-  // equipo coincidente. Queda atado al filtro de tipo activo: si hay un tipo
-  // seleccionado, solo sugiere entre pedidos con un equipo de ese tipo; si el
-  // filtro está en "Todos los tipos", busca en todo el catálogo.
-
-  const resultadosBuscadorEquipos = document.getElementById('resultados-buscador-equipos');
-
-  // Igual que equipoCoincideConFiltros, pero exige que haya texto escrito
-  // (sin texto no tiene sentido mostrar sugerencias de pedidos).
-  function equipoCoincideParaSugerencia(equipo) {
-    if (!equipo || !filtroTexto) return false;
-    if (filtroTipoId && equipo.tipoId !== filtroTipoId) return false;
-    return normalizar(equipo.nombre).includes(filtroTexto);
-  }
-
-  // Igual que nombreItemPedido() en pedidos.js, pero usando el equiposCache
-  // local de esta pestaña (evita depender del closure de pedidos.js).
-  function nombreItemPedidoLocal(item) {
-    if (item.tipoLinea === 'motoreductor') {
-      const motor = equiposCache.find(eq => eq.id === item.motorEquipoId);
-      const reductor = equiposCache.find(eq => eq.id === item.reductorEquipoId);
-      return `Motoreductor (${motor ? motor.nombre : '?'} + ${reductor ? reductor.nombre : '?'})`;
-    }
-    const equipo = equiposCache.find(eq => eq.id === item.equipoId);
-    return equipo ? equipo.nombre + (equipo.variante ? ` (${equipo.variante})` : '') : 'Equipo no encontrado';
-  }
-
-  function nombreCompaniaPedido(pedido) {
-    const compania = (window.clientesCache || []).find(c => c.id === pedido.companiaId);
-    return compania ? compania.nombre : 'Compañía no encontrada';
-  }
-
-  function pedidosQueUsanBusqueda() {
-    const pedidos = window.pedidosCache || [];
-    const encontrados = [];
-    const vistos = new Set();
-
-    pedidos.forEach(pedido => {
-      (pedido.equipos || []).forEach(item => {
-        let coincide;
-        if (item.tipoLinea === 'motoreductor') {
-          const motor = equiposCache.find(eq => eq.id === item.motorEquipoId);
-          const reductor = equiposCache.find(eq => eq.id === item.reductorEquipoId);
-          coincide = equipoCoincideParaSugerencia(motor) || equipoCoincideParaSugerencia(reductor);
-        } else {
-          const equipo = equiposCache.find(eq => eq.id === item.equipoId);
-          coincide = equipoCoincideParaSugerencia(equipo);
-        }
-        if (coincide && !vistos.has(pedido.id)) {
-          vistos.add(pedido.id);
-          encontrados.push({ pedido, itemNombre: nombreItemPedidoLocal(item) });
-        }
-      });
-    });
-
-    return encontrados.sort((a, b) => a.pedido.numero - b.pedido.numero);
-  }
-
-  function ocultarResultadosEquipos() {
-    if (!resultadosBuscadorEquipos) return;
-    resultadosBuscadorEquipos.classList.remove('open');
-    resultadosBuscadorEquipos.innerHTML = '';
-  }
-
-  function mostrarSugerenciasPedidosDesdeEquipo() {
-    if (!resultadosBuscadorEquipos) return;
-    if (!filtroTexto) return ocultarResultadosEquipos();
-
-    const candidatos = pedidosQueUsanBusqueda().slice(0, 8);
-
-    if (!candidatos.length) {
-      resultadosBuscadorEquipos.innerHTML = `<div class="buscador-item-vacio">Ningún pedido usa un equipo que coincida${filtroTipoId ? ' con este tipo' : ''}</div>`;
-      resultadosBuscadorEquipos.classList.add('open');
-      return;
-    }
-
-    resultadosBuscadorEquipos.innerHTML = candidatos.map(c => `
-      <div class="buscador-item" data-id="${c.pedido.id}">
-        N° ${c.pedido.numero} — ${escapeHtml(nombreCompaniaPedido(c.pedido))}
-        <span class="buscador-item-sub">${escapeHtml(c.itemNombre)}</span>
-      </div>
-    `).join('');
-    resultadosBuscadorEquipos.classList.add('open');
-
-    resultadosBuscadorEquipos.querySelectorAll('.buscador-item').forEach(el => {
-      el.addEventListener('mousedown', (e) => {
-        e.preventDefault(); // evita que el blur cierre la lista antes del click
-        const pedidoId = el.dataset.id;
-        ocultarResultadosEquipos();
-        if (typeof activarTab === 'function') activarTab('pedidos'); // cambia a la pestaña Pedidos
-        if (window.abrirFichaPedido) window.abrirFichaPedido(pedidoId); // abre la ficha (expuesto por pedidos.js)
-      });
-    });
-  }
-
-  buscador.addEventListener('focus', mostrarSugerenciasPedidosDesdeEquipo);
-  buscador.addEventListener('blur', () => setTimeout(ocultarResultadosEquipos, 120));
 
   // ---------- Render de la tabla ----------
 
