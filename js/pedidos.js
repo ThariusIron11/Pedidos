@@ -666,6 +666,21 @@
 
   const COLOR_PREPARADO = '#2f8f5b'; // mismo verde que --ok
   const COLOR_COMPLETADO = '#1c2128'; // graphite — para distinguirlo claramente de "preparado"
+  const COLOR_DEVUELTO = '#1f5c8a'; // azul — mismo tono que el tag-variante, para consistencia
+
+  // Determina el color/ícono/tag "principal" de una tarjeta de equipo cuando
+  // hay que resumir varios estados posibles en uno solo (puede tener varias
+  // unidades con estados distintos). Prioridad: Devuelto > Completado > Preparado > normal.
+  function estadoPrincipalItem(item, colorTipoDefault, iconoTipoDefault) {
+    const tieneDevueltas = (item.unidadesDevueltas || []).length > 0;
+    const completado = estaItemCompletado(item);
+    const preparado = !!item.preparado;
+
+    if (tieneDevueltas) return { tag: 'Devuelto', color: COLOR_DEVUELTO, icono: '🔵' };
+    if (completado) return { tag: 'Completado', color: COLOR_COMPLETADO, icono: '🔒' };
+    if (preparado) return { tag: 'Preparado', color: COLOR_PREPARADO, icono: '✅' };
+    return { tag: null, color: colorTipoDefault, icono: iconoTipoDefault };
+  }
 
   // Un ítem queda "completado" cuando TODA su cantidad (o todas sus unidades,
   // si usa serial) ya salió en algún envío despachado. Se guarda en Firestore
@@ -690,13 +705,18 @@
     return equipos.length > 0 && equipos.every(estaItemCompletado);
   }
 
+  function pedidoTieneDevolucion(pedido) {
+    return (pedido.equipos || []).some(item => (item.unidadesDevueltas || []).length > 0);
+  }
+
   function renderTarjetaIndividual(item, index) {
     const equipo = buscarEquipoCatalogo(item.equipoId);
     const tipo = equipo ? buscarTipoEquipo(equipo.tipoId) : null;
     const preparado = !!item.preparado;
     const completado = estaItemCompletado(item);
-    const color = completado ? COLOR_COMPLETADO : (preparado ? COLOR_PREPARADO : (tipo?.color || '#5b6472'));
-    const icono = completado ? '🔒' : (preparado ? '✅' : (tipo?.icono || '📦'));
+    const estadoPrincipal = estadoPrincipalItem(item, tipo?.color || '#5b6472', tipo?.icono || '📦');
+    const color = estadoPrincipal.color;
+    const icono = estadoPrincipal.icono;
     const nombreTipo = tipo?.nombre || 'Tipo desconocido';
 
     const extrasNombre = [
@@ -719,10 +739,10 @@
     const metaChips = `<span class="meta-chip">${formatearPesoFicha(calcularPesoEquipo(equipo))}</span>${chipParcial}${chipDevuelto}`;
 
     return `
-      <div class="equipo-card ${usaSerial ? 'clicable' : ''} ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''}" data-index="${index}" style="border-color:${color};">
+      <div class="equipo-card ${usaSerial ? 'clicable' : ''} ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''} ${cantDevueltas ? 'devuelto' : ''}" data-index="${index}" style="border-color:${color};">
         <div class="equipo-card-header" style="background:${color};">
           <span>${icono}</span><span>${escapeHtml(nombreTipo)} x ${item.cantidad}</span>
-          ${completado ? '<span class="equipo-card-preparado-tag">Completado</span>' : (preparado ? '<span class="equipo-card-preparado-tag">Preparado</span>' : '')}
+          ${estadoPrincipal.tag ? `<span class="equipo-card-preparado-tag">${estadoPrincipal.tag}</span>` : ''}
         </div>
         <div class="equipo-card-body" style="background:${color}15;">
           <div>
@@ -746,8 +766,9 @@
     const tipoMotoreductor = (window.tiposEquipoCache || []).find(t => normalizar(t.nombre) === 'motoreductor');
     const preparado = !!item.preparado;
     const completado = estaItemCompletado(item);
-    const color = completado ? COLOR_COMPLETADO : (preparado ? COLOR_PREPARADO : (tipoMotoreductor?.color || '#2e7d32'));
-    const icono = completado ? '🔒' : (preparado ? '✅' : (tipoMotoreductor?.icono || '🔧'));
+    const estadoPrincipal = estadoPrincipalItem(item, tipoMotoreductor?.color || '#2e7d32', tipoMotoreductor?.icono || '🔧');
+    const color = estadoPrincipal.color;
+    const icono = estadoPrincipal.icono;
 
     const extrasReductor = [
       item.llevaBrazo ? '+ Brazo de reacción' : '',
@@ -774,10 +795,10 @@
     const chipDevuelto = cantDevueltas ? `<span class="meta-chip chip-devuelto" title="Unidad(es) devuelta(s)">🔵 ${cantDevueltas} devuelta${cantDevueltas > 1 ? 's' : ''}</span>` : '';
 
     return `
-      <div class="equipo-card ${esClicable ? 'clicable' : ''} ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''}" data-index="${index}" style="border-color:${color};">
+      <div class="equipo-card ${esClicable ? 'clicable' : ''} ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''} ${cantDevueltas ? 'devuelto' : ''}" data-index="${index}" style="border-color:${color};">
         <div class="equipo-card-header" style="background:${color};">
           <span>${icono}</span><span>Motoreductor x ${item.cantidad}</span>
-          ${completado ? '<span class="equipo-card-preparado-tag">Completado</span>' : (preparado ? '<span class="equipo-card-preparado-tag">Preparado</span>' : '')}
+          ${estadoPrincipal.tag ? `<span class="equipo-card-preparado-tag">${estadoPrincipal.tag}</span>` : ''}
           ${chipParcial}${chipDevuelto}
         </div>
         <div class="equipo-card-body" style="background:${color}15; flex-direction:column; align-items:stretch;">
@@ -860,7 +881,8 @@
 
     fichaHeaderNumero.textContent = `N${pedido.numero} - ${nombreCompania}`;
     fichaHeaderTags.innerHTML = `<span class="${tipoInfo.clase}">${tipoInfo.texto}</span>` +
-      (pedidoEstaCompletado(pedido) ? '<span class="tag-pedido-completado">COMPLETADO</span>' : '');
+      (pedidoEstaCompletado(pedido) ? '<span class="tag-pedido-completado">COMPLETADO</span>' : '') +
+      (pedidoTieneDevolucion(pedido) ? '<span class="tag-pedido-devolucion">DEVOLUCIÓN</span>' : '');
 
     renderSeccionCliente(pedido);
     renderSeccionEquipos(pedido);
@@ -1596,6 +1618,7 @@
     if (normalizar(String(pedido.numero)).includes(filtroTextoPedidos)) return true;
     const compania = buscarCompania(pedido.companiaId);
     if (compania && normalizar(compania.nombre).includes(filtroTextoPedidos)) return true;
+    if (pedido.contacto && normalizar(pedido.contacto).includes(filtroTextoPedidos)) return true;
     return (pedido.equipos || []).some(item => normalizar(nombreItemPedido(item)).includes(filtroTextoPedidos));
   }
 
@@ -1640,6 +1663,7 @@
           <td>
             <span class="${tipoInfo.clase}">${tipoInfo.texto}</span>
             ${pedidoEstaCompletado(pedido) ? '<span class="tag-pedido-completado">COMPLETADO</span>' : ''}
+            ${pedidoTieneDevolucion(pedido) ? '<span class="tag-pedido-devolucion">DEVOLUCIÓN</span>' : ''}
           </td>
           <td>${cantidadEquipos} ${cantidadEquipos === 1 ? 'equipo' : 'equipos'}</td>
           <td>

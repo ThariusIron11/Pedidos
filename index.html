@@ -747,6 +747,16 @@
     border-radius: 999px;
     margin-left: 6px;
   }
+  .tag-pedido-devolucion{
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    background: #1f5c8a;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-left: 6px;
+  }
 
   /* ---------- Ficha de pedido (solo lectura) ---------- */
   .ficha-seccion{
@@ -834,6 +844,7 @@
   .equipo-card.preparado .equipo-card-preparado-toggle{ color: var(--ok); font-weight: 700; }
   .equipo-card.completado .equipo-card-preparado-toggle{ color: var(--ink); font-weight: 700; cursor: default; }
   .equipo-card.completado .equipo-card-preparado-toggle input{ accent-color: var(--ink); cursor: default; }
+  .equipo-card.devuelto .equipo-card-preparado-toggle{ color: #1f5c8a; font-weight: 700; }
   .equipo-card-body{
     display: flex;
     align-items: center;
@@ -1198,7 +1209,7 @@
 
         <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">
           <div class="form-group" style="max-width:300px; margin-bottom:0; flex:1;">
-            <input type="text" id="buscador-pedidos" placeholder="Buscar por equipo, cliente o N° de pedido...">
+            <input type="text" id="buscador-pedidos" placeholder="Buscar por equipo, cliente, contacto o N° de pedido...">
           </div>
           <div class="filtro-estado-pedidos" id="filtro-estado-pedidos">
             <button type="button" class="chip-filtro-estado" data-estado="en_proceso">En proceso</button>
@@ -1805,15 +1816,15 @@
   <!-- Firebase (SDK compat, para poder usarlo con <script> normales sin bundler) -->
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-  <script src="js/firebase-init.js?v=7"></script>
+  <script src="js/firebase-init.js?v=8"></script>
 
   <!-- Un archivo JS por pestaña -->
-  <script src="js/config.js?v=7"></script>
-  <script src="js/clientes.js?v=7"></script>
-  <script src="js/equipos.js?v=7"></script>
-  <script src="js/pedidos.js?v=7"></script>
-  <script src="js/envios.js?v=7"></script>
-  <script src="js/historial.js?v=7"></script>
+  <script src="js/config.js?v=8"></script>
+  <script src="js/clientes.js?v=8"></script>
+  <script src="js/equipos.js?v=8"></script>
+  <script src="js/pedidos.js?v=8"></script>
+  <script src="js/envios.js?v=8"></script>
+  <script src="js/historial.js?v=8"></script>
 
 </body>
 </html>
