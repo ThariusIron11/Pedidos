@@ -46,6 +46,16 @@
       .replace(/>/g, '&gt;');
   }
 
+  // Fecha de hoy en formato YYYY-MM-DD (hora local, no UTC) para usar como
+  // valor por defecto y como valor de un <input type="date">.
+  function fechaHoyISO() {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
   function difundirCambio() {
     document.dispatchEvent(new CustomEvent('envios:cambio', { detail: { envios: window.enviosCache } }));
   }
@@ -311,6 +321,12 @@
         <input type="text" id="ficha-envio-remesa" value="${escapeHtml(envio.remesa || '')}" placeholder="Número de remesa" ${remesaBloqueada ? 'disabled' : ''}>
         ${despachado && !remesaBloqueada ? '<div class="hint-peso-calculado" style="display:block;">Todavía no tiene remesa — la puedes completar cuando la tengas.</div>' : ''}
       </div>
+      <div class="form-group">
+        <label>Fecha de envío</label>
+        <input type="date" id="ficha-envio-fecha" value="${escapeHtml(envio.fechaEnvio || fechaHoyISO())}" ${despachado ? 'disabled' : ''}>
+        <div class="hint-peso-calculado" id="ficha-envio-fecha-hint" style="display:none;">Guardado ✓</div>
+        ${despachado ? '<div class="hint-peso-calculado" style="display:block;">Congelada al momento del despacho.</div>' : ''}
+      </div>
 
       <h4 style="margin-top:18px;">Pedidos incluidos</h4>
       <div class="remisiones-frame">
@@ -331,6 +347,32 @@
     }
     actualizarGruposFicha();
     if (!despachado) selectQuien.addEventListener('change', actualizarGruposFicha);
+
+    // Fecha de envío: se guarda sola apenas se selecciona una fecha (no
+    // espera al botón "Guardar cambios"). Una vez despachado el envío este
+    // campo queda deshabilitado y ya no dispara este listener.
+    if (!despachado) {
+      const inputFecha = document.getElementById('ficha-envio-fecha');
+      const hintFecha = document.getElementById('ficha-envio-fecha-hint');
+      inputFecha.addEventListener('change', async () => {
+        const nuevaFecha = inputFecha.value || fechaHoyISO();
+        inputFecha.value = nuevaFecha;
+        inputFecha.disabled = true;
+        try {
+          await db.collection(COLECCION).doc(envio.id).update({ fechaEnvio: nuevaFecha });
+          envio.fechaEnvio = nuevaFecha; // refleja el cambio en caché local de inmediato
+          if (hintFecha) {
+            hintFecha.style.display = 'block';
+            setTimeout(() => { hintFecha.style.display = 'none'; }, 2000);
+          }
+        } catch (err) {
+          console.error('Error guardando fecha de envío:', err);
+          alert('No se pudo guardar la fecha de envío. Revisa la consola.');
+        } finally {
+          inputFecha.disabled = false;
+        }
+      });
+    }
 
     if (!despachado) {
       // Clic en el badge "Remisión X" abre un popover con el campo de edición
@@ -588,7 +630,10 @@
     try {
       await db.collection(COLECCION).doc(envio.id).update({
         estado: 'despachado',
-        fechaDespacho: firebase.firestore.FieldValue.serverTimestamp()
+        fechaDespacho: firebase.firestore.FieldValue.serverTimestamp(),
+        // Si nunca se tocó el campo "Fecha de envío", queda congelada con la
+        // fecha de hoy (el valor que ya se mostraba por defecto en la ficha).
+        fechaEnvio: envio.fechaEnvio || fechaHoyISO()
       });
 
       // Marca en cada pedido involucrado los equipos/unidades que llevaba este
