@@ -41,7 +41,7 @@
   window.enviosCache = [];
   let envioIdEnFicha = null;
   let volverAPedidoId = null; // si la ficha se abrió desde dentro de un pedido, aquí queda su id
-  let filtroEstadoActivo = '';   // '' = todos | 'armado' | 'despachado'
+  let filtroEstadoActivo = 'armado'; // '' = todos | 'armado' | 'despachado' — por defecto se abre viendo solo los armados
   let filtroEmpresaActivo = '';  // '' = todos | 'interno' | id de empresa de envío
 
   function escapeHtml(str) {
@@ -127,6 +127,23 @@
     return serial ? `Serial: ${escapeHtml(serial)}` : `Unidad ${unidadIdx + 1} (sin serial asignado)`;
   }
 
+  // Peso unitario (kg) de un equipo del catálogo. Si es un equipo compuesto
+  // (ej. un acople armado de varias piezas), suma peso x cantidad de cada
+  // pieza; las piezas sin peso configurado simplemente no suman (no rompen
+  // el total, a diferencia de la ficha de equipos que sí exige tenerlo).
+  function pesoUnitarioEquipo(equipo) {
+    if (!equipo?.esCompuesto || !(equipo.piezasCompuesto || []).length) {
+      return parseFloat(equipo?.peso) || 0;
+    }
+    let total = 0;
+    for (const p of equipo.piezasCompuesto) {
+      const pieza = buscarEquipoCatalogo(p.piezaId);
+      if (!pieza || pieza.peso === undefined || pieza.peso === null) continue;
+      total += (parseFloat(pieza.peso) || 0) * (p.cantidad || 1);
+    }
+    return total;
+  }
+
   // Peso (kg) de un solo ítem de una remisión (it.itemIndex / it.cantidad /
   // it.unidades), buscando el equipo real en el pedido para tomar su peso
   // del catálogo. Los ítems sin peso configurado, o huérfanos (el equipo ya
@@ -140,10 +157,10 @@
     if (item.tipoLinea === 'motoreductor') {
       const equipoMotor = buscarEquipoCatalogo(item.motorEquipoId);
       const equipoReductor = buscarEquipoCatalogo(item.reductorEquipoId);
-      pesoUnitario = (parseFloat(equipoMotor?.peso) || 0) + (parseFloat(equipoReductor?.peso) || 0);
+      pesoUnitario = pesoUnitarioEquipo(equipoMotor) + pesoUnitarioEquipo(equipoReductor);
     } else {
       const equipo = buscarEquipoCatalogo(item.equipoId);
-      pesoUnitario = parseFloat(equipo?.peso) || 0;
+      pesoUnitario = pesoUnitarioEquipo(equipo);
     }
     return pesoUnitario * cantidad;
   }

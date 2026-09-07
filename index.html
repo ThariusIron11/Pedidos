@@ -1445,6 +1445,17 @@
     cursor: pointer;
   }
   .envio-vinculado-card:hover{ background: #f3f1ee; }
+  .envio-vinculado-resumen{
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    margin-bottom: 6px;
+  }
+  .envio-vinculado-chips{
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
 
   .serial-campo.devuelto label{ color: #1f5c8a; font-weight: 700; }
   .serial-campo.devuelto input{ border-color: #1f5c8a; background: #eef5fb; color: #1f5c8a; }
@@ -1602,8 +1613,8 @@
           </div>
 
           <div class="filtro-estado-pedidos" id="filtro-estado-envios">
-            <button type="button" class="chip-filtro-estado active" data-estado="">Todos</button>
-            <button type="button" class="chip-filtro-estado" data-estado="armado">Armado</button>
+            <button type="button" class="chip-filtro-estado" data-estado="">Todos</button>
+            <button type="button" class="chip-filtro-estado active" data-estado="armado">Armado</button>
             <button type="button" class="chip-filtro-estado" data-estado="despachado">Despachado</button>
           </div>
 

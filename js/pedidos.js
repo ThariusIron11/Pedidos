@@ -1580,6 +1580,69 @@
     return `${nombres.slice(0, maxNombres).join(', ')} y ${nombres.length - maxNombres} más`;
   }
 
+  // Peso unitario (kg) de un equipo del catálogo. Si es un equipo compuesto
+  // (ej. un acople armado de varias piezas), suma peso x cantidad de cada
+  // pieza — igual criterio que usa envios.js para el total de un envío.
+  function pesoUnitarioEquipoEnvio(equipo) {
+    if (!equipo?.esCompuesto || !(equipo.piezasCompuesto || []).length) {
+      return parseFloat(equipo?.peso) || 0;
+    }
+    let total = 0;
+    for (const p of equipo.piezasCompuesto) {
+      const pieza = buscarEquipoCatalogo(p.piezaId);
+      if (!pieza || pieza.peso === undefined || pieza.peso === null) continue;
+      total += (parseFloat(pieza.peso) || 0) * (p.cantidad || 1);
+    }
+    return total;
+  }
+
+  // Peso (kg) de un ítem puntual de una remisión, buscando el equipo real
+  // en SU pedido de origen (puede ser distinto al pedido cuya ficha se está
+  // mostrando, si el envío agrupa varios pedidos).
+  function pesoItemEnvio(pedidoDeOrigen, it) {
+    const item = pedidoDeOrigen?.equipos?.[it.itemIndex];
+    if (!item) return 0;
+    const cantidad = (it.unidades && it.unidades.length) ? it.unidades.length : (it.cantidad || 0);
+
+    let pesoUnitario = 0;
+    if (item.tipoLinea === 'motoreductor') {
+      const equipoMotor = buscarEquipoCatalogo(item.motorEquipoId);
+      const equipoReductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      pesoUnitario = pesoUnitarioEquipoEnvio(equipoMotor) + pesoUnitarioEquipoEnvio(equipoReductor);
+    } else {
+      const equipo = buscarEquipoCatalogo(item.equipoId);
+      pesoUnitario = pesoUnitarioEquipoEnvio(equipo);
+    }
+    return pesoUnitario * cantidad;
+  }
+
+  // Peso TOTAL (kg) de todo lo que lleva un envío — igual que se ve en la
+  // pestaña Envíos — sumando los ítems de TODOS los pedidos que agrupa ese
+  // envío, no solo el pedido cuya ficha se está mirando.
+  function pesoTotalEnvioVinculado(envio) {
+    return (envio.pedidos || []).reduce((total, pInfo) => {
+      const pedidoDeOrigen = pedidosCache.find(p => p.id === pInfo.pedidoId);
+      const pesoRemision = (pInfo.items || []).reduce((sub, it) => sub + pesoItemEnvio(pedidoDeOrigen, it), 0);
+      return total + pesoRemision;
+    }, 0);
+  }
+
+  // Pedidos distintos que están enlazados a un envío (puede ser más de uno,
+  // ej. cuando varios pedidos comparten una misma remesa/remisión).
+  function pedidosEnlazadosEnvio(envio) {
+    const vistos = new Set();
+    const nombres = [];
+    (envio.pedidos || []).forEach(pInfo => {
+      if (vistos.has(pInfo.pedidoId)) return;
+      vistos.add(pInfo.pedidoId);
+      const p = pedidosCache.find(x => x.id === pInfo.pedidoId);
+      if (!p) { nombres.push('Pedido no encontrado'); return; }
+      const compania = buscarCompania(p.companiaId);
+      nombres.push(`N${p.numero} - ${escapeHtml(compania ? compania.nombre : 'Compañía no encontrada')}`);
+    });
+    return nombres;
+  }
+
   function renderEnviosVinculados() {
     const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
     if (!pedido) return;
@@ -1615,12 +1678,19 @@
         `;
       }).join('');
 
+      const peso = pesoTotalEnvioVinculado(envio);
+      const enlazadosHtml = pedidosEnlazadosEnvio(envio)
+        .map(nombre => `<span class="chip-remision">${nombre} Enlazado</span>`)
+        .join('');
+
       return `
         <div class="envio-vinculado-card" data-envio-id="${envio.id}">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
             <strong style="font-size:13.5px;">${nombreQuienEncargaEnvio(envio)}</strong>
             ${estadoTag}
           </div>
+          <div class="envio-vinculado-resumen">⚖️ ${peso.toFixed(2)} kg en total en este envío</div>
+          <div class="envio-vinculado-chips">${enlazadosHtml}</div>
           ${remisionesHtml}
         </div>
       `;
