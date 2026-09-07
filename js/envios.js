@@ -23,7 +23,10 @@
 
   const listaContenedor = document.getElementById('envios-cards');
   const tablaEmpty = document.getElementById('envios-empty');
-  const filtroEstado = document.getElementById('filtro-estado-envios');
+  const chipsEstado = document.querySelectorAll('#filtro-estado-envios .chip-filtro-estado');
+  const selectEmpresaFiltro = document.getElementById('filtro-empresa-envios');
+  const inputBusqueda = document.getElementById('buscador-envios');
+  const resultadosBusqueda = document.getElementById('resultados-buscador-envios');
 
   const modalFicha = document.getElementById('modal-ficha-envio');
   const fichaTitulo = document.getElementById('ficha-envio-titulo');
@@ -38,12 +41,23 @@
   window.enviosCache = [];
   let envioIdEnFicha = null;
   let volverAPedidoId = null; // si la ficha se abrió desde dentro de un pedido, aquí queda su id
+  let filtroEstadoActivo = '';   // '' = todos | 'armado' | 'despachado'
+  let filtroEmpresaActivo = '';  // '' = todos | 'interno' | id de empresa de envío
 
   function escapeHtml(str) {
     return String(str ?? '')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
+  }
+
+  // Quita tildes y pasa a minúsculas, para que la búsqueda no dependa de
+  // mayúsculas ni acentos (ej: "mosquera" encuentra "Mosquera").
+  function normalizar(str) {
+    return String(str ?? '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
   }
 
   // Fecha de hoy en formato YYYY-MM-DD (hora local, no UTC) para usar como
@@ -172,15 +186,156 @@
     return [...vistas];
   }
 
-  // ---------- Filtro ----------
+  // Concatenación normalizada (sin tildes, minúsculas) de todo lo buscable
+  // de un envío: números de pedido, cliente(s), remesa/encargado y
+  // remisiones — usada para el filtro en vivo del buscador.
+  function textoBusquedaEnvio(envio) {
+    const partes = [];
+    (envio.pedidos || []).forEach(pInfo => {
+      const pedido = buscarPedido(pInfo.pedidoId);
+      if (pedido) {
+        partes.push(String(pedido.numero));
+        const compania = buscarCompania(pedido.companiaId);
+        if (compania) partes.push(compania.nombre);
+      }
+      if (pInfo.remision) partes.push(pInfo.remision);
+    });
+    if (envio.esInterno) {
+      if (envio.personaRecoge) partes.push(envio.personaRecoge);
+    } else {
+      if (envio.remesa) partes.push(envio.remesa);
+      const empresa = (window.empresasEnvioCache || []).find(e => e.id === envio.empresaEnvioId);
+      if (empresa) partes.push(empresa.nombre);
+    }
+    return normalizar(partes.join(' '));
+  }
 
-  filtroEstado.addEventListener('change', renderTabla);
+  function coincideBusqueda(envio, termino) {
+    if (!termino) return true;
+    return textoBusquedaEnvio(envio).includes(normalizar(termino));
+  }
+
+  // Sugerencias a NIVEL DE ENVÍO: por cada envío que tenga algún dato
+  // (pedido, cliente, remesa o remisión) que coincida con lo escrito, arma
+  // una sugerencia con ese dato como texto principal y el envío al que
+  // pertenece, para poder abrir su ficha directamente al hacer click.
+  function generarSugerencias(termino) {
+    const t = normalizar(termino);
+    if (!t) return [];
+    const sugerencias = [];
+
+    window.enviosCache.forEach(envio => {
+      let match = null;
+
+      for (const pInfo of (envio.pedidos || [])) {
+        const pedido = buscarPedido(pInfo.pedidoId);
+        if (pedido) {
+          const compania = buscarCompania(pedido.companiaId);
+          const nombrePedido = `N${pedido.numero} - ${compania ? compania.nombre : 'Compañía no encontrada'}`;
+          if (!match && normalizar(nombrePedido).includes(t)) match = { tipo: 'Pedido', texto: nombrePedido };
+          if (!match && compania && normalizar(compania.nombre).includes(t)) match = { tipo: 'Cliente', texto: compania.nombre };
+        }
+        if (!match && pInfo.remision && normalizar(pInfo.remision).includes(t)) match = { tipo: 'Remisión', texto: pInfo.remision };
+        if (match) break;
+      }
+
+      if (!match && !envio.esInterno && envio.remesa && normalizar(envio.remesa).includes(t)) {
+        match = { tipo: 'Remesa', texto: envio.remesa };
+      }
+
+      if (match) sugerencias.push({ ...match, envioId: envio.id });
+    });
+
+    return sugerencias.slice(0, 8);
+  }
+
+  function renderSugerencias() {
+    const termino = inputBusqueda.value.trim();
+    if (!termino) {
+      resultadosBusqueda.innerHTML = '';
+      resultadosBusqueda.classList.remove('open');
+      return;
+    }
+    const sugerencias = generarSugerencias(termino);
+    resultadosBusqueda.innerHTML = sugerencias.length
+      ? sugerencias.map(s => {
+          const envio = window.enviosCache.find(en => en.id === s.envioId);
+          const quienEncarga = envio ? nombreQuienEncarga(envio).replace(/<[^>]+>/g, '') : '';
+          const estadoTexto = envio?.estado === 'despachado' ? 'Despachado' : 'Armado';
+          return `
+            <div class="buscador-item" data-envio-id="${s.envioId}">
+              <span class="buscador-item-tipo">${s.tipo}</span>${escapeHtml(s.texto)}
+              <span class="buscador-item-sub">${escapeHtml(quienEncarga)} · ${estadoTexto}</span>
+            </div>
+          `;
+        }).join('')
+      : '<div class="buscador-item-vacio">Sin coincidencias</div>';
+
+    resultadosBusqueda.querySelectorAll('.buscador-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const envio = window.enviosCache.find(en => en.id === el.dataset.envioId);
+        resultadosBusqueda.classList.remove('open');
+        inputBusqueda.value = '';
+        renderTabla();
+        if (envio) abrirFicha(envio);
+      });
+    });
+    resultadosBusqueda.classList.add('open');
+  }
+
+  inputBusqueda.addEventListener('input', () => {
+    renderSugerencias();
+    renderTabla();
+  });
+  inputBusqueda.addEventListener('focus', renderSugerencias);
+  document.addEventListener('click', (e) => {
+    if (!inputBusqueda.contains(e.target) && !resultadosBusqueda.contains(e.target)) {
+      resultadosBusqueda.classList.remove('open');
+    }
+  });
+
+  // ---------- Filtro por estado (chips) ----------
+
+  chipsEstado.forEach(btn => {
+    btn.addEventListener('click', () => {
+      chipsEstado.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      filtroEstadoActivo = btn.dataset.estado;
+      renderTabla();
+    });
+  });
+
+  // ---------- Filtro por quién se encarga (select según empresas de envío) ----------
+
+  function renderOpcionesFiltroEmpresa() {
+    const anterior = selectEmpresaFiltro.value;
+    const empresas = window.empresasEnvioCache || [];
+    selectEmpresaFiltro.innerHTML = '<option value="">Quién se encarga: todos</option>' +
+      '<option value="interno">🏠 Interno</option>' +
+      empresas.map(e => `<option value="${e.id}">${escapeHtml(e.nombre)}</option>`).join('');
+    if ([...selectEmpresaFiltro.options].some(o => o.value === anterior)) {
+      selectEmpresaFiltro.value = anterior;
+    } else {
+      filtroEmpresaActivo = '';
+    }
+  }
+
+  selectEmpresaFiltro.addEventListener('change', () => {
+    filtroEmpresaActivo = selectEmpresaFiltro.value;
+    renderTabla();
+  });
 
   // ---------- Render de la lista principal (tarjetas) ----------
 
   function renderTabla() {
-    const filtro = filtroEstado.value;
-    const lista = window.enviosCache.filter(en => !filtro || en.estado === filtro);
+    const termino = inputBusqueda.value.trim();
+    const lista = window.enviosCache.filter(envio => {
+      if (filtroEstadoActivo && envio.estado !== filtroEstadoActivo) return false;
+      if (filtroEmpresaActivo === 'interno' && !envio.esInterno) return false;
+      if (filtroEmpresaActivo && filtroEmpresaActivo !== 'interno' && (envio.esInterno || envio.empresaEnvioId !== filtroEmpresaActivo)) return false;
+      if (!coincideBusqueda(envio, termino)) return false;
+      return true;
+    });
 
     if (!lista.length) {
       listaContenedor.innerHTML = '';
@@ -856,6 +1011,11 @@
 
   document.addEventListener('clientes:cambio', renderTabla);
   document.addEventListener('equipos-catalogo:cambio', renderTabla);
-  document.addEventListener('empresas-envio:cambio', renderTabla);
+  document.addEventListener('empresas-envio:cambio', () => {
+    renderOpcionesFiltroEmpresa();
+    renderTabla();
+  });
   document.addEventListener('pedidos:cambio', renderTabla);
+
+  renderOpcionesFiltroEmpresa();
 })();

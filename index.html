@@ -1083,6 +1083,27 @@
     border-radius: 999px;
   }
 
+  /* ---------- Filtros de la lista de envíos ---------- */
+  .envios-filtros{
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    margin-bottom: 16px;
+  }
+  .buscador-item-tipo{
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    background: #eef0f3;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-right: 6px;
+  }
+
   /* ---------- Tarjetas de la lista de envíos ---------- */
   .envios-cards{
     display: flex;
@@ -1574,12 +1595,23 @@
           <h2>Envíos</h2>
         </div>
 
-        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+        <div class="envios-filtros">
+          <div class="form-group" style="max-width:320px; margin-bottom:0; flex:1; position:relative;">
+            <input type="text" id="buscador-envios" placeholder="Buscar por pedido, remesa, cliente o remisión..." autocomplete="off">
+            <div class="buscador-resultados" id="resultados-buscador-envios"></div>
+          </div>
+
+          <div class="filtro-estado-pedidos" id="filtro-estado-envios">
+            <button type="button" class="chip-filtro-estado active" data-estado="">Todos</button>
+            <button type="button" class="chip-filtro-estado" data-estado="armado">Armado</button>
+            <button type="button" class="chip-filtro-estado" data-estado="despachado">Despachado</button>
+          </div>
+
           <div class="form-group" style="max-width:220px; margin-bottom:0;">
-            <select id="filtro-estado-envios">
-              <option value="">Todos los estados</option>
-              <option value="armado">Armado</option>
-              <option value="despachado">Despachado</option>
+            <select id="filtro-empresa-envios">
+              <option value="">Quién se encarga: todos</option>
+              <option value="interno">🏠 Interno</option>
+              <!-- opciones de empresas generadas por envios.js -->
             </select>
           </div>
         </div>
