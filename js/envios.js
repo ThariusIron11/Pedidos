@@ -23,10 +23,7 @@
 
   const tablaBody  = document.getElementById('tabla-envios-body');
   const tablaEmpty = document.getElementById('envios-empty');
-  const buscadorEnvios = document.getElementById('buscador-envios');
-  const resultadosBuscadorEnvios = document.getElementById('resultados-buscador-envios');
-  const chipsFiltroEstadoEnvio = document.getElementById('filtro-estado-envios');
-  const chipsFiltroTransportadora = document.getElementById('filtro-transportadora-envios');
+  const filtroEstado = document.getElementById('filtro-estado-envios');
 
   const modalFicha = document.getElementById('modal-ficha-envio');
   const fichaTitulo = document.getElementById('ficha-envio-titulo');
@@ -41,15 +38,6 @@
   window.enviosCache = [];
   let envioIdEnFicha = null;
   let volverAPedidoId = null; // si la ficha se abrió desde dentro de un pedido, aquí queda su id
-  let filtroEstadoEnvios = 'todos';
-  let filtroTransportadoraEnvios = ''; // '' = todas, 'interno', o el id de una empresa
-  let filtroTextoEnvios = '';
-
-  function normalizar(str) {
-    return String(str ?? '')
-      .toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  }
 
   function escapeHtml(str) {
     return String(str ?? '')
@@ -125,155 +113,15 @@
     return serial ? `Serial: ${escapeHtml(serial)}` : `Unidad ${unidadIdx + 1} (sin serial asignado)`;
   }
 
-  // ---------- Filtros: estado y transportadora (chips) + búsqueda ----------
+  // ---------- Filtro ----------
 
-  chipsFiltroEstadoEnvio.querySelectorAll('.chip-pill').forEach(chip => {
-    chip.classList.toggle('active', chip.dataset.estado === filtroEstadoEnvios);
-    chip.addEventListener('click', () => {
-      filtroEstadoEnvios = chip.dataset.estado;
-      chipsFiltroEstadoEnvio.querySelectorAll('.chip-pill').forEach(c => c.classList.toggle('active', c === chip));
-      renderTabla();
-      mostrarSugerenciasEnvios();
-    });
-  });
-
-  // Chips de transportadora: se regeneran cada vez que cambia el catálogo de
-  // Config (empresas_envio), porque ahí se agregan/editan/eliminan en vivo.
-  // Si la empresa que estaba filtrada deja de existir, el filtro vuelve a
-  // "Todas" para no quedarse "atascado" en una opción fantasma.
-  function renderChipsTransportadora() {
-    const empresas = window.empresasEnvioCache || [];
-    const seleccionValida = !filtroTransportadoraEnvios
-      || filtroTransportadoraEnvios === 'interno'
-      || empresas.some(e => e.id === filtroTransportadoraEnvios);
-    if (!seleccionValida) filtroTransportadoraEnvios = '';
-
-    chipsFiltroTransportadora.innerHTML = `
-      <button type="button" class="chip-pill" data-transportadora="">Todas</button>
-      <button type="button" class="chip-pill" data-transportadora="interno">🏠 Interno</button>
-      ${empresas.map(e => `<button type="button" class="chip-pill" data-transportadora="${e.id}">${escapeHtml(e.nombre)}</button>`).join('')}
-    `;
-    chipsFiltroTransportadora.querySelectorAll('.chip-pill').forEach(chip => {
-      chip.classList.toggle('active', chip.dataset.transportadora === filtroTransportadoraEnvios);
-      chip.addEventListener('click', () => {
-        filtroTransportadoraEnvios = chip.dataset.transportadora;
-        chipsFiltroTransportadora.querySelectorAll('.chip-pill').forEach(c => c.classList.toggle('active', c === chip));
-        renderTabla();
-        mostrarSugerenciasEnvios();
-      });
-    });
-  }
-  renderChipsTransportadora();
-  document.addEventListener('empresas-envio:cambio', renderChipsTransportadora);
-
-  function envioCoincideConEstado(envio) {
-    if (filtroEstadoEnvios === 'todos') return true;
-    return envio.estado === filtroEstadoEnvios;
-  }
-
-  function envioCoincideConTransportadora(envio) {
-    if (!filtroTransportadoraEnvios) return true;
-    if (filtroTransportadoraEnvios === 'interno') return !!envio.esInterno;
-    return !envio.esInterno && envio.empresaEnvioId === filtroTransportadoraEnvios;
-  }
-
-  // Pedidos completos (deduplicados) incluidos en un envío — usados tanto
-  // por la búsqueda como por las sugerencias del buscador.
-  function pedidosDelEnvio(envio) {
-    const ids = [...new Set((envio.pedidos || []).map(p => p.pedidoId))];
-    return ids.map(id => buscarPedido(id)).filter(Boolean);
-  }
-
-  // Busca por: N° de pedido, nombre de cliente (compañía), remesa o número
-  // de remisión — de cualquiera de los pedidos incluidos en el envío.
-  function envioCoincideConBusquedaTexto(envio, texto) {
-    if (!texto) return true;
-    if (!envio.esInterno && envio.remesa && normalizar(envio.remesa).includes(texto)) return true;
-    return (envio.pedidos || []).some(pInfo => {
-      if (pInfo.remision && normalizar(pInfo.remision).includes(texto)) return true;
-      const pedido = buscarPedido(pInfo.pedidoId);
-      if (!pedido) return false;
-      if (normalizar(String(pedido.numero)).includes(texto)) return true;
-      const compania = buscarCompania(pedido.companiaId);
-      if (compania && normalizar(compania.nombre).includes(texto)) return true;
-      return false;
-    });
-  }
-
-  function envioCoincideConBusqueda(envio) {
-    return envioCoincideConBusquedaTexto(envio, filtroTextoEnvios);
-  }
-
-  buscadorEnvios.addEventListener('input', () => {
-    filtroTextoEnvios = normalizar(buscadorEnvios.value.trim());
-    renderTabla();
-    mostrarSugerenciasEnvios();
-  });
-  buscadorEnvios.addEventListener('focus', mostrarSugerenciasEnvios);
-  buscadorEnvios.addEventListener('blur', () => setTimeout(ocultarResultadosEnvios, 120));
-
-  function ocultarResultadosEnvios() {
-    resultadosBuscadorEnvios.classList.remove('open');
-    resultadosBuscadorEnvios.innerHTML = '';
-  }
-
-  function etiquetaEnvioSugerencia(envio) {
-    return nombreQuienEncarga(envio).replace(/<[^>]+>/g, '');
-  }
-
-  function subtextoEnvioSugerencia(envio) {
-    const nombresPedidos = pedidosDelEnvio(envio).map(p => {
-      const compania = buscarCompania(p.companiaId);
-      return `N°${p.numero}${compania ? ' · ' + compania.nombre : ''}`;
-    }).join(' · ');
-    const remesaTxt = envio.esInterno ? '' : (envio.remesa ? `Remesa ${envio.remesa}` : 'Sin remesa');
-    return [remesaTxt, nombresPedidos].filter(Boolean).join(' · ') || 'Sin pedidos';
-  }
-
-  // Las sugerencias respetan los chips activos (estado y transportadora),
-  // igual que ya hace pedidos.js con su propio buscador.
-  function mostrarSugerenciasEnvios() {
-    const texto = filtroTextoEnvios;
-    if (!texto) return ocultarResultadosEnvios();
-
-    const candidatos = window.enviosCache
-      .filter(envioCoincideConEstado)
-      .filter(envioCoincideConTransportadora)
-      .filter(en => envioCoincideConBusquedaTexto(en, texto))
-      .slice(0, 8);
-
-    if (!candidatos.length) {
-      resultadosBuscadorEnvios.innerHTML = '<div class="buscador-item-vacio">Sin envíos que coincidan</div>';
-      resultadosBuscadorEnvios.classList.add('open');
-      return;
-    }
-
-    resultadosBuscadorEnvios.innerHTML = candidatos.map(en => `
-      <div class="buscador-item" data-id="${en.id}">
-        ${escapeHtml(etiquetaEnvioSugerencia(en))}
-        <span class="buscador-item-sub">${escapeHtml(subtextoEnvioSugerencia(en))}</span>
-      </div>
-    `).join('');
-    resultadosBuscadorEnvios.classList.add('open');
-
-    resultadosBuscadorEnvios.querySelectorAll('.buscador-item').forEach(el => {
-      el.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        const envio = window.enviosCache.find(en => en.id === el.dataset.id);
-        if (!envio) return;
-        ocultarResultadosEnvios();
-        abrirFicha(envio);
-      });
-    });
-  }
+  filtroEstado.addEventListener('change', renderTabla);
 
   // ---------- Render de la tabla principal ----------
 
   function renderTabla() {
-    const lista = window.enviosCache
-      .filter(envioCoincideConEstado)
-      .filter(envioCoincideConTransportadora)
-      .filter(envioCoincideConBusqueda);
+    const filtro = filtroEstado.value;
+    const lista = window.enviosCache.filter(en => !filtro || en.estado === filtro);
 
     if (!lista.length) {
       tablaBody.innerHTML = '';
@@ -460,7 +308,6 @@
     }).join('');
 
     fichaContenido.innerHTML = `
-
       <div class="form-group">
         <label>¿Quién se encarga?</label>
         <select id="ficha-envio-quien-encarga" ${despachado ? 'disabled' : ''}>${opcionesQuienEncargaHtml(envio)}</select>
