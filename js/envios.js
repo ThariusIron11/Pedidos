@@ -70,6 +70,14 @@
     return `${yyyy}-${mm}-${dd}`;
   }
 
+  // 'YYYY-MM-DD' -> 'DD/MM/AAAA', para mostrarla en el encabezado de la ficha.
+  function formatearFechaCorta(fechaISO) {
+    if (!fechaISO) return '';
+    const [yyyy, mm, dd] = fechaISO.split('-');
+    if (!yyyy || !mm || !dd) return fechaISO;
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
   function difundirCambio() {
     document.dispatchEvent(new CustomEvent('envios:cambio', { detail: { envios: window.enviosCache } }));
   }
@@ -424,9 +432,11 @@
     const remesaBloqueada = despachado && !!envio.remesa; // solo se bloquea si YA tiene remesa
 
     fichaTitulo.textContent = nombreQuienEncarga(envio).replace(/<[^>]+>/g, '');
-    fichaSubtitulo.textContent = envio.esInterno
+    const subtituloBase = envio.esInterno
       ? (envio.personaRecoge ? `Recoge: ${envio.personaRecoge}` : 'Interno — sin encargado aún')
       : (envio.remesa ? `Remesa ${envio.remesa}` : 'Sin remesa asignada');
+    const fechaMostrable = formatearFechaCorta(envio.fechaEnvio || fechaHoyISO());
+    fichaSubtitulo.textContent = `${subtituloBase} · Fecha de envío: ${fechaMostrable}`;
     fichaEstadoTag.innerHTML = despachado
       ? '<span class="tag-envio-despachado">Despachado</span>'
       : '<span class="tag-envio-armado">Armado</span>';
@@ -612,6 +622,7 @@
         try {
           await db.collection(COLECCION).doc(envio.id).update({ fechaEnvio: nuevaFecha });
           envio.fechaEnvio = nuevaFecha; // refleja el cambio en caché local de inmediato
+          fichaSubtitulo.textContent = `${subtituloBase} · Fecha de envío: ${formatearFechaCorta(nuevaFecha)}`;
           if (hintFecha) {
             hintFecha.style.display = 'block';
             setTimeout(() => { hintFecha.style.display = 'none'; }, 2000);
