@@ -1083,6 +1083,76 @@
     border-radius: 999px;
   }
 
+  /* ---------- Tarjetas de la lista de envíos ---------- */
+  .envios-cards{
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .envio-card{
+    background: var(--paper-card);
+    border: 1px solid #e2e4e9;
+    border-radius: 10px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  }
+  .envio-card:hover{
+    border-color: #b8bcc4;
+    box-shadow: 0 1px 4px rgba(28,33,40,0.06);
+  }
+  .envio-card-header{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .envio-card-icono{ font-size: 15px; }
+  .envio-card-nombre{
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--ink);
+    text-transform: uppercase;
+  }
+  .tag-interno{
+    color: var(--warn);
+    background: #f3e6c9;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .envio-card-detalle-encargado{
+    color: var(--ink-soft);
+    font-size: 13px;
+  }
+  .envio-card-estado{
+    font-size: 13px;
+    font-weight: 600;
+    margin-left: auto;
+  }
+  .envio-card-estado.estado-armado{ color: var(--warn); }
+  .envio-card-estado.estado-despachado{ color: var(--ok); }
+  .envio-card-resumen{
+    color: var(--ink-soft);
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+  .envio-card-chips{
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .chip-remision{
+    background: #fafafb;
+    border: 1px solid #e2e4e9;
+    color: var(--ink-soft);
+    font-size: 12px;
+    padding: 3px 10px;
+    border-radius: 999px;
+  }
+
   .btn-retirar-remision{
     font-family: inherit;
     font-size: 11px;
@@ -1514,20 +1584,9 @@
           </div>
         </div>
 
-        <table class="data-table" id="tabla-envios">
-          <thead>
-            <tr>
-              <th>Quién se encarga</th>
-              <th>Remesa</th>
-              <th>Pedidos incluidos</th>
-              <th>Estado</th>
-              <th style="width:70px;"></th>
-            </tr>
-          </thead>
-          <tbody id="tabla-envios-body">
-            <!-- filas generadas por envios.js -->
-          </tbody>
-        </table>
+        <div class="envios-cards" id="envios-cards">
+          <!-- tarjetas generadas por envios.js -->
+        </div>
         <div class="empty-state" id="envios-empty" style="display:none;">
           Todavía no hay envíos registrados. Se crean desde la ficha de un pedido, pestaña "Envío / Despacho".
         </div>

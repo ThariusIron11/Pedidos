@@ -21,7 +21,7 @@
 (function () {
   const COLECCION = 'envios';
 
-  const tablaBody  = document.getElementById('tabla-envios-body');
+  const listaContenedor = document.getElementById('envios-cards');
   const tablaEmpty = document.getElementById('envios-empty');
   const filtroEstado = document.getElementById('filtro-estado-envios');
 
@@ -113,18 +113,77 @@
     return serial ? `Serial: ${escapeHtml(serial)}` : `Unidad ${unidadIdx + 1} (sin serial asignado)`;
   }
 
+  // Peso (kg) de un solo ítem de una remisión (it.itemIndex / it.cantidad /
+  // it.unidades), buscando el equipo real en el pedido para tomar su peso
+  // del catálogo. Los ítems sin peso configurado, o huérfanos (el equipo ya
+  // no existe en el pedido), simplemente no suman nada.
+  function pesoItem(pedido, it) {
+    const item = pedido?.equipos?.[it.itemIndex];
+    if (!item) return 0;
+    const cantidad = (it.unidades && it.unidades.length) ? it.unidades.length : (it.cantidad || 0);
+
+    let pesoUnitario = 0;
+    if (item.tipoLinea === 'motoreductor') {
+      const equipoMotor = buscarEquipoCatalogo(item.motorEquipoId);
+      const equipoReductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      pesoUnitario = (parseFloat(equipoMotor?.peso) || 0) + (parseFloat(equipoReductor?.peso) || 0);
+    } else {
+      const equipo = buscarEquipoCatalogo(item.equipoId);
+      pesoUnitario = parseFloat(equipo?.peso) || 0;
+    }
+    return pesoUnitario * cantidad;
+  }
+
+  // Peso total (kg) de todo lo que lleva un envío, sumando los ítems de
+  // todas sus remisiones/pedidos.
+  function pesoTotalEnvio(envio) {
+    return (envio.pedidos || []).reduce((total, pInfo) => {
+      const pedido = buscarPedido(pInfo.pedidoId);
+      const pesoRemision = (pInfo.items || []).reduce((sub, it) => sub + pesoItem(pedido, it), 0);
+      return total + pesoRemision;
+    }, 0);
+  }
+
+  // Texto "N41 - Edisatech Planta Mosquera, N40 - Contegral..." con los
+  // pedidos distintos incluidos en el envío (uno por pedidoId, sin repetir
+  // aunque tenga varias remisiones dentro del mismo envío).
+  function textoPedidosIncluidos(envio) {
+    const vistos = new Set();
+    const nombres = [];
+    (envio.pedidos || []).forEach(pInfo => {
+      if (vistos.has(pInfo.pedidoId)) return;
+      vistos.add(pInfo.pedidoId);
+      const pedido = buscarPedido(pInfo.pedidoId);
+      if (!pedido) { nombres.push('Pedido no encontrado'); return; }
+      const compania = buscarCompania(pedido.companiaId);
+      nombres.push(`N${pedido.numero} - ${escapeHtml(compania ? compania.nombre : 'Compañía no encontrada')}`);
+    });
+    return nombres.join(', ') || 'Sin pedidos';
+  }
+
+  // Números de remisión distintos dentro del envío (una remisión puede
+  // agrupar varios pedidos, así que se cuenta/lista una sola vez cada una).
+  function remisionesDistintas(envio) {
+    const vistas = new Set();
+    (envio.pedidos || []).forEach(pInfo => {
+      const remision = (pInfo.remision || '').trim();
+      if (remision) vistas.add(remision);
+    });
+    return [...vistas];
+  }
+
   // ---------- Filtro ----------
 
   filtroEstado.addEventListener('change', renderTabla);
 
-  // ---------- Render de la tabla principal ----------
+  // ---------- Render de la lista principal (tarjetas) ----------
 
   function renderTabla() {
     const filtro = filtroEstado.value;
     const lista = window.enviosCache.filter(en => !filtro || en.estado === filtro);
 
     if (!lista.length) {
-      tablaBody.innerHTML = '';
+      listaContenedor.innerHTML = '';
       tablaEmpty.style.display = 'block';
       return;
     }
@@ -132,26 +191,46 @@
 
     const ordenados = [...lista].sort((a, b) => (a.estado === b.estado ? 0 : a.estado === 'armado' ? -1 : 1));
 
-    tablaBody.innerHTML = ordenados.map(envio => {
-      const estadoTag = envio.estado === 'despachado'
-        ? '<span class="tag-envio-despachado">Despachado</span>'
-        : '<span class="tag-envio-armado">Armado</span>';
-      const cantidadPedidos = (envio.pedidos || []).length;
+    listaContenedor.innerHTML = ordenados.map(envio => {
+      const estadoHtml = envio.estado === 'despachado'
+        ? '<span class="envio-card-estado estado-despachado">🚚 Despachado</span>'
+        : '<span class="envio-card-estado estado-armado">📦 Armado</span>';
+
+      const icono = envio.esInterno ? '🏠' : '🚛';
+      const tagInterno = envio.esInterno ? '<span class="tag-interno">INTERNO</span>' : '';
+      const nombre = envio.esInterno ? 'INTERNO' : nombreQuienEncarga(envio);
+
+      const detalleEncargado = envio.esInterno
+        ? (envio.personaRecoge ? `· Encargado: ${escapeHtml(envio.personaRecoge)} ·` : '· Sin encargado aún ·')
+        : (envio.remesa ? `· Remesa: ${escapeHtml(envio.remesa)} ·` : '· Sin remesa asignada ·');
+
+      const remisiones = remisionesDistintas(envio);
+      const cantidadRemisiones = remisiones.length;
+      const peso = pesoTotalEnvio(envio);
+      const resumen = `Pedidos: ${textoPedidosIncluidos(envio)} · ${cantidadRemisiones} ${cantidadRemisiones === 1 ? 'remisión' : 'remisiones'} · ⚖️ ${peso.toFixed(2)} kg`;
+
+      const chipsHtml = remisiones.length
+        ? remisiones.map(r => `<span class="chip-remision">Remisión ${escapeHtml(r)}</span>`).join('')
+        : '<span class="chip-remision">Sin remisión asignada</span>';
 
       return `
-        <tr data-id="${envio.id}" class="fila-pedido-clicable">
-          <td>${nombreQuienEncarga(envio)}</td>
-          <td>${remesaMostrable(envio) || '<span style="color:var(--ink-soft);">—</span>'}</td>
-          <td>${cantidadPedidos} ${cantidadPedidos === 1 ? 'pedido' : 'pedidos'}</td>
-          <td>${estadoTag}</td>
-          <td></td>
-        </tr>
+        <div class="envio-card" data-id="${envio.id}">
+          <div class="envio-card-header">
+            <span class="envio-card-icono">${icono}</span>
+            <span class="envio-card-nombre">${nombre}</span>
+            ${tagInterno}
+            <span class="envio-card-detalle-encargado">${detalleEncargado}</span>
+            ${estadoHtml}
+          </div>
+          <div class="envio-card-resumen">${resumen}</div>
+          <div class="envio-card-chips">${chipsHtml}</div>
+        </div>
       `;
     }).join('');
 
-    tablaBody.querySelectorAll('tr.fila-pedido-clicable').forEach(tr => {
-      tr.addEventListener('click', () => {
-        const envio = window.enviosCache.find(en => en.id === tr.dataset.id);
+    listaContenedor.querySelectorAll('.envio-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const envio = window.enviosCache.find(en => en.id === card.dataset.id);
         if (envio) abrirFicha(envio);
       });
     });
