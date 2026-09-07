@@ -1992,7 +1992,7 @@
 
   const buscadorPedidos = document.getElementById('buscador-pedidos');
   const buscadorSerialPedidos = document.getElementById('buscador-serial-pedidos');
-  const chipsFiltroEstado = document.querySelectorAll('.chip-filtro-estado');
+  const chipsFiltroEstado = document.querySelectorAll('#filtro-estado-pedidos .chip-filtro-estado');
   let filtroEstadoPedidos = 'en_proceso'; // predeterminado
   let filtroTextoPedidos = '';
   let filtroSerialPedidos = '';
