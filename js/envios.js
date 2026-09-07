@@ -334,117 +334,130 @@
 
     const pedidosIncluidos = envio.pedidos || [];
 
-    // idxEnGrupo (posición de esta entrada dentro de las de su MISMO pedido)
-    // se sigue calculando igual que antes: es lo que usa "Guardar cambios"
-    // para reconciliar los números de remisión escritos con los datos frescos
-    // de Firestore sin pisar remisiones que otra sesión haya agregado mientras
-    // esta ficha estaba abierta. Ya no se usa para agrupar visualmente.
-    const contadorPorPedido = {};
-    const entradas = pedidosIncluidos.map((pInfo, idxRemision) => {
-      const idxEnGrupo = contadorPorPedido[pInfo.pedidoId] || 0;
-      contadorPorPedido[pInfo.pedidoId] = idxEnGrupo + 1;
-      return { pInfo, idxRemision, idxEnGrupo };
+    // Agrupa las entradas por pedidoId conservando el índice ORIGINAL de
+    // cada una dentro de envio.pedidos (idxRemision se sigue usando tal
+    // cual para retirar equipos/remisiones sin tocar las demás). Así, un
+    // mismo pedido con 2+ remisiones en este envío aparece en una sola
+    // tarjeta, con una sub-tarjeta por remisión.
+    const grupos = [];
+    const grupoPorPedido = new Map();
+    pedidosIncluidos.forEach((pInfo, idxRemision) => {
+      let grupo = grupoPorPedido.get(pInfo.pedidoId);
+      if (!grupo) {
+        grupo = { pedidoId: pInfo.pedidoId, entradas: [] };
+        grupoPorPedido.set(pInfo.pedidoId, grupo);
+        grupos.push(grupo);
+      }
+      grupo.entradas.push({ pInfo, idxRemision, idxEnGrupo: grupo.entradas.length });
     });
 
-    // ---------- Resumen: "Pedidos que lo componen" / "Remisiones que lo componen" ----------
+    const filas = grupos.map(grupo => {
+      const pedido = buscarPedido(grupo.pedidoId);
+      const compania = pedido ? buscarCompania(pedido.companiaId) : null;
+      const nombreCompania = compania ? escapeHtml(compania.nombre) : 'Compañía no encontrada';
+      const nombrePedido = pedido ? `N${pedido.numero} - ${nombreCompania}` : 'Pedido no encontrado';
 
-    const idsPedidoUnicos = [...new Set(pedidosIncluidos.map(p => p.pedidoId))];
-    const pedidosResumenHtml = idsPedidoUnicos.length
-      ? idsPedidoUnicos.map(pedidoId => {
-          const pedido = buscarPedido(pedidoId);
-          if (!pedido) return '<span class="chip-pedido-envio chip-pedido-envio-vacio">⚠️ Pedido no encontrado</span>';
-          const compania = buscarCompania(pedido.companiaId);
-          const nombreCompania = compania ? escapeHtml(compania.nombre) : 'Compañía no encontrada';
-          return `<button type="button" class="chip-pedido-envio" data-pedido-id="${pedido.id}">N${pedido.numero} - ${nombreCompania}</button>`;
-        }).join('')
-      : '<span class="envio-resumen-vacio">Sin pedidos</span>';
+      // Datos del pedido (Cliente / Encargado / Tipo) — solo si el pedido
+      // todavía existe; si fue borrado, se omite este bloque. Se calculan
+      // una sola vez por pedido (ya no por cada remisión).
+      const tipoInfo = pedido ? (TIPO_PEDIDO_LABEL[pedido.tipo] || TIPO_PEDIDO_LABEL.normal) : null;
+      const contacto = pedido?.contacto ? escapeHtml(pedido.contacto) : '— (sin asignar)';
+      const tipoValorHtml = tipoInfo ? `${tipoInfo.icono} ${tipoInfo.texto}` : '';
+      const datosHtml = pedido ? `
+        <div class="remision-card-datos">
+          <div class="remision-dato"><span class="remision-dato-label">Cliente:</span><span class="remision-dato-valor">${nombreCompania}</span></div>
+          <div class="remision-dato"><span class="remision-dato-label">Encargado:</span><span class="remision-dato-valor">${contacto}</span></div>
+          <div class="remision-dato"><span class="remision-dato-label">Tipo de pedido:</span><span class="${tipoInfo.clase}">${tipoValorHtml}</span></div>
+        </div>
+      ` : '';
 
-    const remisionesResumenHtml = entradas.length
-      ? entradas.map(({ pInfo, idxRemision, idxEnGrupo }) => {
-          const btnRetirar = despachado ? '' : `<button type="button" class="btn-retirar-remision" data-idx-remision="${idxRemision}" title="Retirar esta remisión completa, con todos sus equipos">✕</button>`;
-          return `
-            <span class="chip-remision-envio">
-              <input type="text" class="input-remision-envio" data-pedidoid="${pInfo.pedidoId}" data-grupo-idx="${idxEnGrupo}" value="${escapeHtml(pInfo.remision || '')}" placeholder="N° remisión" ${despachado ? 'disabled' : ''}>
-              ${btnRetirar}
-            </span>
-          `;
-        }).join('')
-      : '<span class="envio-resumen-vacio">Sin remisiones</span>';
+      const btnVerPedido = pedido ? `<button type="button" class="chip-ver-pedido btn-ver-pedido" data-pedido-id="${pedido.id}">📋 Ver ficha del pedido</button>` : '';
 
-    // ---------- Equipos: lista plana con fondo por estado (armado = amarillo, despachado = verde) ----------
+      const subCardsHtml = grupo.entradas.map(({ pInfo, idxRemision, idxEnGrupo }) => {
+        const itemsHtml = (pInfo.items || []).map((it, idxItem) => {
+          const item = pedido?.equipos?.[it.itemIndex];
 
-    const estadoClaseEquipo = despachado ? 'despachado' : 'armado';
-    const lineasEquipos = [];
+          if (!item) {
+            // Ítem huérfano (ya no existe en el pedido): no hay forma de saber
+            // su tipo, así que solo se puede retirar por completo.
+            const detalleCantidad = it.unidades ? `unidad(es): ${it.unidades.map(u => u + 1).join(', ')}` : `cant. ${it.cantidad}`;
+            const btnRetirarItem = despachado ? '' : `<button type="button" class="btn-retirar-item" data-idx-remision="${idxRemision}" data-idx-item="${idxItem}" title="Retirar este equipo de la remisión">✕</button>`;
+            return `<div class="item-linea"><span>⚠️ Ítem no encontrado</span><span style="display:flex; align-items:center; gap:6px;">${detalleCantidad}${btnRetirarItem}</span></div>`;
+          }
 
-    entradas.forEach(({ pInfo, idxRemision }) => {
-      const pedido = buscarPedido(pInfo.pedidoId);
-      const prefijoPedido = pedido ? `N${pedido.numero}` : '⚠️';
+          // El ícono de cada equipo es el que se configuró en Config para
+          // su tipo (mismo catálogo/ícono que se ve en la pestaña Equipos).
+          let nombre;
+          if (item.tipoLinea === 'motoreductor') {
+            const equipoMotor = buscarEquipoCatalogo(item.motorEquipoId);
+            const equipoReductor = buscarEquipoCatalogo(item.reductorEquipoId);
+            const iconoMotor = buscarTipoEquipo(equipoMotor?.tipoId)?.icono || '';
+            const iconoReductor = buscarTipoEquipo(equipoReductor?.tipoId)?.icono || '';
+            nombre = `${iconoMotor ? iconoMotor + ' ' : ''}${equipoMotor?.nombre || '?'} + ${iconoReductor ? iconoReductor + ' ' : ''}${equipoReductor?.nombre || '?'}`;
+          } else {
+            const equipo = buscarEquipoCatalogo(item.equipoId);
+            const icono = buscarTipoEquipo(equipo?.tipoId)?.icono || '';
+            nombre = `${icono ? icono + ' ' : ''}${equipo?.nombre || 'Equipo no encontrado'}`;
+          }
 
-      (pInfo.items || []).forEach((it, idxItem) => {
-        const item = pedido?.equipos?.[it.itemIndex];
+          // Equipo CON serial: se sabe exactamente cuál unidad es cuál, así que
+          // cada una se lista y se retira por separado.
+          if (it.unidades && it.unidades.length) {
+            return it.unidades.map(u => {
+              const btnRetirarUnidad = despachado ? '' : `<button type="button" class="btn-retirar-unidad" data-idx-remision="${idxRemision}" data-idx-item="${idxItem}" data-unidad="${u}" title="Retirar esta unidad de la remisión">✕</button>`;
+              return `<div class="item-linea"><span>${nombre}</span><span style="display:flex; align-items:center; gap:6px;">🆔 ${etiquetaUnidadEnvio(item, u)}${btnRetirarUnidad}</span></div>`;
+            }).join('');
+          }
 
-        if (!item) {
-          // Ítem huérfano (ya no existe en el pedido): no hay forma de saber
-          // su tipo, así que solo se puede retirar por completo.
-          const detalleCantidad = it.unidades ? `unidad(es): ${it.unidades.map(u => u + 1).join(', ')}` : `cant. ${it.cantidad}`;
-          const btnRetirarItem = despachado ? '' : `<button type="button" class="btn-retirar-item" data-idx-remision="${idxRemision}" data-idx-item="${idxItem}" title="Retirar este equipo de la remisión">✕</button>`;
-          lineasEquipos.push(`
-            <div class="equipo-envio-linea ${estadoClaseEquipo}">
-              <span class="equipo-envio-pedido">${prefijoPedido}</span>
-              <span class="equipo-envio-nombre">⚠️ Ítem no encontrado</span>
-              <span class="equipo-envio-detalle">${detalleCantidad}${btnRetirarItem}</span>
+          // Equipo SIN serial: las unidades son indistinguibles entre sí, así
+          // que se retira por cantidad (puede ser parcial, no solo todo o nada).
+          const controlCantidad = despachado ? '' : `
+                <span class="retirar-cantidad-control">
+                  <input type="number" class="input-retirar-cantidad" min="1" max="${it.cantidad}" value="${it.cantidad}" title="Cantidad a retirar">
+                  <button type="button" class="btn-retirar-cantidad" data-idx-remision="${idxRemision}" data-idx-item="${idxItem}" title="Retirar esta cantidad de la remisión">✕</button>
+                </span>`;
+          return `<div class="item-linea"><span>${nombre}</span><span style="display:flex; align-items:center; gap:6px;">cant. ${it.cantidad}${controlCantidad}</span></div>`;
+        }).join('');
+
+        const btnRetirarRemision = despachado ? '' : `<button type="button" class="btn-retirar-remision" data-idx-remision="${idxRemision}" title="Retirar esta remisión completa, con todos sus equipos">🗑️ Retirar remisión</button>`;
+
+        return `
+          <div class="remision-sub-card">
+            <div class="remision-sub-card-header">
+              <span class="remision-sub-card-titulo">
+                Remisión:
+                <span class="remision-numero-wrap">
+                  <button type="button" class="remision-card-numero" data-pedidoid="${pInfo.pedidoId}" data-grupo-idx="${idxEnGrupo}" ${despachado ? 'disabled' : ''}>${escapeHtml(pInfo.remision || '—')}${despachado ? '' : ' ✏️'}</button>
+                  <div class="remision-popover" data-pedidoid="${pInfo.pedidoId}">
+                    <label>Número de remisión</label>
+                    <input type="text" class="input-remision-envio" data-pedidoid="${pInfo.pedidoId}" data-grupo-idx="${idxEnGrupo}" value="${escapeHtml(pInfo.remision || '')}" ${despachado ? 'disabled' : ''}>
+                  </div>
+                </span>
+              </span>
+              <span class="remision-toggle-arrow" title="Colapsar / expandir">▲</span>
             </div>
-          `);
-          return;
-        }
-
-        // El ícono de cada equipo es el que se configuró en Config para su
-        // tipo (mismo catálogo/ícono que se ve en la pestaña Equipos).
-        let nombre;
-        if (item.tipoLinea === 'motoreductor') {
-          const equipoMotor = buscarEquipoCatalogo(item.motorEquipoId);
-          const equipoReductor = buscarEquipoCatalogo(item.reductorEquipoId);
-          const iconoMotor = buscarTipoEquipo(equipoMotor?.tipoId)?.icono || '';
-          const iconoReductor = buscarTipoEquipo(equipoReductor?.tipoId)?.icono || '';
-          nombre = `${iconoMotor ? iconoMotor + ' ' : ''}${equipoMotor?.nombre || '?'} + ${iconoReductor ? iconoReductor + ' ' : ''}${equipoReductor?.nombre || '?'}`;
-        } else {
-          const equipo = buscarEquipoCatalogo(item.equipoId);
-          const icono = buscarTipoEquipo(equipo?.tipoId)?.icono || '';
-          nombre = `${icono ? icono + ' ' : ''}${equipo?.nombre || 'Equipo no encontrado'}`;
-        }
-
-        // Equipo CON serial: se sabe exactamente cuál unidad es cuál, así que
-        // cada una se lista y se retira por separado.
-        if (it.unidades && it.unidades.length) {
-          it.unidades.forEach(u => {
-            const btnRetirarUnidad = despachado ? '' : `<button type="button" class="btn-retirar-unidad" data-idx-remision="${idxRemision}" data-idx-item="${idxItem}" data-unidad="${u}" title="Retirar esta unidad de la remisión">✕</button>`;
-            lineasEquipos.push(`
-              <div class="equipo-envio-linea ${estadoClaseEquipo}">
-                <span class="equipo-envio-pedido">${prefijoPedido}</span>
-                <span class="equipo-envio-nombre">${nombre}</span>
-                <span class="equipo-envio-detalle">🆔 ${etiquetaUnidadEnvio(item, u)}${btnRetirarUnidad}</span>
-              </div>
-            `);
-          });
-          return;
-        }
-
-        // Equipo SIN serial: las unidades son indistinguibles entre sí, así
-        // que se retira por cantidad (puede ser parcial, no solo todo o nada).
-        const controlCantidad = despachado ? '' : `
-              <span class="retirar-cantidad-control">
-                <input type="number" class="input-retirar-cantidad" min="1" max="${it.cantidad}" value="${it.cantidad}" title="Cantidad a retirar">
-                <button type="button" class="btn-retirar-cantidad" data-idx-remision="${idxRemision}" data-idx-item="${idxItem}" title="Retirar esta cantidad de la remisión">✕</button>
-              </span>`;
-        lineasEquipos.push(`
-          <div class="equipo-envio-linea ${estadoClaseEquipo}">
-            <span class="equipo-envio-pedido">${prefijoPedido}</span>
-            <span class="equipo-envio-nombre">${nombre}</span>
-            <span class="equipo-envio-detalle">cant. ${it.cantidad}${controlCantidad}</span>
+            <div class="remision-sub-card-body">
+              <div class="remision-card-items">${itemsHtml || 'Sin equipos'}</div>
+              ${btnRetirarRemision ? `<div class="remision-sub-card-footer">${btnRetirarRemision}</div>` : ''}
+            </div>
           </div>
-        `);
-      });
-    });
+        `;
+      }).join('');
+
+      return `
+        <div class="remision-card">
+          <div class="remision-card-header">
+            <span class="remision-card-titulo"><span class="remision-card-icono">📄</span>${nombrePedido}</span>
+            <span class="remision-toggle-arrow" title="Colapsar / expandir">▲</span>
+          </div>
+          <div class="remision-card-body">
+            ${btnVerPedido}
+            ${datosHtml}
+            ${subCardsHtml}
+          </div>
+        </div>
+      `;
+    }).join('');
 
     fichaContenido.innerHTML = `
 
@@ -468,20 +481,9 @@
         ${despachado ? '<div class="hint-peso-calculado" style="display:block;">Congelada al momento del despacho.</div>' : ''}
       </div>
 
-      <div class="envio-resumen">
-        <div class="envio-resumen-linea">
-          <span class="envio-resumen-label">Pedidos que lo componen:</span>
-          <span class="envio-resumen-chips">${pedidosResumenHtml}</span>
-        </div>
-        <div class="envio-resumen-linea">
-          <span class="envio-resumen-label">Remisiones que lo componen:</span>
-          <span class="envio-resumen-chips">${remisionesResumenHtml}</span>
-        </div>
-      </div>
-
-      <h4 style="margin-top:18px;">Equipos en este envío</h4>
-      <div class="equipos-envio-lista">
-        ${lineasEquipos.join('') || '<div class="empty-equipos-pedido">Sin equipos.</div>'}
+      <h4 style="margin-top:18px;">Pedidos incluidos</h4>
+      <div class="remisiones-frame">
+        ${filas || '<div class="empty-equipos-pedido">Sin pedidos.</div>'}
       </div>
     `;
 
@@ -526,6 +528,41 @@
     }
 
     if (!despachado) {
+      // Clic en el badge "Remisión X" abre un popover con el campo de edición
+      // (solo visual: el valor se guarda al presionar "Guardar", como el resto
+      // de la ficha). Al escribir, el badge se actualiza en vivo.
+      fichaContenido.querySelectorAll('.remision-card-numero').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const wrap = btn.closest('.remision-numero-wrap');
+          const popover = wrap.querySelector('.remision-popover');
+          const yaAbierto = popover.classList.contains('open');
+          cerrarPopoversRemision();
+          if (!yaAbierto) {
+            popover.classList.add('open');
+            const input = popover.querySelector('.input-remision-envio');
+            input.focus();
+            input.select();
+          }
+        });
+      });
+      fichaContenido.querySelectorAll('.remision-popover .input-remision-envio').forEach(input => {
+        // Con varias remisiones del mismo pedido, data-pedidoid ya no basta
+        // para identificar el badge correspondiente — se combina con la
+        // posición dentro del grupo de ese pedido (data-grupo-idx).
+        const badge = fichaContenido.querySelector(`.remision-card-numero[data-pedidoid="${input.dataset.pedidoid}"][data-grupo-idx="${input.dataset.grupoIdx}"]`);
+        input.addEventListener('input', () => {
+          if (badge) badge.textContent = `${input.value.trim() || '—'} ✏️`;
+        });
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === 'Escape') {
+            e.preventDefault();
+            cerrarPopoversRemision();
+            badge?.focus();
+          }
+        });
+      });
+
       fichaContenido.querySelectorAll('.btn-retirar-remision').forEach(btn => {
         btn.addEventListener('click', () => retirarRemision(parseInt(btn.dataset.idxRemision, 10)));
       });
@@ -554,11 +591,24 @@
       });
     }
 
-    // "Ver ficha del pedido": clic en cualquiera de los chips de "Pedidos que
-    // lo componen". Disponible siempre (armado o despachado); al cerrar esa
-    // ficha, vuelve a abrirse esta misma.
-    fichaContenido.querySelectorAll('.chip-pedido-envio[data-pedido-id]').forEach(chip => {
-      chip.addEventListener('click', () => irAFichaPedido(chip.dataset.pedidoId));
+    // "Ver ficha del pedido" está disponible siempre (armado o despachado):
+    // navega a la ficha de ese pedido, y al cerrarla vuelve aquí.
+    fichaContenido.querySelectorAll('.btn-ver-pedido').forEach(btn => {
+      btn.addEventListener('click', () => irAFichaPedido(btn.dataset.pedidoId));
+    });
+
+    // Flechitas ▲: colapsan/expanden el cuerpo de la tarjeta del pedido y,
+    // dentro de ella, el de cada remisión. Disponible siempre (no depende
+    // de si el envío está despachado, es solo para ordenar la vista).
+    fichaContenido.querySelectorAll('.remision-card-header').forEach(header => {
+      header.addEventListener('click', () => {
+        header.closest('.remision-card').classList.toggle('collapsed');
+      });
+    });
+    fichaContenido.querySelectorAll('.remision-sub-card-header').forEach(header => {
+      header.addEventListener('click', () => {
+        header.closest('.remision-sub-card').classList.toggle('collapsed');
+      });
     });
 
     btnCancelarEnvio.style.display = despachado ? 'none' : 'inline-block';
@@ -693,6 +743,16 @@
       alert('No se pudo retirar la cantidad. Revisa la consola.');
     }
   }
+
+  function cerrarPopoversRemision() {
+    fichaContenido.querySelectorAll('.remision-popover.open').forEach(p => p.classList.remove('open'));
+  }
+
+  // Clic afuera de cualquier popover de remisión lo cierra (registrado una
+  // sola vez; fichaContenido persiste entre renders aunque su innerHTML cambie).
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.remision-numero-wrap')) cerrarPopoversRemision();
+  });
 
   window.abrirFichaEnvio = abrirFicha; // permite abrir la ficha de un envío desde pedidos.js
 
