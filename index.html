@@ -1282,6 +1282,9 @@
     border-radius: var(--radius);
     padding: 10px 12px;
   }
+  .remision-sub-card + .remision-sub-card{
+    margin-top: 8px;
+  }
   .remision-sub-card-header{
     display: flex;
     justify-content: space-between;
@@ -1329,12 +1332,12 @@
   }
   .remision-dato{
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
+    align-items: baseline;
+    gap: 5px;
+    flex-wrap: wrap;
   }
-  .remision-dato-label{ color: var(--ink-soft); }
-  .remision-dato-valor{ color: var(--ink); font-weight: 600; text-align: right; }
+  .remision-dato-label{ color: var(--ink-soft); flex-shrink: 0; }
+  .remision-dato-valor{ color: var(--ink); font-weight: 600; }
 
   .btn-ver-pedido{
     font-size: 12px;
