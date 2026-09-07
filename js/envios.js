@@ -224,13 +224,15 @@
         <div class="remision-card">
           <div class="remision-card-header">
             <span class="remision-card-pedido">${nombrePedido}</span>
-            <span class="remision-card-numero">Remisión ${escapeHtml(pInfo.remision || '—')}</span>
+            <div class="remision-numero-wrap">
+              <button type="button" class="remision-card-numero" data-pedidoid="${pInfo.pedidoId}" ${despachado ? 'disabled' : ''}>Remisión ${escapeHtml(pInfo.remision || '—')}</button>
+              <div class="remision-popover" data-pedidoid="${pInfo.pedidoId}">
+                <label>Número de remisión</label>
+                <input type="text" class="input-remision-envio" data-pedidoid="${pInfo.pedidoId}" value="${escapeHtml(pInfo.remision || '')}" ${despachado ? 'disabled' : ''}>
+              </div>
+            </div>
           </div>
           ${datosHtml}
-          <div class="form-group" style="margin:0 0 8px 0;">
-            <label style="font-size:11px;">Editar remisión</label>
-            <input type="text" class="input-remision-envio" data-pedidoid="${pInfo.pedidoId}" value="${escapeHtml(pInfo.remision || '')}" ${despachado ? 'disabled' : ''}>
-          </div>
           <div class="remision-card-items">${itemsHtml || 'Sin equipos'}</div>
           <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
             ${btnVerPedido}
@@ -276,6 +278,38 @@
     if (!despachado) selectQuien.addEventListener('change', actualizarGruposFicha);
 
     if (!despachado) {
+      // Clic en el badge "Remisión X" abre un popover con el campo de edición
+      // (solo visual: el valor se guarda al presionar "Guardar", como el resto
+      // de la ficha). Al escribir, el badge se actualiza en vivo.
+      fichaContenido.querySelectorAll('.remision-card-numero').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const wrap = btn.closest('.remision-numero-wrap');
+          const popover = wrap.querySelector('.remision-popover');
+          const yaAbierto = popover.classList.contains('open');
+          cerrarPopoversRemision();
+          if (!yaAbierto) {
+            popover.classList.add('open');
+            const input = popover.querySelector('.input-remision-envio');
+            input.focus();
+            input.select();
+          }
+        });
+      });
+      fichaContenido.querySelectorAll('.remision-popover .input-remision-envio').forEach(input => {
+        const badge = fichaContenido.querySelector(`.remision-card-numero[data-pedidoid="${input.dataset.pedidoid}"]`);
+        input.addEventListener('input', () => {
+          if (badge) badge.textContent = `Remisión ${input.value.trim() || '—'}`;
+        });
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === 'Escape') {
+            e.preventDefault();
+            cerrarPopoversRemision();
+            badge?.focus();
+          }
+        });
+      });
+
       fichaContenido.querySelectorAll('.btn-retirar-remision').forEach(btn => {
         btn.addEventListener('click', () => retirarRemision(parseInt(btn.dataset.idxRemision, 10)));
       });
@@ -442,6 +476,16 @@
       alert('No se pudo retirar la cantidad. Revisa la consola.');
     }
   }
+
+  function cerrarPopoversRemision() {
+    fichaContenido.querySelectorAll('.remision-popover.open').forEach(p => p.classList.remove('open'));
+  }
+
+  // Clic afuera de cualquier popover de remisión lo cierra (registrado una
+  // sola vez; fichaContenido persiste entre renders aunque su innerHTML cambie).
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.remision-numero-wrap')) cerrarPopoversRemision();
+  });
 
   window.abrirFichaEnvio = abrirFicha; // permite abrir la ficha de un envío desde pedidos.js
 
