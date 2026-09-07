@@ -642,6 +642,8 @@
   }
 
   let pedidoIdEnFicha = null; // qué pedido está abierto en la ficha (para poder guardar seriales)
+  let volverAEnvioId = null; // si la ficha se abrió desde dentro de un envío (envios.js), aquí queda su id
+  let volverAEnvioOpciones = null; // cadena de retorno propia de ese envío (ej. su propio volverAPedidoId), para no perderla al volver
 
   function renderSeccionCliente(pedido) {
     const compania = buscarCompania(pedido.companiaId);
@@ -1087,25 +1089,46 @@
   }
 
   // Permite reabrir la ficha de un pedido desde otro archivo (envios.js), por
-  // ejemplo al cerrar/guardar/cancelar un envío que se abrió desde aquí.
-  window.abrirFichaPedido = function (pedidoId, subtabInicial) {
+  // ejemplo al cerrar/guardar/cancelar un envío que se abrió desde aquí, o al
+  // navegar desde la ficha de un envío a uno de sus pedidos (opciones.volverAEnvioId).
+  window.abrirFichaPedido = function (pedidoId, subtabInicial, opciones) {
+    volverAEnvioId = opciones?.volverAEnvioId || null;
+    volverAEnvioOpciones = opciones?.volverAEnvioOpciones || null;
     const pedido = pedidosCache.find(p => p.id === pedidoId);
     if (pedido) abrirFicha(pedido, subtabInicial);
   };
 
-  function cerrarFicha() {
+  // Cierre "real" de la ficha (botón Cerrar o clic en el backdrop): si se
+  // llegó aquí desde la ficha de un envío, vuelve a abrirla. El parámetro
+  // mantenerVolver evita este retorno automático cuando cerrarFicha() se usa
+  // solo como paso intermedio de una navegación explícita (editar el pedido,
+  // o saltar a un envío distinto) — en esos casos el volverAEnvioId debe
+  // seguir intacto para cuando la ficha se cierre de verdad más adelante.
+  function cerrarFicha(opciones) {
     modalFicha.classList.remove('open');
     pedidoIdEnFicha = null;
+    if (opciones?.mantenerVolver) return;
+    if (volverAEnvioId && window.abrirFichaEnvio) {
+      const idEnvio = volverAEnvioId;
+      const opcionesEnvio = volverAEnvioOpciones;
+      volverAEnvioId = null;
+      volverAEnvioOpciones = null;
+      const envio = (window.enviosCache || []).find(en => en.id === idEnvio);
+      if (envio) window.abrirFichaEnvio(envio, opcionesEnvio || undefined);
+    } else {
+      volverAEnvioId = null;
+      volverAEnvioOpciones = null;
+    }
   }
 
-  btnCerrarFicha.addEventListener('click', cerrarFicha);
+  btnCerrarFicha.addEventListener('click', () => cerrarFicha());
   modalFicha.addEventListener('click', (e) => {
     if (e.target === modalFicha) cerrarFicha();
   });
   btnEditarDesdeFicha.addEventListener('click', () => {
     const pedido = pedidosCache.find(p => p.id === btnEditarDesdeFicha.dataset.id);
     origenEdicion = 'ficha';
-    cerrarFicha();
+    cerrarFicha({ mantenerVolver: true });
     if (pedido) abrirModalEditar(pedido);
   });
 
@@ -1540,6 +1563,23 @@
     return envio.remesa ? escapeHtml(envio.remesa) : null;
   }
 
+  // Lista legible de qué pedidos (con su compañía) ya están metidos en un
+  // envío armado — para poder distinguir, por ejemplo, entre dos envíos con
+  // la misma transportadora (dos "TCC") a la hora de elegir a cuál sumar el
+  // pedido actual. Sin HTML, porque va dentro de un <option> de <select>.
+  function resumenPedidosVinculadosEnvio(envio, maxNombres = 3) {
+    const ids = [...new Set((envio.pedidos || []).map(p => p.pedidoId))];
+    if (!ids.length) return 'Sin pedidos todavía';
+    const nombres = ids.map(id => {
+      const pedido = pedidosCache.find(p => p.id === id);
+      if (!pedido) return 'Pedido no encontrado';
+      const compania = buscarCompania(pedido.companiaId);
+      return `N${pedido.numero}${compania ? ' - ' + compania.nombre : ''}`;
+    });
+    if (nombres.length <= maxNombres) return nombres.join(', ');
+    return `${nombres.slice(0, maxNombres).join(', ')} y ${nombres.length - maxNombres} más`;
+  }
+
   function renderEnviosVinculados() {
     const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
     if (!pedido) return;
@@ -1591,7 +1631,7 @@
         const id = card.dataset.envioId;
         const envio = (window.enviosCache || []).find(en => en.id === id);
         const idPedidoOrigen = pedidoIdEnFicha; // cerrarFicha() lo pone en null, así que se guarda antes
-        cerrarFicha();
+        cerrarFicha({ mantenerVolver: true });
         if (envio && window.abrirFichaEnvio) window.abrirFichaEnvio(envio, { volverAPedidoId: idPedidoOrigen });
       });
     });
@@ -1623,7 +1663,9 @@
     selectEnvioExistente.innerHTML = '<option value="">Selecciona...</option>' + candidatos.map(envio => {
       const cant = (envio.pedidos || []).length;
       const quien = nombreQuienEncargaEnvio(envio).replace(/<[^>]+>/g, '');
-      const label = `${quien}${envio.remesa ? ' — Remesa ' + envio.remesa : ''} (${cant} ${cant === 1 ? 'pedido' : 'pedidos'})`;
+      const remesaTxt = envio.remesa ? ' — Remesa ' + envio.remesa : '';
+      const pedidosTxt = resumenPedidosVinculadosEnvio(envio);
+      const label = `${quien}${remesaTxt} (${cant} ${cant === 1 ? 'pedido' : 'pedidos'}): ${pedidosTxt}`;
       return `<option value="${envio.id}">${escapeHtml(label)}</option>`;
     }).join('');
   }

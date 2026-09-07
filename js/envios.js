@@ -27,6 +27,7 @@
 
   const modalFicha = document.getElementById('modal-ficha-envio');
   const fichaTitulo = document.getElementById('ficha-envio-titulo');
+  const fichaSubtitulo = document.getElementById('ficha-envio-subtitulo');
   const fichaEstadoTag = document.getElementById('ficha-envio-estado-tag');
   const fichaContenido = document.getElementById('ficha-envio-contenido');
   const btnCerrarFicha = document.getElementById('btn-cerrar-ficha-envio');
@@ -73,6 +74,13 @@
   function buscarEquipoCatalogo(equipoId) {
     return (window.equiposCache || []).find(eq => eq.id === equipoId) || null;
   }
+
+  // Mismo mapa que usa pedidos.js para el tag de tipo de pedido — se
+  // duplica aquí (archivo independiente) para mostrarlo en cada remisión.
+  const TIPO_PEDIDO_LABEL = {
+    normal: { texto: 'Normal', clase: 'tag-pedido-normal' },
+    reparacion: { texto: 'Reparación', clase: 'tag-pedido-reparacion' }
+  };
 
   // Texto a mostrar para una unidad puntual (identificada por su índice)
   // dentro de un ítem que usa serial — su serial si ya está asignado, o un
@@ -149,6 +157,9 @@
     const remesaBloqueada = despachado && !!envio.remesa; // solo se bloquea si YA tiene remesa
 
     fichaTitulo.textContent = nombreQuienEncarga(envio).replace(/<[^>]+>/g, '');
+    fichaSubtitulo.textContent = envio.esInterno
+      ? (envio.personaRecoge ? `Recoge: ${envio.personaRecoge}` : 'Interno — sin encargado aún')
+      : (envio.remesa ? `Remesa ${envio.remesa}` : 'Sin remesa asignada');
     fichaEstadoTag.innerHTML = despachado
       ? '<span class="tag-envio-despachado">Despachado</span>'
       : '<span class="tag-envio-armado">Armado</span>';
@@ -157,7 +168,20 @@
     const filas = pedidosIncluidos.map((pInfo, idxRemision) => {
       const pedido = buscarPedido(pInfo.pedidoId);
       const compania = pedido ? buscarCompania(pedido.companiaId) : null;
-      const nombrePedido = pedido ? `N${pedido.numero} - ${compania ? escapeHtml(compania.nombre) : 'Compañía no encontrada'}` : 'Pedido no encontrado';
+      const nombreCompania = compania ? escapeHtml(compania.nombre) : 'Compañía no encontrada';
+      const nombrePedido = pedido ? `N${pedido.numero} - ${nombreCompania}` : 'Pedido no encontrado';
+
+      // Datos del pedido (Cliente / Encargado / Tipo) — solo si el pedido
+      // todavía existe; si fue borrado, se omite este bloque.
+      const tipoInfo = pedido ? (TIPO_PEDIDO_LABEL[pedido.tipo] || TIPO_PEDIDO_LABEL.normal) : null;
+      const contacto = pedido?.contacto ? escapeHtml(pedido.contacto) : '— (sin asignar)';
+      const datosHtml = pedido ? `
+        <div class="remision-card-datos">
+          <div class="remision-dato"><span class="remision-dato-label">Cliente</span><span class="remision-dato-valor">${nombreCompania}</span></div>
+          <div class="remision-dato"><span class="remision-dato-label">Encargado</span><span class="remision-dato-valor">${contacto}</span></div>
+          <div class="remision-dato"><span class="remision-dato-label">Tipo de pedido</span><span class="${tipoInfo.clase}">${tipoInfo.texto}</span></div>
+        </div>
+      ` : '';
 
       const itemsHtml = (pInfo.items || []).map((it, idxItem) => {
         const item = pedido?.equipos?.[it.itemIndex];
@@ -194,6 +218,7 @@
       }).join('');
 
       const btnRetirarRemision = despachado ? '' : `<button type="button" class="btn-retirar-remision" data-idx-remision="${idxRemision}" title="Retirar esta remisión completa, con todos sus equipos">🗑️ Retirar remisión</button>`;
+      const btnVerPedido = pedido ? `<button type="button" class="btn-link btn-ver-pedido" data-pedido-id="${pedido.id}">📋 Ver ficha del pedido</button>` : '<span></span>';
 
       return `
         <div class="remision-card">
@@ -201,12 +226,16 @@
             <span class="remision-card-pedido">${nombrePedido}</span>
             <span class="remision-card-numero">Remisión ${escapeHtml(pInfo.remision || '—')}</span>
           </div>
+          ${datosHtml}
           <div class="form-group" style="margin:0 0 8px 0;">
             <label style="font-size:11px;">Editar remisión</label>
             <input type="text" class="input-remision-envio" data-pedidoid="${pInfo.pedidoId}" value="${escapeHtml(pInfo.remision || '')}" ${despachado ? 'disabled' : ''}>
           </div>
           <div class="remision-card-items">${itemsHtml || 'Sin equipos'}</div>
-          ${btnRetirarRemision ? `<div style="margin-top:8px; text-align:right;">${btnRetirarRemision}</div>` : ''}
+          <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+            ${btnVerPedido}
+            ${btnRetirarRemision}
+          </div>
         </div>
       `;
     }).join('');
@@ -275,10 +304,31 @@
       });
     }
 
+    // "Ver ficha del pedido" está disponible siempre (armado o despachado):
+    // navega a la ficha de ese pedido, y al cerrarla vuelve aquí.
+    fichaContenido.querySelectorAll('.btn-ver-pedido').forEach(btn => {
+      btn.addEventListener('click', () => irAFichaPedido(btn.dataset.pedidoId));
+    });
+
     btnCancelarEnvio.style.display = despachado ? 'none' : 'inline-block';
     btnGuardarEnvio.style.display = (!despachado || !remesaBloqueada) ? 'inline-block' : 'none';
     btnDespacharEnvio.style.display = despachado ? 'none' : 'inline-block';
     modalFicha.classList.add('open');
+  }
+
+  // Navega desde la ficha del envío a la ficha de uno de sus pedidos. No es
+  // un "cierre" real de esta ficha (no dispara el retorno a volverAPedidoId,
+  // si lo hubiera) — solo se oculta, y se le indica al pedido que, al
+  // cerrarse, debe volver a abrir este mismo envío. Se le pasa también el
+  // volverAPedidoId actual de este envío (si lo hay) para que, al volver,
+  // esta ficha conserve su propia cadena de retorno hacia donde estaba antes.
+  function irAFichaPedido(pedidoId) {
+    if (!window.abrirFichaPedido) return;
+    modalFicha.classList.remove('open');
+    window.abrirFichaPedido(pedidoId, null, {
+      volverAEnvioId: envioIdEnFicha,
+      volverAEnvioOpciones: volverAPedidoId ? { volverAPedidoId } : null
+    });
   }
 
   // Retira una remisión completa (con todos sus equipos) del envío.

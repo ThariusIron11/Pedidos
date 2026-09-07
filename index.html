@@ -1207,6 +1207,27 @@
     gap: 8px;
   }
 
+  .remision-card-datos{
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12.5px;
+    margin-bottom: 10px;
+  }
+  .remision-dato{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .remision-dato-label{ color: var(--ink-soft); }
+  .remision-dato-valor{ color: var(--ink); font-weight: 600; text-align: right; }
+
+  .btn-ver-pedido{
+    font-size: 12px;
+    padding: 2px 0;
+  }
+
   .envio-vinculado-card{
     background: #fafafb;
     border: 1px solid #e2e4e9;
@@ -1801,6 +1822,7 @@
       <div class="ficha-header" id="ficha-envio-header">
         <div>
           <div class="ficha-header-numero" id="ficha-envio-titulo">Envío</div>
+          <div class="ficha-header-resumen" id="ficha-envio-subtitulo"></div>
         </div>
         <div class="ficha-header-tags" id="ficha-envio-estado-tag"></div>
       </div>
