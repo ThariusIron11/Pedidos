@@ -1149,200 +1149,180 @@
     border-color: var(--graphite);
   }
 
+  /* Misma apariencia de chip seleccionable que .chip-filtro-estado (pedidos),
+     reutilizada para los filtros de la pestaña Envíos (estado y
+     transportadora) bajo un nombre de clase propio para no interferir con
+     los listeners globales que pedidos.js registra sobre .chip-filtro-estado. */
+  .filtro-chips-fila{
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .chip-pill{
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    background: #fff;
+    color: var(--ink-soft);
+    border: 1px solid #d4d7dc;
+    border-radius: 999px;
+    padding: 7px 14px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .chip-pill:hover{ border-color: #b8bcc4; }
+  .chip-pill.active{
+    background: var(--graphite);
+    color: #fff;
+    border-color: var(--graphite);
+  }
+
   .ficha-envio-contenido-wrap{
     padding: 20px 26px;
     max-height: 60vh;
     overflow-y: auto;
   }
 
-  .remisiones-frame{
-    border: 1px dashed #d4d7dc;
-    border-radius: var(--radius);
-    padding: 12px;
+  .envio-resumen{
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
     background: #fbfaf8;
-    max-height: 38vh;
-    overflow-y: auto;
-  }
-  .remisiones-frame .remision-card:last-child{ margin-bottom: 0; }
-
-  .remision-card{
-    background: #fff;
     border: 1px solid #e2e4e9;
     border-radius: var(--radius);
     padding: 12px 14px;
-    margin-bottom: 10px;
   }
-  .remision-card-header{
+  .envio-resumen-linea{
     display: flex;
-    justify-content: space-between;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
-    cursor: pointer;
-    user-select: none;
+    gap: 8px;
   }
-  .remision-card.collapsed .remision-card-header{ margin-bottom: 0; }
-  .remision-card-titulo{
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    font-size: 13.5px;
+  .envio-resumen-label{
     font-weight: 700;
     color: var(--ink);
-  }
-  .remision-card-icono{ font-size: 15px; }
-  .remision-toggle-arrow{
-    font-size: 11px;
-    color: var(--ink-soft);
     flex-shrink: 0;
-    transition: transform 0.15s ease;
+    font-size: 13px;
   }
-  .remision-card.collapsed > .remision-toggle-arrow,
-  .remision-card.collapsed .remision-card-header .remision-toggle-arrow,
-  .remision-sub-card.collapsed .remision-sub-card-header .remision-toggle-arrow{
-    transform: rotate(180deg);
-  }
-  .remision-card-body{
-    margin-top: 10px;
-  }
-  .remision-card.collapsed .remision-card-body{
-    display: none;
-  }
-
-  .chip-ver-pedido{
-    display: inline-flex;
-    align-items: center;
+  .envio-resumen-chips{
+    display: flex;
+    flex-wrap: wrap;
     gap: 6px;
+    align-items: center;
+  }
+  .envio-resumen-vacio{ color: var(--ink-soft); font-style: italic; font-size: 13px; }
+
+  .chip-pedido-envio{
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
     background: #eef0f3;
     color: var(--ink);
     border: none;
-    font-size: 12px;
-    font-weight: 600;
-    font-family: inherit;
     padding: 5px 12px;
     border-radius: 999px;
     cursor: pointer;
-    margin-bottom: 10px;
     transition: background 0.12s ease;
   }
-  .chip-ver-pedido:hover{ background: #e2e4e9; }
-
-  .remision-numero-wrap{
-    position: relative;
-    display: inline-block;
-  }
-  .remision-card-numero{
-    font-family: inherit;
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--ink);
-    background: transparent;
-    padding: 0 2px;
-    border: none;
-    border-radius: 4px;
-    white-space: nowrap;
-    cursor: pointer;
-    transition: color 0.12s ease;
-  }
-  .remision-card-numero:hover:not(:disabled){
-    color: var(--copper);
-  }
-  .remision-card-numero:disabled{
+  .chip-pedido-envio:hover{ background: #e2e4e9; }
+  .chip-pedido-envio-vacio{
+    background: #fdf2f1;
+    color: var(--danger);
     cursor: default;
-    color: var(--ink);
   }
-  .remision-popover{
-    display: none;
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    z-index: 20;
-    background: #fff;
-    border: 1px solid #e2e4e9;
-    border-radius: var(--radius);
-    box-shadow: 0 6px 18px rgba(28, 33, 40, 0.14);
-    padding: 10px 12px;
-    min-width: 190px;
-  }
-  .remision-popover.open{
-    display: block;
-  }
-  .remision-popover label{
-    display: block;
-    font-size: 11px;
-    color: var(--ink-soft);
-    margin-bottom: 4px;
-  }
-  .remision-popover input{
-    width: 100%;
-  }
+  .chip-pedido-envio-vacio:hover{ background: #fdf2f1; }
 
-  .remision-sub-card{
-    background: #fbfaf8;
-    border: 1px solid #ececec;
-    border-radius: var(--radius);
-    padding: 10px 12px;
-  }
-  .remision-sub-card + .remision-sub-card{
-    margin-top: 8px;
-  }
-  .remision-sub-card-header{
-    display: flex;
-    justify-content: space-between;
+  .chip-remision-envio{
+    display: inline-flex;
     align-items: center;
-    gap: 10px;
-    cursor: pointer;
-    user-select: none;
+    gap: 2px;
+    background: #fff;
+    border: 1px solid #d4d7dc;
+    border-radius: 999px;
+    padding: 3px 4px 3px 12px;
   }
-  .remision-sub-card-titulo{
+  .chip-remision-envio .input-remision-envio{
+    border: none;
+    background: transparent;
+    font-family: inherit;
     font-size: 12.5px;
     font-weight: 600;
-    color: var(--ink-soft);
+    color: var(--ink);
+    width: 92px;
+    padding: 3px 0;
   }
-  .remision-sub-card-body{
-    margin-top: 8px;
-  }
-  .remision-sub-card.collapsed .remision-sub-card-body{
-    display: none;
-  }
-  .remision-sub-card-footer{
-    margin-top: 8px;
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  .remision-card-items{
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    font-size: 12.5px;
-    color: var(--ink-soft);
-  }
-  .remision-card-items .item-linea{
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  .remision-card-datos{
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 12.5px;
-    margin-bottom: 10px;
-  }
-  .remision-dato{
-    display: flex;
-    align-items: baseline;
-    gap: 5px;
-    flex-wrap: wrap;
-  }
-  .remision-dato-label{ color: var(--ink-soft); flex-shrink: 0; }
-  .remision-dato-valor{ color: var(--ink); font-weight: 600; }
-
-  .btn-ver-pedido{
+  .chip-remision-envio .input-remision-envio:focus{ outline: none; }
+  .chip-remision-envio .input-remision-envio:disabled{ color: var(--ink); opacity: 1; }
+  .chip-remision-envio .btn-retirar-remision{
+    font-family: inherit;
     font-size: 12px;
-    padding: 2px 0;
+    font-weight: 600;
+    background: transparent;
+    border: none;
+    color: var(--ink-soft);
+    cursor: pointer;
+    padding: 4px 7px;
+    border-radius: 999px;
   }
+  .chip-remision-envio .btn-retirar-remision:hover{ color: var(--danger); background: #fdf2f1; }
+
+  .equipos-envio-lista{
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 38vh;
+    overflow-y: auto;
+  }
+  .equipo-envio-linea{
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 12px;
+    border-radius: var(--radius);
+    font-size: 13px;
+  }
+  .equipo-envio-linea.armado{
+    background: #f5e7bd;
+    border: 1px solid #e2c778;
+  }
+  .equipo-envio-linea.despachado{
+    background: #cdeadb;
+    border: 1px solid #a3d6bb;
+  }
+  .equipo-envio-pedido{
+    font-weight: 700;
+    font-size: 12px;
+    color: var(--ink-soft);
+    flex-shrink: 0;
+  }
+  .equipo-envio-nombre{
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .equipo-envio-detalle{
+    color: var(--ink-soft);
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+  }
+  .equipo-envio-detalle .btn-retirar-item,
+  .equipo-envio-detalle .btn-retirar-unidad,
+  .equipo-envio-detalle .btn-retirar-cantidad{
+    background: transparent;
+    border: none;
+    color: inherit;
+    opacity: 0.65;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    padding: 2px 4px;
+  }
+  .equipo-envio-detalle .btn-retirar-item:hover,
+  .equipo-envio-detalle .btn-retirar-unidad:hover,
+  .equipo-envio-detalle .btn-retirar-cantidad:hover{ opacity: 1; color: var(--danger); }
 
   .envio-vinculado-card{
     background: #fafafb;
@@ -1399,20 +1379,15 @@
     padding: 9px 11px;
   }
   #modal-ficha-envio .ficha-envio-contenido-wrap h4{ font-size: 15.5px; }
-  #modal-ficha-envio .remision-card-titulo{ font-size: 15.5px; }
-  #modal-ficha-envio .remision-card-icono{ font-size: 17px; }
-  #modal-ficha-envio .remision-card-numero{ font-size: 15px; }
-  #modal-ficha-envio .remision-popover label{ font-size: 13px; }
-  #modal-ficha-envio .remision-popover input{ font-size: 14.5px; }
-  #modal-ficha-envio .remision-sub-card-titulo{ font-size: 14.5px; }
-  #modal-ficha-envio .remision-card-items{ font-size: 14.5px; }
-  #modal-ficha-envio .remision-card-datos{ font-size: 14.5px; }
-  #modal-ficha-envio .chip-ver-pedido{ font-size: 14px; }
+  #modal-ficha-envio .envio-resumen-label{ font-size: 14.5px; }
+  #modal-ficha-envio .envio-resumen-vacio{ font-size: 14.5px; }
+  #modal-ficha-envio .chip-pedido-envio{ font-size: 14px; }
+  #modal-ficha-envio .chip-remision-envio .input-remision-envio{ font-size: 14px; }
+  #modal-ficha-envio .equipo-envio-linea{ font-size: 14.5px; }
+  #modal-ficha-envio .equipo-envio-pedido{ font-size: 13px; }
+  #modal-ficha-envio .equipo-envio-detalle{ font-size: 14px; }
   #modal-ficha-envio .hint-peso-calculado{ font-size: 13.5px; }
-  #modal-ficha-envio .btn-retirar-remision{ font-size: 13px; }
-  #modal-ficha-envio .item-linea .btn-retirar-item,
-  #modal-ficha-envio .item-linea .btn-retirar-unidad,
-  #modal-ficha-envio .item-linea .btn-retirar-cantidad{ font-size: 14px; }
+  #modal-ficha-envio .btn-retirar-remision{ font-size: 14px; }
   #modal-ficha-envio .input-retirar-cantidad{ font-size: 14px; }
   #modal-ficha-envio .empty-equipos-pedido{ font-size: 14px; }
 
@@ -1504,13 +1479,18 @@
           <h2>Envíos</h2>
         </div>
 
-        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
-          <div class="form-group" style="max-width:220px; margin-bottom:0;">
-            <select id="filtro-estado-envios">
-              <option value="">Todos los estados</option>
-              <option value="armado">Armado</option>
-              <option value="despachado">Despachado</option>
-            </select>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">
+          <div class="form-group" style="max-width:300px; margin-bottom:0; flex:1; position:relative;">
+            <input type="text" id="buscador-envios" placeholder="Buscar por pedido, cliente, remesa o remisión..." autocomplete="off">
+            <div class="buscador-resultados" id="resultados-buscador-envios"></div>
+          </div>
+          <div class="filtro-chips-fila" id="filtro-estado-envios">
+            <button type="button" class="chip-pill" data-estado="todos">Todos</button>
+            <button type="button" class="chip-pill" data-estado="armado">Armado</button>
+            <button type="button" class="chip-pill" data-estado="despachado">Despachado</button>
+          </div>
+          <div class="filtro-chips-fila" id="filtro-transportadora-envios">
+            <!-- chips "Todas" / "Interno" / una por empresa — generados por envios.js según Config -->
           </div>
         </div>
 
