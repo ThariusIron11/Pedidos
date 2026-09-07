@@ -1177,41 +1177,84 @@
     justify-content: space-between;
     align-items: center;
     gap: 10px;
-    margin-bottom: 8px;
-    flex-wrap: wrap;
+    cursor: pointer;
+    user-select: none;
   }
-  .remision-card-pedido{
-    font-size: 13px;
+  .remision-card.collapsed .remision-card-header{ margin-bottom: 0; }
+  .remision-card-titulo{
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13.5px;
     font-weight: 700;
     color: var(--ink);
   }
+  .remision-card-icono{ font-size: 15px; }
+  .remision-toggle-arrow{
+    font-size: 11px;
+    color: var(--ink-soft);
+    flex-shrink: 0;
+    transition: transform 0.15s ease;
+  }
+  .remision-card.collapsed > .remision-toggle-arrow,
+  .remision-card.collapsed .remision-card-header .remision-toggle-arrow,
+  .remision-sub-card.collapsed .remision-sub-card-header .remision-toggle-arrow{
+    transform: rotate(180deg);
+  }
+  .remision-card-body{
+    margin-top: 10px;
+  }
+  .remision-card.collapsed .remision-card-body{
+    display: none;
+  }
+
+  .chip-ver-pedido{
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #eef0f3;
+    color: var(--ink);
+    border: none;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    padding: 5px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+    margin-bottom: 10px;
+    transition: background 0.12s ease;
+  }
+  .chip-ver-pedido:hover{ background: #e2e4e9; }
+
   .remision-numero-wrap{
     position: relative;
+    display: inline-block;
   }
   .remision-card-numero{
     font-family: inherit;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
-    color: var(--copper);
-    background: var(--copper-soft);
-    padding: 2px 9px;
+    color: var(--ink);
+    background: transparent;
+    padding: 0 2px;
     border: none;
-    border-radius: 999px;
+    border-radius: 4px;
     white-space: nowrap;
     cursor: pointer;
-    transition: filter 0.12s ease;
+    transition: color 0.12s ease;
   }
   .remision-card-numero:hover:not(:disabled){
-    filter: brightness(0.94);
+    color: var(--copper);
   }
   .remision-card-numero:disabled{
     cursor: default;
+    color: var(--ink);
   }
   .remision-popover{
     display: none;
     position: absolute;
     top: calc(100% + 6px);
-    right: 0;
+    left: 0;
     z-index: 20;
     background: #fff;
     border: 1px solid #e2e4e9;
@@ -1232,6 +1275,38 @@
   .remision-popover input{
     width: 100%;
   }
+
+  .remision-sub-card{
+    background: #fbfaf8;
+    border: 1px solid #ececec;
+    border-radius: var(--radius);
+    padding: 10px 12px;
+  }
+  .remision-sub-card-header{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .remision-sub-card-titulo{
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+  .remision-sub-card-body{
+    margin-top: 8px;
+  }
+  .remision-sub-card.collapsed .remision-sub-card-body{
+    display: none;
+  }
+  .remision-sub-card-footer{
+    margin-top: 8px;
+    display: flex;
+    justify-content: flex-end;
+  }
+
   .remision-card-items{
     display: flex;
     flex-direction: column;

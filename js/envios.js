@@ -78,8 +78,8 @@
   // Mismo mapa que usa pedidos.js para el tag de tipo de pedido — se
   // duplica aquí (archivo independiente) para mostrarlo en cada remisión.
   const TIPO_PEDIDO_LABEL = {
-    normal: { texto: 'Normal', clase: 'tag-pedido-normal' },
-    reparacion: { texto: 'Reparación', clase: 'tag-pedido-reparacion' }
+    normal: { texto: 'Normal', clase: 'tag-pedido-normal', icono: '📦' },
+    reparacion: { texto: 'Reparación', clase: 'tag-pedido-reparacion', icono: '🔧' }
   };
 
   // Texto a mostrar para una unidad puntual (identificada por su índice)
@@ -175,11 +175,12 @@
       // todavía existe; si fue borrado, se omite este bloque.
       const tipoInfo = pedido ? (TIPO_PEDIDO_LABEL[pedido.tipo] || TIPO_PEDIDO_LABEL.normal) : null;
       const contacto = pedido?.contacto ? escapeHtml(pedido.contacto) : '— (sin asignar)';
+      const tipoValorHtml = tipoInfo ? `${tipoInfo.icono} ${tipoInfo.texto}` : '';
       const datosHtml = pedido ? `
         <div class="remision-card-datos">
           <div class="remision-dato"><span class="remision-dato-label">Cliente</span><span class="remision-dato-valor">${nombreCompania}</span></div>
           <div class="remision-dato"><span class="remision-dato-label">Encargado</span><span class="remision-dato-valor">${contacto}</span></div>
-          <div class="remision-dato"><span class="remision-dato-label">Tipo de pedido</span><span class="${tipoInfo.clase}">${tipoInfo.texto}</span></div>
+          <div class="remision-dato"><span class="remision-dato-label">Tipo de pedido</span><span class="${tipoInfo.clase}">${tipoValorHtml}</span></div>
         </div>
       ` : '';
 
@@ -191,7 +192,7 @@
           // su tipo, así que solo se puede retirar por completo.
           const detalleCantidad = it.unidades ? `unidad(es): ${it.unidades.map(u => u + 1).join(', ')}` : `cant. ${it.cantidad}`;
           const btnRetirarItem = despachado ? '' : `<button type="button" class="btn-retirar-item" data-idx-remision="${idxRemision}" data-idx-item="${idxItem}" title="Retirar este equipo de la remisión">✕</button>`;
-          return `<div class="item-linea"><span>Ítem no encontrado</span><span style="display:flex; align-items:center; gap:6px;">${detalleCantidad}${btnRetirarItem}</span></div>`;
+          return `<div class="item-linea"><span>⚠️ Ítem no encontrado</span><span style="display:flex; align-items:center; gap:6px;">${detalleCantidad}${btnRetirarItem}</span></div>`;
         }
 
         const nombre = item.tipoLinea === 'motoreductor'
@@ -203,7 +204,7 @@
         if (it.unidades && it.unidades.length) {
           return it.unidades.map(u => {
             const btnRetirarUnidad = despachado ? '' : `<button type="button" class="btn-retirar-unidad" data-idx-remision="${idxRemision}" data-idx-item="${idxItem}" data-unidad="${u}" title="Retirar esta unidad de la remisión">✕</button>`;
-            return `<div class="item-linea"><span>${nombre}</span><span style="display:flex; align-items:center; gap:6px;">${etiquetaUnidadEnvio(item, u)}${btnRetirarUnidad}</span></div>`;
+            return `<div class="item-linea"><span>🧩 ${nombre}</span><span style="display:flex; align-items:center; gap:6px;">🆔 ${etiquetaUnidadEnvio(item, u)}${btnRetirarUnidad}</span></div>`;
           }).join('');
         }
 
@@ -214,29 +215,40 @@
                 <input type="number" class="input-retirar-cantidad" min="1" max="${it.cantidad}" value="${it.cantidad}" title="Cantidad a retirar">
                 <button type="button" class="btn-retirar-cantidad" data-idx-remision="${idxRemision}" data-idx-item="${idxItem}" title="Retirar esta cantidad de la remisión">✕</button>
               </span>`;
-        return `<div class="item-linea"><span>${nombre}</span><span style="display:flex; align-items:center; gap:6px;">cant. ${it.cantidad}${controlCantidad}</span></div>`;
+        return `<div class="item-linea"><span>🧩 ${nombre}</span><span style="display:flex; align-items:center; gap:6px;">cant. ${it.cantidad}${controlCantidad}</span></div>`;
       }).join('');
 
       const btnRetirarRemision = despachado ? '' : `<button type="button" class="btn-retirar-remision" data-idx-remision="${idxRemision}" title="Retirar esta remisión completa, con todos sus equipos">🗑️ Retirar remisión</button>`;
-      const btnVerPedido = pedido ? `<button type="button" class="btn-link btn-ver-pedido" data-pedido-id="${pedido.id}">📋 Ver ficha del pedido</button>` : '<span></span>';
+      const btnVerPedido = pedido ? `<button type="button" class="chip-ver-pedido btn-ver-pedido" data-pedido-id="${pedido.id}">📋 Ver ficha del pedido</button>` : '';
 
       return `
         <div class="remision-card">
           <div class="remision-card-header">
-            <span class="remision-card-pedido">${nombrePedido}</span>
-            <div class="remision-numero-wrap">
-              <button type="button" class="remision-card-numero" data-pedidoid="${pInfo.pedidoId}" ${despachado ? 'disabled' : ''}>Remisión ${escapeHtml(pInfo.remision || '—')}</button>
-              <div class="remision-popover" data-pedidoid="${pInfo.pedidoId}">
-                <label>Número de remisión</label>
-                <input type="text" class="input-remision-envio" data-pedidoid="${pInfo.pedidoId}" value="${escapeHtml(pInfo.remision || '')}" ${despachado ? 'disabled' : ''}>
+            <span class="remision-card-titulo"><span class="remision-card-icono">📄</span>${nombrePedido}</span>
+            <span class="remision-toggle-arrow" title="Colapsar / expandir">▲</span>
+          </div>
+          <div class="remision-card-body">
+            ${btnVerPedido}
+            ${datosHtml}
+            <div class="remision-sub-card">
+              <div class="remision-sub-card-header">
+                <span class="remision-sub-card-titulo">
+                  Remisión:
+                  <span class="remision-numero-wrap">
+                    <button type="button" class="remision-card-numero" data-pedidoid="${pInfo.pedidoId}" ${despachado ? 'disabled' : ''}>${escapeHtml(pInfo.remision || '—')}${despachado ? '' : ' ✏️'}</button>
+                    <div class="remision-popover" data-pedidoid="${pInfo.pedidoId}">
+                      <label>Número de remisión</label>
+                      <input type="text" class="input-remision-envio" data-pedidoid="${pInfo.pedidoId}" value="${escapeHtml(pInfo.remision || '')}" ${despachado ? 'disabled' : ''}>
+                    </div>
+                  </span>
+                </span>
+                <span class="remision-toggle-arrow" title="Colapsar / expandir">▲</span>
+              </div>
+              <div class="remision-sub-card-body">
+                <div class="remision-card-items">${itemsHtml || 'Sin equipos'}</div>
+                ${btnRetirarRemision ? `<div class="remision-sub-card-footer">${btnRetirarRemision}</div>` : ''}
               </div>
             </div>
-          </div>
-          ${datosHtml}
-          <div class="remision-card-items">${itemsHtml || 'Sin equipos'}</div>
-          <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
-            ${btnVerPedido}
-            ${btnRetirarRemision}
           </div>
         </div>
       `;
@@ -299,7 +311,7 @@
       fichaContenido.querySelectorAll('.remision-popover .input-remision-envio').forEach(input => {
         const badge = fichaContenido.querySelector(`.remision-card-numero[data-pedidoid="${input.dataset.pedidoid}"]`);
         input.addEventListener('input', () => {
-          if (badge) badge.textContent = `Remisión ${input.value.trim() || '—'}`;
+          if (badge) badge.textContent = `${input.value.trim() || '—'} ✏️`;
         });
         input.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' || e.key === 'Escape') {
@@ -342,6 +354,20 @@
     // navega a la ficha de ese pedido, y al cerrarla vuelve aquí.
     fichaContenido.querySelectorAll('.btn-ver-pedido').forEach(btn => {
       btn.addEventListener('click', () => irAFichaPedido(btn.dataset.pedidoId));
+    });
+
+    // Flechitas ▲: colapsan/expanden el cuerpo de la tarjeta del pedido y,
+    // dentro de ella, el de cada remisión. Disponible siempre (no depende
+    // de si el envío está despachado, es solo para ordenar la vista).
+    fichaContenido.querySelectorAll('.remision-card-header').forEach(header => {
+      header.addEventListener('click', () => {
+        header.closest('.remision-card').classList.toggle('collapsed');
+      });
+    });
+    fichaContenido.querySelectorAll('.remision-sub-card-header').forEach(header => {
+      header.addEventListener('click', () => {
+        header.closest('.remision-sub-card').classList.toggle('collapsed');
+      });
     });
 
     btnCancelarEnvio.style.display = despachado ? 'none' : 'inline-block';
