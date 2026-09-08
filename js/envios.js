@@ -387,7 +387,8 @@
       const remisiones = remisionesDistintas(envio);
       const cantidadRemisiones = remisiones.length;
       const peso = pesoTotalEnvio(envio);
-      const resumen = `Pedidos: ${textoPedidosIncluidos(envio)} · ${cantidadRemisiones} ${cantidadRemisiones === 1 ? 'remisión' : 'remisiones'} · ⚖️ ${peso.toFixed(2)} kg`;
+      const fechaMostrable = formatearFechaCorta(envio.fechaEnvio || fechaHoyISO());
+      const resumen = `📅 ${fechaMostrable} · Pedidos: ${textoPedidosIncluidos(envio)} · ${cantidadRemisiones} ${cantidadRemisiones === 1 ? 'remisión' : 'remisiones'} · ⚖️ ${peso.toFixed(2)} kg`;
 
       const chipsHtml = remisiones.length
         ? remisiones.map(r => `<span class="chip-remision">Remisión ${escapeHtml(r)}</span>`).join('')
