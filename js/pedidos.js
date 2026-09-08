@@ -19,7 +19,7 @@
 (function () {
   const COLECCION = 'pedidos';
 
-  const tablaBody  = document.getElementById('tabla-pedidos-body');
+  const listaContenedor = document.getElementById('pedidos-cards');
   const tablaEmpty = document.getElementById('pedidos-empty');
   const modal       = document.getElementById('modal-pedido');
   const modalTitulo = document.getElementById('modal-pedido-titulo');
@@ -2189,7 +2189,7 @@
 
   function renderTabla() {
     if (!pedidosCache.length) {
-      tablaBody.innerHTML = '';
+      listaContenedor.innerHTML = '';
       tablaEmpty.style.display = 'block';
       return;
     }
@@ -2199,7 +2199,7 @@
       .filter(pedidoCoincideConSerial);
 
     if (!filtrados.length) {
-      tablaBody.innerHTML = '';
+      listaContenedor.innerHTML = '';
       tablaEmpty.style.display = 'block';
       tablaEmpty.textContent = pedidosCache.length
         ? (filtroEstadoPedidos === 'devolucion'
@@ -2212,47 +2212,59 @@
 
     const ordenados = [...filtrados].sort((a, b) => a.numero - b.numero);
 
-    tablaBody.innerHTML = ordenados.map(pedido => {
+    listaContenedor.innerHTML = ordenados.map(pedido => {
       const compania = buscarCompania(pedido.companiaId);
       const nombreCompania = compania ? escapeHtml(compania.nombre) : '<span style="color:var(--danger);">Compañía no encontrada</span>';
       const cantidadEquipos = (pedido.equipos || []).length;
       const tipoInfo = TIPO_PEDIDO_LABEL[pedido.tipo] || TIPO_PEDIDO_LABEL.normal;
+      const esReparacion = pedido.tipo === 'reparacion';
+      const iconoTipo = esReparacion ? '🔧' : '🪛';
+      const completado = pedidoEstaCompletado(pedido);
+      const conDevolucion = pedidoTieneDevolucion(pedido);
+
+      // Fondo de la tarjeta: devolución manda sobre completado; completado
+      // de una reparación queda naranja bajo en vez del gris normal.
+      const clasesEstado = [
+        completado ? 'completado' : '',
+        completado && esReparacion ? 'reparacion' : '',
+        conDevolucion ? 'devolucion' : ''
+      ].filter(Boolean).join(' ');
+
+      const contactoTexto = pedido.contacto ? escapeHtml(pedido.contacto) : 'Sin encargado asignado';
 
       return `
-        <tr data-id="${pedido.id}" class="fila-pedido-clicable">
-          <td><strong>${pedido.numero}</strong></td>
-          <td>${nombreCompania}</td>
-          <td>${pedido.contacto ? escapeHtml(pedido.contacto) : '<span style="color:var(--ink-soft);">—</span>'}</td>
-          <td>
+        <div class="pedido-card ${clasesEstado}" data-id="${pedido.id}">
+          <div class="pedido-card-header">
+            <span class="pedido-card-icono-tipo">${iconoTipo}</span>
+            <span class="pedido-card-numero">N${pedido.numero}</span>
+            <span class="pedido-card-compania">${nombreCompania}</span>
             <span class="${tipoInfo.clase}">${tipoInfo.texto}</span>
-            ${pedidoEstaCompletado(pedido) ? '<span class="tag-pedido-completado">COMPLETADO</span>' : ''}
-            ${pedidoTieneDevolucion(pedido) ? '<span class="tag-pedido-devolucion">DEVOLUCIÓN</span>' : ''}
-          </td>
-          <td>${cantidadEquipos} ${cantidadEquipos === 1 ? 'equipo' : 'equipos'}</td>
-          <td>
-            <div class="row-actions">
-              <button type="button" class="btn-icon btn-editar" data-id="${pedido.id}" title="${pedidoEstaCompletado(pedido) ? 'Pedido completado: no editable, solo se pueden registrar devoluciones desde la ficha' : 'Editar'}" ${pedidoEstaCompletado(pedido) ? 'disabled' : ''}>✏️</button>
-              ${pedidoTieneAlgoDespachado(pedido) ? '' : `<button type="button" class="btn-icon btn-eliminar danger" data-id="${pedido.id}" title="Eliminar">🗑️</button>`}
+            ${completado ? '<span class="tag-pedido-completado">COMPLETADO</span>' : ''}
+            ${conDevolucion ? '<span class="tag-pedido-devolucion">DEVOLUCIÓN</span>' : ''}
+            <div class="pedido-card-actions">
+              <button type="button" class="btn-editar" data-id="${pedido.id}" title="${completado ? 'Pedido completado: no editable, solo se pueden registrar devoluciones desde la ficha' : 'Editar'}" ${completado ? 'disabled' : ''}>✏️</button>
+              ${pedidoTieneAlgoDespachado(pedido) ? '' : `<button type="button" class="btn-eliminar danger" data-id="${pedido.id}" title="Eliminar">🗑️</button>`}
             </div>
-          </td>
-        </tr>
+          </div>
+          <div class="pedido-card-resumen">${pedido.contacto ? `Encargado: ${contactoTexto}` : contactoTexto} · ${cantidadEquipos} ${cantidadEquipos === 1 ? 'equipo' : 'equipos'}</div>
+        </div>
       `;
     }).join('');
 
-    // Clic en cualquier parte de la fila (fuera de los botones) abre la
+    // Clic en cualquier parte de la tarjeta (fuera de los botones) abre la
     // Ficha. Con el filtro "Devolución" activo, abre en su lugar la Ficha de
     // Devolución (vista reducida: solo el/los equipo(s) devuelto(s)).
-    tablaBody.querySelectorAll('tr.fila-pedido-clicable').forEach(tr => {
-      tr.addEventListener('click', (e) => {
+    listaContenedor.querySelectorAll('.pedido-card').forEach(card => {
+      card.addEventListener('click', (e) => {
         if (e.target.closest('button')) return; // los botones tienen su propio comportamiento
-        const pedido = pedidosCache.find(p => p.id === tr.dataset.id);
+        const pedido = pedidosCache.find(p => p.id === card.dataset.id);
         if (!pedido) return;
         if (filtroEstadoPedidos === 'devolucion') abrirFichaDevolucion(pedido);
         else abrirFicha(pedido);
       });
     });
 
-    tablaBody.querySelectorAll('.btn-editar').forEach(btn => {
+    listaContenedor.querySelectorAll('.btn-editar').forEach(btn => {
       btn.addEventListener('click', () => {
         const pedido = pedidosCache.find(p => p.id === btn.dataset.id);
         if (pedido) {
@@ -2261,7 +2273,7 @@
         }
       });
     });
-    tablaBody.querySelectorAll('.btn-eliminar').forEach(btn => {
+    listaContenedor.querySelectorAll('.btn-eliminar').forEach(btn => {
       btn.addEventListener('click', () => {
         const pedido = pedidosCache.find(p => p.id === btn.dataset.id);
         if (pedido) eliminarPedido(pedido);

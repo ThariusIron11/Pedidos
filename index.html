@@ -749,8 +749,8 @@
     display: inline-block;
     font-size: 11px;
     font-weight: 600;
-    color: #6a1b9a;
-    background: #ede7f6;
+    color: var(--copper);
+    background: #fbe4d1;
     padding: 2px 8px;
     border-radius: 999px;
   }
@@ -1082,6 +1082,74 @@
     padding: 2px 8px;
     border-radius: 999px;
   }
+
+  /* ---------- Tarjetas de la lista de pedidos ---------- */
+  .pedidos-cards{
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .pedido-card{
+    background: var(--paper-card);
+    border: 1px solid #e2e4e9;
+    border-radius: 10px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  }
+  .pedido-card:hover{
+    border-color: #b8bcc4;
+    box-shadow: 0 1px 4px rgba(28,33,40,0.06);
+  }
+  .pedido-card.completado{ background: #e7e8ec; }              /* gris: completado (normal) */
+  .pedido-card.completado.reparacion{ background: #f7e2cd; }   /* naranja bajo: completado + reparación */
+  .pedido-card.devolucion{ background: #dfebf5; }               /* azul claro: devolución (siempre manda) */
+  .pedido-card-header{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .pedido-card-icono-tipo{ font-size: 15px; }
+  .pedido-card-numero{
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .pedido-card-compania{
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .pedido-card-resumen{
+    color: var(--ink-soft);
+    font-size: 13px;
+  }
+  .pedido-card-actions{
+    margin-left: auto;
+    display: flex;
+    gap: 4px;
+  }
+  .pedido-card-actions button{
+    background: transparent;
+    border: 1px solid #d4d7dc;
+    border-radius: var(--radius);
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--ink-soft);
+  }
+  .pedido-card-actions button:hover{ color: var(--ink); border-color: #b8bcc4; background: rgba(0,0,0,0.04); }
+  .pedido-card-actions button.danger:hover{ color: var(--danger); border-color: var(--danger); }
+  .pedido-card-actions button:disabled{ opacity: 0.4; cursor: not-allowed; }
+  .pedido-card-actions button:disabled:hover{ color: var(--ink-soft); border-color: #d4d7dc; background: transparent; }
 
   /* ---------- Filtros de la lista de envíos ---------- */
   .envios-filtros{
@@ -1581,21 +1649,9 @@
           </div>
         </div>
 
-        <table class="data-table" id="tabla-pedidos">
-          <thead>
-            <tr>
-              <th style="width:70px;">N°</th>
-              <th>Compañía</th>
-              <th>Contacto</th>
-              <th>Tipo</th>
-              <th>Equipos</th>
-              <th style="width:110px;"></th>
-            </tr>
-          </thead>
-          <tbody id="tabla-pedidos-body">
-            <!-- filas generadas por pedidos.js -->
-          </tbody>
-        </table>
+        <div class="pedidos-cards" id="pedidos-cards">
+          <!-- tarjetas generadas por pedidos.js -->
+        </div>
         <div class="empty-state" id="pedidos-empty" style="display:none;">
           Todavía no hay pedidos registrados.
         </div>
@@ -2194,15 +2250,15 @@
   <!-- Firebase (SDK compat, para poder usarlo con <script> normales sin bundler) -->
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-  <script src="js/firebase-init.js?v=9"></script>
+  <script src="js/firebase-init.js?v=10"></script>
 
   <!-- Un archivo JS por pestaña -->
-  <script src="js/config.js?v=9"></script>
-  <script src="js/clientes.js?v=9"></script>
-  <script src="js/equipos.js?v=9"></script>
-  <script src="js/pedidos.js?v=9"></script>
-  <script src="js/envios.js?v=9"></script>
-  <script src="js/historial.js?v=9"></script>
+  <script src="js/config.js?v=10"></script>
+  <script src="js/clientes.js?v=10"></script>
+  <script src="js/equipos.js?v=10"></script>
+  <script src="js/pedidos.js?v=10"></script>
+  <script src="js/envios.js?v=10"></script>
+  <script src="js/historial.js?v=10"></script>
 
 </body>
 </html>
