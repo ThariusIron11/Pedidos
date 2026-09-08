@@ -1122,6 +1122,12 @@
     color: var(--ink-soft);
     font-size: 13px;
   }
+  .reparacion-card-resumen a{
+    color: var(--copper);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .reparacion-card-resumen a:hover{ text-decoration: underline; }
   .reparacion-card-actions{
     margin-left: auto;
     display: flex;
@@ -1962,16 +1968,43 @@
         <input type="hidden" id="reparacion-id">
         <input type="hidden" id="reparacion-numero">
 
-        <div class="form-group">
-          <label for="reparacion-compania">Compañía</label>
-          <select id="reparacion-compania" required>
-            <option value="">Selecciona una compañía...</option>
-          </select>
+        <div class="subtabs">
+          <button type="button" class="subtab-btn active" data-subtab="reparacion-datos">Datos generales</button>
+          <button type="button" class="subtab-btn" data-subtab="reparacion-equipos">Equipos</button>
         </div>
 
-        <div class="form-group">
-          <label for="reparacion-contacto">Encargado de reparaciones</label>
-          <input type="text" id="reparacion-contacto" placeholder="Se completa solo al elegir la compañía, pero puedes ajustarlo">
+        <div class="subtab-panel active" id="subtab-reparacion-datos">
+          <div class="form-group">
+            <label for="reparacion-compania">Compañía</label>
+            <select id="reparacion-compania" required>
+              <option value="">Selecciona una compañía...</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="reparacion-contacto">Encargado de reparaciones</label>
+            <input type="text" id="reparacion-contacto" placeholder="Se completa solo al elegir la compañía, pero puedes ajustarlo">
+          </div>
+
+          <div class="form-group">
+            <label for="reparacion-fecha-ingreso">Día de ingreso del equipo</label>
+            <input type="date" id="reparacion-fecha-ingreso">
+          </div>
+
+          <div class="form-group">
+            <label for="reparacion-evidencia">📷 Evidencia fotográfica</label>
+            <input type="text" id="reparacion-evidencia" placeholder="Pega aquí el link de la carpeta compartida con las fotos (motor, reductor, motoreductor...)">
+            <div id="reparacion-evidencia-preview" style="display:none; margin-top:6px;">
+              <a href="#" id="reparacion-evidencia-link" target="_blank" rel="noopener noreferrer">📷 Evidencia fotográfica ↗</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="subtab-panel" id="subtab-reparacion-equipos">
+          <div class="placeholder">
+            <strong>Próximamente</strong>
+            Acá va a quedar el detalle de cada equipo que ingresa a esta reparación (reductor, motor, motor ZD o motoreductor), cada uno con su propio serial.
+          </div>
         </div>
 
         <div class="modal-actions">
@@ -2381,16 +2414,16 @@
   <!-- Firebase (SDK compat, para poder usarlo con <script> normales sin bundler) -->
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-  <script src="js/firebase-init.js?v=17"></script>
+  <script src="js/firebase-init.js?v=18"></script>
 
   <!-- Un archivo JS por pestaña -->
-  <script src="js/config.js?v=17"></script>
-  <script src="js/clientes.js?v=17"></script>
-  <script src="js/equipos.js?v=17"></script>
-  <script src="js/pedidos.js?v=17"></script>
-  <script src="js/envios.js?v=17"></script>
-  <script src="js/reparaciones.js?v=17"></script>
-  <script src="js/historial.js?v=17"></script>
+  <script src="js/config.js?v=18"></script>
+  <script src="js/clientes.js?v=18"></script>
+  <script src="js/equipos.js?v=18"></script>
+  <script src="js/pedidos.js?v=18"></script>
+  <script src="js/envios.js?v=18"></script>
+  <script src="js/reparaciones.js?v=18"></script>
+  <script src="js/historial.js?v=18"></script>
 
 </body>
 </html>

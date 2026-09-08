@@ -35,6 +35,13 @@
   const inputNumero = document.getElementById('reparacion-numero');
   const selectCompania = document.getElementById('reparacion-compania');
   const inputContacto = document.getElementById('reparacion-contacto');
+  const inputFechaIngreso = document.getElementById('reparacion-fecha-ingreso');
+  const inputEvidencia = document.getElementById('reparacion-evidencia');
+  const previewEvidencia = document.getElementById('reparacion-evidencia-preview');
+  const linkEvidencia = document.getElementById('reparacion-evidencia-link');
+
+  const subtabButtons = modal.querySelectorAll('.subtab-btn');
+  const subtabPanels = modal.querySelectorAll('.subtab-panel');
 
   let reparacionesCache = []; // también expuesto en window.reparacionesCache
   let borradorId = null;
@@ -55,9 +62,62 @@
       .normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // quita tildes
   }
 
+  function escapeAttr(str) {
+    return String(str ?? '').replace(/"/g, '&quot;');
+  }
+
+  // Fecha de hoy en formato YYYY-MM-DD (hora local), valor por defecto del
+  // campo "Día de ingreso" al registrar una reparación nueva.
+  function fechaHoyISO() {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  // 'YYYY-MM-DD' -> 'DD/MM/AAAA', para mostrarla en la tarjeta de la lista.
+  function formatearFechaCorta(fechaISO) {
+    if (!fechaISO) return '';
+    const [yyyy, mm, dd] = fechaISO.split('-');
+    if (!yyyy || !mm || !dd) return fechaISO;
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
   function buscarCompania(id) {
     return (window.clientesCache || []).find(c => c.id === id);
   }
+
+  // ---------- Sub-pestañas del modal (Datos generales / Equipos) ----------
+
+  function resetSubtabs() {
+    subtabButtons.forEach(b => b.classList.toggle('active', b.dataset.subtab === 'reparacion-datos'));
+    subtabPanels.forEach(p => p.classList.toggle('active', p.id === 'subtab-reparacion-datos'));
+  }
+
+  subtabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      subtabButtons.forEach(b => b.classList.toggle('active', b === btn));
+      subtabPanels.forEach(p => p.classList.toggle('active', p.id === 'subtab-' + btn.dataset.subtab));
+    });
+  });
+
+  // ---------- Evidencia fotográfica: link a carpeta compartida ----------
+  // Mientras se escribe/pega el link, se ve en vivo debajo del campo como
+  // texto clickeable (abre en pestaña nueva), para poder confirmar que
+  // quedó bien antes de guardar.
+
+  function actualizarPreviewEvidencia() {
+    const url = inputEvidencia.value.trim();
+    if (url) {
+      linkEvidencia.href = escapeAttr(url);
+      previewEvidencia.style.display = 'block';
+    } else {
+      previewEvidencia.style.display = 'none';
+    }
+  }
+
+  inputEvidencia.addEventListener('input', actualizarPreviewEvidencia);
 
   // 3 -> "R03". El número real que se guarda es el entero (3); esto es
   // solo cómo se muestra.
@@ -107,6 +167,10 @@
     inputContacto.value = reparacion
       ? (reparacion.contacto || '')
       : ''; // en una reparación nueva se llena solo al elegir la compañía
+    inputFechaIngreso.value = reparacion?.fechaIngreso || fechaHoyISO();
+    inputEvidencia.value = reparacion?.evidenciaFotografica || '';
+    actualizarPreviewEvidencia();
+    resetSubtabs();
   }
 
   function abrirModalNuevo() {
@@ -143,6 +207,8 @@
 
   function cancelarYLimpiar() {
     form.reset();
+    resetSubtabs();
+    previewEvidencia.style.display = 'none';
     borradorId = null;
     modal.classList.remove('open');
   }
@@ -173,7 +239,9 @@
       if (id) {
         await db.collection(COLECCION).doc(id).update({
           companiaId,
-          contacto: inputContacto.value.trim()
+          contacto: inputContacto.value.trim(),
+          fechaIngreso: inputFechaIngreso.value || null,
+          evidenciaFotografica: inputEvidencia.value.trim()
         });
       } else {
         const numero = siguienteNumeroDisponible(); // recalculado justo antes de guardar
@@ -181,10 +249,14 @@
           numero,
           companiaId,
           contacto: inputContacto.value.trim(),
+          fechaIngreso: inputFechaIngreso.value || fechaHoyISO(),
+          evidenciaFotografica: inputEvidencia.value.trim(),
           creadoEn: firebase.firestore.FieldValue.serverTimestamp()
         });
       }
       form.reset();
+      resetSubtabs();
+      previewEvidencia.style.display = 'none';
       borradorId = null;
       modal.classList.remove('open');
     } catch (err) {
@@ -248,6 +320,10 @@
       const contactoTexto = reparacion.contacto
         ? escapeHtml(reparacion.contacto)
         : 'Sin encargado de reparaciones asignado';
+      const fechaTexto = reparacion.fechaIngreso ? ` · Ingreso: ${formatearFechaCorta(reparacion.fechaIngreso)}` : '';
+      const evidenciaHtml = reparacion.evidenciaFotografica
+        ? ` · <a href="${escapeAttr(reparacion.evidenciaFotografica)}" target="_blank" rel="noopener noreferrer">📷 Evidencia fotográfica ↗</a>`
+        : '';
 
       return `
         <div class="reparacion-card" data-id="${reparacion.id}">
@@ -259,16 +335,16 @@
               <button type="button" class="btn-eliminar" data-id="${reparacion.id}" title="Eliminar">🗑️</button>
             </div>
           </div>
-          <div class="reparacion-card-resumen">Encargado: ${contactoTexto}</div>
+          <div class="reparacion-card-resumen">Encargado: ${contactoTexto}${fechaTexto}${evidenciaHtml}</div>
         </div>
       `;
     }).join('');
 
-    // Clic en cualquier parte de la tarjeta (fuera del botón eliminar) abre
-    // directamente la edición, igual que ya hace Clientes.
+    // Clic en cualquier parte de la tarjeta (fuera del botón eliminar o del
+    // link de evidencia) abre directamente la edición, igual que Clientes.
     listaContenedor.querySelectorAll('.reparacion-card').forEach(card => {
       card.addEventListener('click', (e) => {
-        if (e.target.closest('button')) return;
+        if (e.target.closest('button') || e.target.closest('a')) return;
         const reparacion = reparacionesCache.find(r => r.id === card.dataset.id);
         if (reparacion) abrirModalEditar(reparacion);
       });
