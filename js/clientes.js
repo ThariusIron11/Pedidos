@@ -41,6 +41,7 @@
   const inputDireccionRemision = document.getElementById('cliente-direccion-remision');
   const inputContraentrega     = document.getElementById('cliente-contraentrega');
   const contactosPedidosList   = document.getElementById('contactos-pedidos-list');
+  const grupoContactoReparaciones = document.getElementById('cliente-grupo-contacto-reparaciones');
   const inputContactoRepNombre = document.getElementById('cliente-contacto-reparaciones-nombre');
 
   let clientesCache = []; // [{id, ...datos}] — también expuesto en window.clientesCache
@@ -94,6 +95,22 @@
 
   document.getElementById('btn-add-contacto-pedidos').addEventListener('click', () => nuevaFilaContactoPedido());
 
+  // ---------- Contacto de reparaciones: no aplica a subsidiarias ----------
+  // (ni "Subsidiaria" ni "Subsidiaria de Edisatech" reciben pedidos de
+  // reparaciones directamente, así que ese campo no tiene sentido para ellas).
+
+  function esTipoSubsidiaria(tipo) {
+    return tipo === 'subsidiaria' || tipo === 'subsidiaria_edisatech';
+  }
+
+  function actualizarVisibilidadContactoReparaciones() {
+    const oculto = esTipoSubsidiaria(inputTipo.value);
+    grupoContactoReparaciones.style.display = oculto ? 'none' : 'block';
+    if (oculto) inputContactoRepNombre.value = '';
+  }
+
+  inputTipo.addEventListener('change', actualizarVisibilidadContactoReparaciones);
+
   // ---------- Cargar datos limpios de un cliente en el formulario ----------
 
   function cargarFormularioDesdeCliente(cliente) {
@@ -106,6 +123,7 @@
     inputDireccionRemision.value = cliente?.direccionRemision || '';
     inputContraentrega.checked = !!cliente?.contraentrega;
     inputContactoRepNombre.value = cliente?.contactoReparaciones || '';
+    actualizarVisibilidadContactoReparaciones();
 
     contactosPedidosList.innerHTML = '';
     const contactos = cliente?.contactosPedidos || [];
@@ -179,7 +197,7 @@
       direccionRemision: inputDireccionRemision.value.trim(),
       contraentrega: inputContraentrega.checked,
       contactosPedidos: leerContactosPedidosDelFormulario(),
-      contactoReparaciones: inputContactoRepNombre.value.trim()
+      contactoReparaciones: esTipoSubsidiaria(inputTipo.value) ? '' : inputContactoRepNombre.value.trim()
     };
 
     if (!datos.nombre) {
@@ -276,33 +294,38 @@
         ? escapeHtml(cliente.contactoReparaciones)
         : '<span style="color:var(--ink-soft);">—</span>';
 
+      // Las subsidiarias no reciben pedidos de reparaciones, así que esa
+      // línea directamente no se muestra para ellas.
       const contactosHtml = `
         <div>Pedidos: ${contactosPedidosHtml}</div>
-        <div>Reparaciones: ${contactoRepHtml}</div>
+        ${esTipoSubsidiaria(cliente.tipo) ? '' : `<div>Reparaciones: ${contactoRepHtml}</div>`}
       `;
 
       return `
-        <tr data-id="${cliente.id}">
+        <tr data-id="${cliente.id}" class="fila-cliente-clicable">
           <td>${tipoInfo.icono} ${escapeHtml(cliente.nombre)}${tipoTag}${contraentregaTag}</td>
           <td>${escapeHtml(cliente.nit || '—')}</td>
           <td>${direccionHtml}</td>
           <td>${contactosHtml}</td>
           <td>
             <div class="row-actions">
-              <button type="button" class="btn-editar" data-id="${cliente.id}">Editar</button>
-              <button type="button" class="btn-eliminar danger" data-id="${cliente.id}">Eliminar</button>
+              <button type="button" class="btn-icon btn-eliminar danger" data-id="${cliente.id}" title="Eliminar">🗑️</button>
             </div>
           </td>
         </tr>
       `;
     }).join('');
 
-    tablaBody.querySelectorAll('.btn-editar').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const cliente = clientesCache.find(c => c.id === btn.dataset.id);
+    // Clic en cualquier parte de la fila (fuera del botón eliminar) abre
+    // directamente la edición de esa compañía.
+    tablaBody.querySelectorAll('tr.fila-cliente-clicable').forEach(tr => {
+      tr.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        const cliente = clientesCache.find(c => c.id === tr.dataset.id);
         if (cliente) abrirModalEditar(cliente);
       });
     });
+
     tablaBody.querySelectorAll('.btn-eliminar').forEach(btn => {
       btn.addEventListener('click', () => {
         const cliente = clientesCache.find(c => c.id === btn.dataset.id);

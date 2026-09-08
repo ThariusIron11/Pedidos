@@ -29,6 +29,11 @@
   const inputNumero  = document.getElementById('pedido-numero');
   const selectCompania = document.getElementById('pedido-compania');
   const selectContacto = document.getElementById('pedido-contacto');
+  const checkboxEnvioSubsidiaria = document.getElementById('pedido-envio-subsidiaria');
+  const grupoSubsidiaria = document.getElementById('pedido-grupo-subsidiaria');
+  const selectSubsidiaria = document.getElementById('pedido-subsidiaria');
+  const grupoSubsidiariaContacto = document.getElementById('pedido-grupo-subsidiaria-contacto');
+  const selectSubsidiariaContacto = document.getElementById('pedido-subsidiaria-contacto');
   const equiposPedidoList = document.getElementById('equipos-pedido-list');
   const radiosTipoPedido = form.querySelectorAll('input[name="tipo-pedido"]');
 
@@ -149,8 +154,57 @@
     poblarSelectContacto(selectCompania.value, '');
   });
 
+  // ---------- Envío a Subsidiaria ----------
+  // "Subsidiaria" = cliente con tipo 'subsidiaria' (NO 'subsidiaria_edisatech',
+  // esa es otra categoría y queda afuera de este selector a propósito).
+
+  function poblarSelectSubsidiarias(subsidiariaSeleccionada) {
+    const subsidiarias = (window.clientesCache || []).filter(c => c.tipo === 'subsidiaria');
+    if (!subsidiarias.length) {
+      selectSubsidiaria.innerHTML = '<option value="">No hay compañías marcadas como Subsidiaria en Clientes</option>';
+      return;
+    }
+    selectSubsidiaria.innerHTML = '<option value="">Selecciona una subsidiaria...</option>' +
+      subsidiarias.map(c => `<option value="${c.id}">${escapeHtml(c.nombre)}</option>`).join('');
+    if (subsidiariaSeleccionada) selectSubsidiaria.value = subsidiariaSeleccionada;
+  }
+
+  function poblarSelectSubsidiariaContacto(subsidiariaId, contactoSeleccionado) {
+    const subsidiaria = (window.clientesCache || []).find(c => c.id === subsidiariaId);
+    const contactos = subsidiaria?.contactosPedidos || [];
+    if (!subsidiaria) {
+      selectSubsidiariaContacto.innerHTML = '<option value="">Selecciona una subsidiaria primero</option>';
+      return;
+    }
+    if (!contactos.length) {
+      selectSubsidiariaContacto.innerHTML = '<option value="">Esta subsidiaria no tiene contactos de pedidos</option>';
+      return;
+    }
+    selectSubsidiariaContacto.innerHTML = '<option value="">Selecciona un encargado...</option>' +
+      contactos.map(nombre => `<option value="${escapeHtml(nombre)}">${escapeHtml(nombre)}</option>`).join('');
+    if (contactoSeleccionado) selectSubsidiariaContacto.value = contactoSeleccionado;
+  }
+
+  checkboxEnvioSubsidiaria.addEventListener('change', () => {
+    const marcado = checkboxEnvioSubsidiaria.checked;
+    grupoSubsidiaria.style.display = marcado ? 'block' : 'none';
+    grupoSubsidiariaContacto.style.display = marcado ? 'block' : 'none';
+    if (marcado) {
+      poblarSelectSubsidiarias('');
+      poblarSelectSubsidiariaContacto('', '');
+    } else {
+      selectSubsidiaria.value = '';
+      selectSubsidiariaContacto.value = '';
+    }
+  });
+
+  selectSubsidiaria.addEventListener('change', () => {
+    poblarSelectSubsidiariaContacto(selectSubsidiaria.value, '');
+  });
+
   document.addEventListener('clientes:cambio', () => {
     poblarSelectCompanias();
+    if (checkboxEnvioSubsidiaria.checked) poblarSelectSubsidiarias(selectSubsidiaria.value);
     renderTabla(); // los nombres de compañía en la tabla pueden haber cambiado
   });
   if (window.clientesCache && window.clientesCache.length) poblarSelectCompanias();
@@ -478,6 +532,17 @@
     selectCompania.value = pedido?.companiaId || '';
     poblarSelectContacto(pedido?.companiaId || '', pedido?.contacto || '');
 
+    checkboxEnvioSubsidiaria.checked = !!pedido?.envioSubsidiaria;
+    grupoSubsidiaria.style.display = pedido?.envioSubsidiaria ? 'block' : 'none';
+    grupoSubsidiariaContacto.style.display = pedido?.envioSubsidiaria ? 'block' : 'none';
+    if (pedido?.envioSubsidiaria) {
+      poblarSelectSubsidiarias(pedido.subsidiariaId || '');
+      poblarSelectSubsidiariaContacto(pedido.subsidiariaId || '', pedido.subsidiariaContacto || '');
+    } else {
+      poblarSelectSubsidiarias('');
+      poblarSelectSubsidiariaContacto('', '');
+    }
+
     const items = pedido?.equipos || [];
     if (items.length) {
       items.forEach((item, idx) => nuevaFilaEquipoPedido(item, idx));
@@ -523,6 +588,8 @@
     form.reset();
     equiposPedidoList.innerHTML = '';
     resetSubtabs();
+    grupoSubsidiaria.style.display = 'none';
+    grupoSubsidiariaContacto.style.display = 'none';
     borradorId = null;
     modal.classList.remove('open');
   }
@@ -552,7 +619,10 @@
       companiaId,
       contacto: selectContacto.value,
       tipo: Array.from(radiosTipoPedido).find(r => r.checked)?.value || 'normal',
-      equipos: leerEquiposDelFormulario()
+      equipos: leerEquiposDelFormulario(),
+      envioSubsidiaria: checkboxEnvioSubsidiaria.checked,
+      subsidiariaId: checkboxEnvioSubsidiaria.checked ? (selectSubsidiaria.value || null) : null,
+      subsidiariaContacto: checkboxEnvioSubsidiaria.checked ? (selectSubsidiariaContacto.value || null) : null
     };
 
     const id = inputId.value;
@@ -595,6 +665,8 @@
       form.reset();
       equiposPedidoList.innerHTML = '';
       resetSubtabs();
+      grupoSubsidiaria.style.display = 'none';
+      grupoSubsidiariaContacto.style.display = 'none';
       borradorId = null;
       modal.classList.remove('open');
 
@@ -654,11 +726,24 @@
     const persona = pedido.contacto ? escapeHtml(pedido.contacto) : '— (sin asignar)';
     const nombreCliente = compania ? escapeHtml(compania.nombre) : '<span style="color:var(--danger);">Compañía no encontrada</span>';
 
+    // Si el pedido se envía a una Subsidiaria, tanto el nombre del cliente
+    // como el encargado se muestran combinados: "lo normal / lo de la
+    // subsidiaria" — así queda claro que hay un desvío hacia otro destino.
+    let nombreClienteMostrado = nombreCliente;
+    let personaMostrada = persona;
+    if (pedido.envioSubsidiaria) {
+      const subsidiaria = (window.clientesCache || []).find(c => c.id === pedido.subsidiariaId);
+      const nombreSubsidiaria = subsidiaria ? escapeHtml(subsidiaria.nombre) : '<span style="color:var(--danger);">Subsidiaria no encontrada</span>';
+      const contactoSubsidiaria = pedido.subsidiariaContacto ? escapeHtml(pedido.subsidiariaContacto) : '— (sin asignar)';
+      nombreClienteMostrado = `${nombreCliente} / ${nombreSubsidiaria}`;
+      personaMostrada = `${persona} / ${contactoSubsidiaria}`;
+    }
+
     fichaSeccionCliente.innerHTML = `
       <h4>Cliente</h4>
       <div class="ficha-campos">
-        ${campoFicha('Cliente', nombreCliente)}
-        ${campoFicha('Nombre de quien recibe', persona)}
+        ${campoFicha('Cliente', nombreClienteMostrado)}
+        ${campoFicha('Nombre de quien recibe', personaMostrada)}
         ${campoFicha('NIT', nit)}
         ${campoFicha('Dirección', direccion)}
         ${campoFicha('Dirección de remisión', direccionRemision)}
@@ -2214,7 +2299,7 @@
 
     listaContenedor.innerHTML = ordenados.map(pedido => {
       const compania = buscarCompania(pedido.companiaId);
-      const nombreCompania = compania ? escapeHtml(compania.nombre) : '<span style="color:var(--danger);">Compañía no encontrada</span>';
+      const nombreCompaniaBase = compania ? escapeHtml(compania.nombre) : '<span style="color:var(--danger);">Compañía no encontrada</span>';
       const cantidadEquipos = (pedido.equipos || []).length;
       const tipoInfo = TIPO_PEDIDO_LABEL[pedido.tipo] || TIPO_PEDIDO_LABEL.normal;
       const esReparacion = pedido.tipo === 'reparacion';
@@ -2230,7 +2315,17 @@
         conDevolucion ? 'devolucion' : ''
       ].filter(Boolean).join(' ');
 
-      const contactoTexto = pedido.contacto ? escapeHtml(pedido.contacto) : 'Sin encargado asignado';
+      // Si se envía a una Subsidiaria, tanto el nombre de la compañía como
+      // el encargado se muestran combinados: "lo normal / lo de la subsidiaria".
+      let nombreCompania = nombreCompaniaBase;
+      let contactoTexto = pedido.contacto ? escapeHtml(pedido.contacto) : 'Sin encargado asignado';
+      if (pedido.envioSubsidiaria) {
+        const subsidiaria = (window.clientesCache || []).find(c => c.id === pedido.subsidiariaId);
+        const nombreSubsidiaria = subsidiaria ? escapeHtml(subsidiaria.nombre) : '<span style="color:var(--danger);">Subsidiaria no encontrada</span>';
+        const contactoSubsidiaria = pedido.subsidiariaContacto ? escapeHtml(pedido.subsidiariaContacto) : 'sin asignar';
+        nombreCompania = `${nombreCompaniaBase} / ${nombreSubsidiaria}`;
+        contactoTexto = `${contactoTexto} / ${contactoSubsidiaria}`;
+      }
 
       return `
         <div class="pedido-card ${clasesEstado}" data-id="${pedido.id}">
@@ -2246,7 +2341,7 @@
               ${pedidoTieneAlgoDespachado(pedido) ? '' : `<button type="button" class="btn-eliminar danger" data-id="${pedido.id}" title="Eliminar">🗑️</button>`}
             </div>
           </div>
-          <div class="pedido-card-resumen">${pedido.contacto ? `Encargado: ${contactoTexto}` : contactoTexto} · ${cantidadEquipos} ${cantidadEquipos === 1 ? 'equipo' : 'equipos'}</div>
+          <div class="pedido-card-resumen">Encargado: ${contactoTexto} · ${cantidadEquipos} ${cantidadEquipos === 1 ? 'equipo' : 'equipos'}</div>
         </div>
       `;
     }).join('');

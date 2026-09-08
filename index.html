@@ -225,6 +225,7 @@
   table.data-table tbody tr:hover{ background: #fbfaf8; }
   table.data-table tbody tr.fila-pedido-clicable{ cursor: pointer; }
   table.data-table tbody tr.fila-equipo-clicable{ cursor: pointer; }
+  table.data-table tbody tr.fila-cliente-clicable{ cursor: pointer; }
   table.data-table .row-actions{
     display: flex;
     gap: 6px;
@@ -1861,7 +1862,7 @@
           <button type="button" class="btn-link" id="btn-add-contacto-pedidos">+ Agregar contacto</button>
         </div>
 
-        <div class="form-group">
+        <div class="form-group" id="cliente-grupo-contacto-reparaciones">
           <label for="cliente-contacto-reparaciones-nombre">Contacto de recibir pedidos de reparaciones</label>
           <input type="text" id="cliente-contacto-reparaciones-nombre" placeholder="Nombre">
         </div>
@@ -2031,6 +2032,27 @@
             <label for="pedido-contacto">Contacto de recibir pedidos</label>
             <select id="pedido-contacto">
               <option value="">Selecciona una compañía primero</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="checkbox-box">
+              <input type="checkbox" id="pedido-envio-subsidiaria">
+              Se envía a una Subsidiaria
+            </label>
+          </div>
+
+          <div class="form-group" id="pedido-grupo-subsidiaria" style="display:none;">
+            <label for="pedido-subsidiaria">Subsidiaria</label>
+            <select id="pedido-subsidiaria">
+              <option value="">Selecciona una subsidiaria...</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="pedido-grupo-subsidiaria-contacto" style="display:none;">
+            <label for="pedido-subsidiaria-contacto">Encargado de recibir pedidos (subsidiaria)</label>
+            <select id="pedido-subsidiaria-contacto">
+              <option value="">Selecciona una subsidiaria primero</option>
             </select>
           </div>
 
@@ -2252,15 +2274,15 @@
   <!-- Firebase (SDK compat, para poder usarlo con <script> normales sin bundler) -->
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-  <script src="js/firebase-init.js?v=12"></script>
+  <script src="js/firebase-init.js?v=14"></script>
 
   <!-- Un archivo JS por pestaña -->
-  <script src="js/config.js?v=12"></script>
-  <script src="js/clientes.js?v=12"></script>
-  <script src="js/equipos.js?v=12"></script>
-  <script src="js/pedidos.js?v=12"></script>
-  <script src="js/envios.js?v=12"></script>
-  <script src="js/historial.js?v=12"></script>
+  <script src="js/config.js?v=14"></script>
+  <script src="js/clientes.js?v=14"></script>
+  <script src="js/equipos.js?v=14"></script>
+  <script src="js/pedidos.js?v=14"></script>
+  <script src="js/envios.js?v=14"></script>
+  <script src="js/historial.js?v=14"></script>
 
 </body>
 </html>
