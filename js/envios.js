@@ -27,6 +27,7 @@
   const selectEmpresaFiltro = document.getElementById('filtro-empresa-envios');
   const inputBusqueda = document.getElementById('buscador-envios');
   const resultadosBusqueda = document.getElementById('resultados-buscador-envios');
+  const btnFiltroFletePendiente = document.getElementById('filtro-flete-pendiente');
 
   const modalFicha = document.getElementById('modal-ficha-envio');
   const fichaTitulo = document.getElementById('ficha-envio-titulo');
@@ -43,6 +44,7 @@
   let volverAPedidoId = null; // si la ficha se abrió desde dentro de un pedido, aquí queda su id
   let filtroEstadoActivo = 'armado'; // '' = todos | 'armado' | 'despachado' — por defecto se abre viendo solo los armados
   let filtroEmpresaActivo = '';  // '' = todos | 'interno' | id de empresa de envío
+  let filtroFletePendienteActivo = false; // true = solo empresas que dan recibo y todavía no se confirma el flete
 
   function escapeHtml(str) {
     return String(str ?? '')
@@ -83,6 +85,15 @@
     const n = parseFloat(valor);
     if (isNaN(n)) return '';
     return '$ ' + Math.round(n).toLocaleString('es-CO');
+  }
+
+  // Toma cualquier texto (ya formateado con puntos de miles o no) y devuelve
+  // el número entero que representa, o null si quedó vacío. Se descartan
+  // TODOS los caracteres no numéricos (incluido el punto), porque en
+  // formato colombiano el punto es separador de miles, no decimal.
+  function parsearCOP(texto) {
+    const soloDigitos = String(texto ?? '').replace(/\D/g, '');
+    return soloDigitos ? parseInt(soloDigitos, 10) : null;
   }
 
   // La pestaña Cotización solo tiene sentido para envíos con transportadora
@@ -366,6 +377,12 @@
     renderTabla();
   });
 
+  btnFiltroFletePendiente.addEventListener('click', () => {
+    filtroFletePendienteActivo = !filtroFletePendienteActivo;
+    btnFiltroFletePendiente.classList.toggle('active', filtroFletePendienteActivo);
+    renderTabla();
+  });
+
   // ---------- Render de la lista principal (tarjetas) ----------
 
   function renderTabla() {
@@ -374,6 +391,7 @@
       if (filtroEstadoActivo && envio.estado !== filtroEstadoActivo) return false;
       if (filtroEmpresaActivo === 'interno' && !envio.esInterno) return false;
       if (filtroEmpresaActivo && filtroEmpresaActivo !== 'interno' && (envio.esInterno || envio.empresaEnvioId !== filtroEmpresaActivo)) return false;
+      if (filtroFletePendienteActivo && !(empresaDaRecibo(envio) && !envio.fleteConfirmado)) return false;
       if (!coincideBusqueda(envio, termino)) return false;
       return true;
     });
@@ -599,7 +617,10 @@
     const cotizacionHtml = envio.esInterno ? '' : `
       <div class="form-group">
         <label>${daRecibo ? (fleteConfirmado ? 'Valor del flete (facturado)' : 'Valor cotizado (estimado)') : 'Valor del flete (COP)'}</label>
-        <input type="text" id="ficha-envio-flete" inputmode="numeric" value="${flete != null ? flete : ''}" placeholder="Ej: 350000" ${daRecibo && fleteConfirmado ? 'disabled' : ''}>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-weight:600; color:var(--ink-soft);">$</span>
+          <input type="text" id="ficha-envio-flete" inputmode="numeric" value="${flete != null ? Number(flete).toLocaleString('es-CO') : ''}" placeholder="Ej: 350.000" style="flex:1;" ${daRecibo && fleteConfirmado ? 'disabled' : ''}>
+        </div>
         <div class="hint-peso-calculado" id="ficha-envio-flete-hint" style="display:none;">Guardado ✓</div>
       </div>
       ${daRecibo ? `
@@ -673,13 +694,17 @@
       const btnCorregirFlete = document.getElementById('btn-corregir-flete');
 
       if (inputFlete && !inputFlete.disabled) {
-        // Habilita/deshabilita "Confirmar recibo" según si ya hay un valor.
+        // Reformatea con separador de miles mientras se escribe (más legible
+        // que ver puros dígitos corridos), y habilita/deshabilita "Confirmar
+        // recibo" según si ya quedó algún valor.
         inputFlete.addEventListener('input', () => {
-          if (btnConfirmarFlete) btnConfirmarFlete.disabled = !inputFlete.value.trim();
+          const num = parsearCOP(inputFlete.value);
+          inputFlete.value = num != null ? num.toLocaleString('es-CO') : '';
+          if (btnConfirmarFlete) btnConfirmarFlete.disabled = num == null;
         });
 
         inputFlete.addEventListener('change', async () => {
-          const valor = inputFlete.value.trim() === '' ? null : parseFloat(inputFlete.value.replace(/[^\d.-]/g, ''));
+          const valor = parsearCOP(inputFlete.value);
           try {
             await db.collection(COLECCION).doc(envio.id).update({ costoFlete: valor });
             envio.costoFlete = valor; // refleja el cambio en caché local de inmediato
@@ -696,7 +721,7 @@
 
       if (btnConfirmarFlete) {
         btnConfirmarFlete.addEventListener('click', async () => {
-          const valor = inputFlete.value.trim() === '' ? null : parseFloat(inputFlete.value.replace(/[^\d.-]/g, ''));
+          const valor = parsearCOP(inputFlete.value);
           if (valor == null) return;
           btnConfirmarFlete.disabled = true;
           btnConfirmarFlete.textContent = 'Confirmando...';
