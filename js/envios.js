@@ -78,6 +78,22 @@
     return `${dd}/${mm}/${yyyy}`;
   }
 
+  // Formatea un número como pesos colombianos: 350000 -> "$ 350.000".
+  function formatearCOP(valor) {
+    const n = parseFloat(valor);
+    if (isNaN(n)) return '';
+    return '$ ' + Math.round(n).toLocaleString('es-CO');
+  }
+
+  // La pestaña Cotización solo tiene sentido para envíos con transportadora
+  // (no Interno); y el paso extra de "confirmar recibo" solo aplica si esa
+  // transportadora está marcada en Config como que sí da recibo/factura.
+  function empresaDaRecibo(envio) {
+    if (envio.esInterno) return false;
+    const empresa = (window.empresasEnvioCache || []).find(e => e.id === envio.empresaEnvioId);
+    return !!empresa?.daRecibo;
+  }
+
   function difundirCambio() {
     document.dispatchEvent(new CustomEvent('envios:cambio', { detail: { envios: window.enviosCache } }));
   }
@@ -388,7 +404,14 @@
       const cantidadRemisiones = remisiones.length;
       const peso = pesoTotalEnvio(envio);
       const fechaMostrable = formatearFechaCorta(envio.fechaEnvio || fechaHoyISO());
-      const resumen = `📅 ${fechaMostrable} · Pedidos: ${textoPedidosIncluidos(envio)} · ${cantidadRemisiones} ${cantidadRemisiones === 1 ? 'remisión' : 'remisiones'} · ⚖️ ${peso.toFixed(2)} kg`;
+
+      let fleteTexto = '';
+      if (!envio.esInterno && envio.costoFlete != null) {
+        const iconoFlete = empresaDaRecibo(envio) ? (envio.fleteConfirmado ? ' ✅' : ' ⏳') : '';
+        fleteTexto = ` · 💰 ${formatearCOP(envio.costoFlete)}${iconoFlete}`;
+      }
+
+      const resumen = `📅 ${fechaMostrable} · Pedidos: ${textoPedidosIncluidos(envio)} · ${cantidadRemisiones} ${cantidadRemisiones === 1 ? 'remisión' : 'remisiones'} · ⚖️ ${peso.toFixed(2)} kg${fleteTexto}`;
 
       const chipsHtml = remisiones.length
         ? remisiones.map(r => `<span class="chip-remision">Remisión ${escapeHtml(r)}</span>`).join('')
@@ -569,32 +592,141 @@
       `;
     }).join('');
 
-    fichaContenido.innerHTML = `
-      <div class="form-group">
-        <label>¿Quién se encarga?</label>
-        <select id="ficha-envio-quien-encarga" ${despachado ? 'disabled' : ''}>${opcionesQuienEncargaHtml(envio)}</select>
-      </div>
-      <div class="form-group" id="ficha-envio-grupo-persona" style="display:none;">
-        <label>¿Quién recoge?</label>
-        <input type="text" id="ficha-envio-persona-recoge" value="${escapeHtml(envio.personaRecoge || '')}" ${despachado ? 'disabled' : ''}>
-      </div>
-      <div class="form-group" id="ficha-envio-grupo-remesa" style="display:none;">
-        <label>Remesa de envío</label>
-        <input type="text" id="ficha-envio-remesa" value="${escapeHtml(envio.remesa || '')}" placeholder="Número de remesa" ${remesaBloqueada ? 'disabled' : ''}>
-        ${despachado && !remesaBloqueada ? '<div class="hint-peso-calculado" style="display:block;">Todavía no tiene remesa — la puedes completar cuando la tengas.</div>' : ''}
-      </div>
-      <div class="form-group">
-        <label>Fecha de envío</label>
-        <input type="date" id="ficha-envio-fecha" value="${escapeHtml(envio.fechaEnvio || fechaHoyISO())}" ${despachado ? 'disabled' : ''}>
-        <div class="hint-peso-calculado" id="ficha-envio-fecha-hint" style="display:none;">Guardado ✓</div>
-        ${despachado ? '<div class="hint-peso-calculado" style="display:block;">Congelada al momento del despacho.</div>' : ''}
-      </div>
+    const daRecibo = empresaDaRecibo(envio);
+    const flete = envio.costoFlete;
+    const fleteConfirmado = !!envio.fleteConfirmado;
 
-      <h4 style="margin-top:18px;">Pedidos incluidos</h4>
-      <div class="remisiones-frame">
-        ${filas || '<div class="empty-equipos-pedido">Sin pedidos.</div>'}
+    const cotizacionHtml = envio.esInterno ? '' : `
+      <div class="form-group">
+        <label>${daRecibo ? (fleteConfirmado ? 'Valor del flete (facturado)' : 'Valor cotizado (estimado)') : 'Valor del flete (COP)'}</label>
+        <input type="text" id="ficha-envio-flete" inputmode="numeric" value="${flete != null ? flete : ''}" placeholder="Ej: 350000" ${daRecibo && fleteConfirmado ? 'disabled' : ''}>
+        <div class="hint-peso-calculado" id="ficha-envio-flete-hint" style="display:none;">Guardado ✓</div>
       </div>
+      ${daRecibo ? `
+        <div class="form-group" style="display:flex; align-items:center; gap:10px;">
+          ${fleteConfirmado
+            ? `<span class="tag-envio-despachado">✅ Facturado</span><button type="button" class="btn secondary" id="btn-corregir-flete">✏️ Corregir</button>`
+            : `<span class="tag-envio-armado">⏳ Cotizado, pendiente de recibo</span><button type="button" class="btn secondary" id="btn-confirmar-flete" ${flete == null ? 'disabled' : ''}>✅ Confirmar recibo</button>`
+          }
+        </div>
+        <div class="hint-peso-calculado" style="display:block;">Esta transportadora factura después de despachar: cotiza el estimado ahora y confírmalo cuando llegue el recibo.</div>
+      ` : ''}
     `;
+
+    fichaContenido.innerHTML = `
+      ${envio.esInterno ? '' : `
+        <div class="subtabs">
+          <button type="button" class="subtab-btn active" data-subtab="envio-datos">Datos</button>
+          <button type="button" class="subtab-btn" data-subtab="envio-cotizacion">💰 Cotización</button>
+        </div>
+      `}
+      <div class="subtab-panel active" id="subtab-envio-datos">
+        <div class="form-group">
+          <label>¿Quién se encarga?</label>
+          <select id="ficha-envio-quien-encarga" ${despachado ? 'disabled' : ''}>${opcionesQuienEncargaHtml(envio)}</select>
+        </div>
+        <div class="form-group" id="ficha-envio-grupo-persona" style="display:none;">
+          <label>¿Quién recoge?</label>
+          <input type="text" id="ficha-envio-persona-recoge" value="${escapeHtml(envio.personaRecoge || '')}" ${despachado ? 'disabled' : ''}>
+        </div>
+        <div class="form-group" id="ficha-envio-grupo-remesa" style="display:none;">
+          <label>Remesa de envío</label>
+          <input type="text" id="ficha-envio-remesa" value="${escapeHtml(envio.remesa || '')}" placeholder="Número de remesa" ${remesaBloqueada ? 'disabled' : ''}>
+          ${despachado && !remesaBloqueada ? '<div class="hint-peso-calculado" style="display:block;">Todavía no tiene remesa — la puedes completar cuando la tengas.</div>' : ''}
+        </div>
+        <div class="form-group">
+          <label>Fecha de envío</label>
+          <input type="date" id="ficha-envio-fecha" value="${escapeHtml(envio.fechaEnvio || fechaHoyISO())}" ${despachado ? 'disabled' : ''}>
+          <div class="hint-peso-calculado" id="ficha-envio-fecha-hint" style="display:none;">Guardado ✓</div>
+          ${despachado ? '<div class="hint-peso-calculado" style="display:block;">Congelada al momento del despacho.</div>' : ''}
+        </div>
+
+        <h4 style="margin-top:18px;">Pedidos incluidos</h4>
+        <div class="remisiones-frame">
+          ${filas || '<div class="empty-equipos-pedido">Sin pedidos.</div>'}
+        </div>
+      </div>
+      ${envio.esInterno ? '' : `<div class="subtab-panel" id="subtab-envio-cotizacion">${cotizacionHtml}</div>`}
+    `;
+
+    const subtabBtnsFicha = fichaContenido.querySelectorAll('.subtab-btn');
+    const subtabPanelsFicha = fichaContenido.querySelectorAll('.subtab-panel');
+    subtabBtnsFicha.forEach(btn => {
+      btn.addEventListener('click', () => {
+        subtabBtnsFicha.forEach(b => b.classList.toggle('active', b === btn));
+        subtabPanelsFicha.forEach(p => p.classList.toggle('active', p.id === 'subtab-' + btn.dataset.subtab));
+      });
+    });
+
+    // Vuelve a abrir la misma ficha (para reflejar el nuevo estado del
+    // flete) dejando activa la pestaña Cotización, no la de Datos.
+    function refrescarFichaEnCotizacion() {
+      abrirFicha(envio, opciones);
+      const btnCot = fichaContenido.querySelector('.subtab-btn[data-subtab="envio-cotizacion"]');
+      if (btnCot) btnCot.click();
+    }
+
+    if (!envio.esInterno) {
+      const inputFlete = document.getElementById('ficha-envio-flete');
+      const hintFlete = document.getElementById('ficha-envio-flete-hint');
+      const btnConfirmarFlete = document.getElementById('btn-confirmar-flete');
+      const btnCorregirFlete = document.getElementById('btn-corregir-flete');
+
+      if (inputFlete && !inputFlete.disabled) {
+        // Habilita/deshabilita "Confirmar recibo" según si ya hay un valor.
+        inputFlete.addEventListener('input', () => {
+          if (btnConfirmarFlete) btnConfirmarFlete.disabled = !inputFlete.value.trim();
+        });
+
+        inputFlete.addEventListener('change', async () => {
+          const valor = inputFlete.value.trim() === '' ? null : parseFloat(inputFlete.value.replace(/[^\d.-]/g, ''));
+          try {
+            await db.collection(COLECCION).doc(envio.id).update({ costoFlete: valor });
+            envio.costoFlete = valor; // refleja el cambio en caché local de inmediato
+            if (hintFlete) {
+              hintFlete.style.display = 'block';
+              setTimeout(() => { hintFlete.style.display = 'none'; }, 1500);
+            }
+          } catch (err) {
+            console.error('Error guardando el valor del flete:', err);
+            alert('No se pudo guardar el valor del flete. Revisa la consola.');
+          }
+        });
+      }
+
+      if (btnConfirmarFlete) {
+        btnConfirmarFlete.addEventListener('click', async () => {
+          const valor = inputFlete.value.trim() === '' ? null : parseFloat(inputFlete.value.replace(/[^\d.-]/g, ''));
+          if (valor == null) return;
+          btnConfirmarFlete.disabled = true;
+          btnConfirmarFlete.textContent = 'Confirmando...';
+          try {
+            await db.collection(COLECCION).doc(envio.id).update({ costoFlete: valor, fleteConfirmado: true });
+            envio.costoFlete = valor;
+            envio.fleteConfirmado = true;
+            refrescarFichaEnCotizacion();
+          } catch (err) {
+            console.error('Error confirmando el recibo del flete:', err);
+            alert('No se pudo confirmar el recibo. Revisa la consola.');
+            btnConfirmarFlete.disabled = false;
+            btnConfirmarFlete.textContent = '✅ Confirmar recibo';
+          }
+        });
+      }
+
+      if (btnCorregirFlete) {
+        btnCorregirFlete.addEventListener('click', async () => {
+          try {
+            await db.collection(COLECCION).doc(envio.id).update({ fleteConfirmado: false });
+            envio.fleteConfirmado = false;
+            refrescarFichaEnCotizacion();
+          } catch (err) {
+            console.error('Error reabriendo la cotización del flete:', err);
+            alert('No se pudo reabrir la cotización. Revisa la consola.');
+          }
+        });
+      }
+    }
 
     const selectQuien = document.getElementById('ficha-envio-quien-encarga');
     const grupoPersona = document.getElementById('ficha-envio-grupo-persona');
