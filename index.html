@@ -6,15 +6,15 @@
 <title>Pedidos · EDISATECH</title>
 <style>
   :root{
-    --graphite: #1c2128;
-    --graphite-soft: #262c35;
-    --graphite-line: #333a44;
+    --graphite: #17181a;
+    --graphite-soft: #262728;
+    --graphite-line: #3a3b3d;
     --paper: #f4f5f7;
     --paper-card: #ffffff;
     --ink: #1c2128;
     --ink-soft: #5b6472;
-    --copper: #c1662f;
-    --copper-soft: #e9c9b3;
+    --copper: #b91c1c;
+    --copper-soft: #f3d4d4;
     --ok: #2f8f5b;
     --warn: #c9922f;
     --danger: #c1372f;
@@ -73,19 +73,19 @@
     text-align: left;
     background: transparent;
     border: none;
+    border-left: 3px solid transparent;
     color: #c4cad3;
     font-size: 14px;
     font-family: inherit;
-    padding: 10px 12px;
+    padding: 10px 12px 10px 9px;
     border-radius: var(--radius);
     cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
+    transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
   }
-  nav#tabs button .dot{
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #4b535f;
+  nav#tabs button .tab-icon{
+    font-size: 15px;
+    width: 18px;
+    text-align: center;
     flex-shrink: 0;
   }
   nav#tabs button:hover{
@@ -95,9 +95,7 @@
   nav#tabs button.active{
     background: var(--graphite-soft);
     color: #fff;
-  }
-  nav#tabs button.active .dot{
-    background: var(--copper);
+    border-left-color: var(--copper);
   }
 
   #sidebar .foot{
@@ -1610,12 +1608,13 @@
       <div class="sub">EDISATECH</div>
     </div>
     <nav id="tabs">
-      <button type="button" class="tab-btn active" data-tab="pedidos"><span class="dot"></span>Pedidos</button>
-      <button type="button" class="tab-btn" data-tab="envios"><span class="dot"></span>Envíos / Despachos</button>
-      <button type="button" class="tab-btn" data-tab="clientes"><span class="dot"></span>Clientes / Compañías</button>
-      <button type="button" class="tab-btn" data-tab="equipos"><span class="dot"></span>Equipos</button>
-      <button type="button" class="tab-btn" data-tab="historial"><span class="dot"></span>Historial</button>
-      <button type="button" class="tab-btn" data-tab="config"><span class="dot"></span>Config</button>
+      <button type="button" class="tab-btn active" data-tab="pedidos"><span class="tab-icon">📦</span>Pedidos</button>
+      <button type="button" class="tab-btn" data-tab="envios"><span class="tab-icon">🚚</span>Envíos / Despachos</button>
+      <button type="button" class="tab-btn" data-tab="reparaciones"><span class="tab-icon">🔧</span>Reparaciones</button>
+      <button type="button" class="tab-btn" data-tab="clientes"><span class="tab-icon">🏢</span>Clientes / Compañías</button>
+      <button type="button" class="tab-btn" data-tab="equipos"><span class="tab-icon">🧰</span>Equipos</button>
+      <button type="button" class="tab-btn" data-tab="historial"><span class="tab-icon">🕒</span>Historial</button>
+      <button type="button" class="tab-btn" data-tab="config"><span class="tab-icon">⚙️</span>Config</button>
     </nav>
     <div class="foot">v0.1 · index.html</div>
   </aside>
@@ -1691,6 +1690,13 @@
         </div>
         <div class="empty-state" id="envios-empty" style="display:none;">
           Todavía no hay envíos registrados. Se crean desde la ficha de un pedido, pestaña "Envío / Despacho".
+        </div>
+      </section>
+
+      <section class="panel" id="panel-reparaciones" data-title="Reparaciones">
+        <div class="placeholder">
+          <strong>Pestaña Reparaciones</strong>
+          Todavía no tiene contenido. Aquí va a quedar el historial de los equipos que entran a reparación. La lógica va en js/reparaciones.js.
         </div>
       </section>
 
@@ -2274,15 +2280,16 @@
   <!-- Firebase (SDK compat, para poder usarlo con <script> normales sin bundler) -->
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-  <script src="js/firebase-init.js?v=14"></script>
+  <script src="js/firebase-init.js?v=16"></script>
 
   <!-- Un archivo JS por pestaña -->
-  <script src="js/config.js?v=14"></script>
-  <script src="js/clientes.js?v=14"></script>
-  <script src="js/equipos.js?v=14"></script>
-  <script src="js/pedidos.js?v=14"></script>
-  <script src="js/envios.js?v=14"></script>
-  <script src="js/historial.js?v=14"></script>
+  <script src="js/config.js?v=16"></script>
+  <script src="js/clientes.js?v=16"></script>
+  <script src="js/equipos.js?v=16"></script>
+  <script src="js/pedidos.js?v=16"></script>
+  <script src="js/envios.js?v=16"></script>
+  <script src="js/reparaciones.js?v=16"></script>
+  <script src="js/historial.js?v=16"></script>
 
 </body>
 </html>
