@@ -1082,6 +1082,68 @@
     border-radius: 999px;
   }
 
+  /* ---------- Tarjetas de la lista de reparaciones ---------- */
+  .reparaciones-cards{
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .reparacion-card{
+    background: var(--paper-card);
+    border: 1px solid #e2e4e9;
+    border-radius: 10px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  }
+  .reparacion-card:hover{
+    border-color: #b8bcc4;
+    box-shadow: 0 1px 4px rgba(28,33,40,0.06);
+  }
+  .reparacion-card-header{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .reparacion-card-icono{ font-size: 15px; }
+  .reparacion-card-numero{
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--copper);
+  }
+  .reparacion-card-compania{
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .reparacion-card-resumen{
+    color: var(--ink-soft);
+    font-size: 13px;
+  }
+  .reparacion-card-actions{
+    margin-left: auto;
+    display: flex;
+    gap: 4px;
+  }
+  .reparacion-card-actions button{
+    background: transparent;
+    border: 1px solid #d4d7dc;
+    border-radius: var(--radius);
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--ink-soft);
+  }
+  .reparacion-card-actions button:hover{ color: var(--danger); border-color: var(--danger); background: rgba(0,0,0,0.04); }
+
   /* ---------- Tarjetas de la lista de pedidos ---------- */
   .pedidos-cards{
     display: flex;
@@ -1694,9 +1756,20 @@
       </section>
 
       <section class="panel" id="panel-reparaciones" data-title="Reparaciones">
-        <div class="placeholder">
-          <strong>Pestaña Reparaciones</strong>
-          Todavía no tiene contenido. Aquí va a quedar el historial de los equipos que entran a reparación. La lógica va en js/reparaciones.js.
+        <div class="panel-header">
+          <h2>Reparaciones</h2>
+          <button type="button" class="btn" id="btn-nueva-reparacion">+ Nueva reparación</button>
+        </div>
+
+        <div class="form-group" style="max-width:340px;">
+          <input type="text" id="buscador-reparaciones" placeholder="Buscar por compañía, encargado o número...">
+        </div>
+
+        <div class="reparaciones-cards" id="reparaciones-cards">
+          <!-- tarjetas generadas por reparaciones.js -->
+        </div>
+        <div class="empty-state" id="reparaciones-empty" style="display:none;">
+          Todavía no hay reparaciones registradas.
         </div>
       </section>
 
@@ -1875,6 +1948,34 @@
 
         <div class="modal-actions">
           <button type="button" class="btn secondary" id="btn-cancelar-cliente">Cancelar</button>
+          <button type="submit" class="btn">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: nueva/editar reparación (usado por reparaciones.js) -->
+  <div class="modal-backdrop" id="modal-reparacion">
+    <div class="modal">
+      <h3 id="modal-reparacion-titulo">Nueva reparación</h3>
+      <form id="form-reparacion">
+        <input type="hidden" id="reparacion-id">
+        <input type="hidden" id="reparacion-numero">
+
+        <div class="form-group">
+          <label for="reparacion-compania">Compañía</label>
+          <select id="reparacion-compania" required>
+            <option value="">Selecciona una compañía...</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="reparacion-contacto">Encargado de reparaciones</label>
+          <input type="text" id="reparacion-contacto" placeholder="Se completa solo al elegir la compañía, pero puedes ajustarlo">
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="btn-cancelar-reparacion">Cancelar</button>
           <button type="submit" class="btn">Guardar</button>
         </div>
       </form>
@@ -2280,16 +2381,16 @@
   <!-- Firebase (SDK compat, para poder usarlo con <script> normales sin bundler) -->
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-  <script src="js/firebase-init.js?v=16"></script>
+  <script src="js/firebase-init.js?v=17"></script>
 
   <!-- Un archivo JS por pestaña -->
-  <script src="js/config.js?v=16"></script>
-  <script src="js/clientes.js?v=16"></script>
-  <script src="js/equipos.js?v=16"></script>
-  <script src="js/pedidos.js?v=16"></script>
-  <script src="js/envios.js?v=16"></script>
-  <script src="js/reparaciones.js?v=16"></script>
-  <script src="js/historial.js?v=16"></script>
+  <script src="js/config.js?v=17"></script>
+  <script src="js/clientes.js?v=17"></script>
+  <script src="js/equipos.js?v=17"></script>
+  <script src="js/pedidos.js?v=17"></script>
+  <script src="js/envios.js?v=17"></script>
+  <script src="js/reparaciones.js?v=17"></script>
+  <script src="js/historial.js?v=17"></script>
 
 </body>
 </html>
