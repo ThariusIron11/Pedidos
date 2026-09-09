@@ -2027,10 +2027,12 @@
         </div>
 
         <div class="subtab-panel" id="subtab-reparacion-equipos">
-          <div class="placeholder">
-            <strong>Próximamente</strong>
-            Acá va a quedar el detalle de cada equipo que ingresa a esta reparación (reductor, motor, motor ZD o motoreductor), cada uno con su propio serial.
+          <div class="panel-header" style="margin-bottom:14px;">
+            <h2 style="font-size:14px;">Equipos que ingresan a esta reparación</h2>
+            <button type="button" class="btn" id="btn-agregar-reparacion-equipo">+ Agregar equipo</button>
           </div>
+          <div class="equipos-pedido-list" id="reparacion-equipos-list"><!-- generado por reparaciones.js --></div>
+          <div class="empty-equipos-pedido" id="reparacion-equipos-empty">Todavía no has agregado ningún equipo a esta reparación.</div>
         </div>
 
         <div class="modal-actions">

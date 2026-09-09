@@ -45,6 +45,10 @@
   const subtabButtons = modal.querySelectorAll('.subtab-btn');
   const subtabPanels = modal.querySelectorAll('.subtab-panel');
 
+  const reparacionEquiposList = document.getElementById('reparacion-equipos-list');
+  const reparacionEquiposEmpty = document.getElementById('reparacion-equipos-empty');
+  const btnAgregarReparacionEquipo = document.getElementById('btn-agregar-reparacion-equipo');
+
   let reparacionesCache = []; // también expuesto en window.reparacionesCache
   let borradorId = null;
   let filtroTexto = '';
@@ -88,6 +92,19 @@
 
   function buscarCompania(id) {
     return (window.clientesCache || []).find(c => c.id === id);
+  }
+
+  function buscarEquipoCatalogo(id) {
+    return (window.equiposCache || []).find(eq => eq.id === id);
+  }
+
+  function nombreMostrableEquipo(eq) {
+    return eq.nombre + (eq.variante ? ` (${eq.variante})` : '');
+  }
+
+  function tipoIdPorNombre(nombreNormalizado) {
+    const tipo = (window.tiposEquipoCache || []).find(t => normalizar(t.nombre) === nombreNormalizado);
+    return tipo ? tipo.id : '';
   }
 
   // ---------- Sub-pestañas del modal (Datos generales / Equipos) ----------
@@ -197,6 +214,263 @@
   });
   if (window.clientesCache && window.clientesCache.length) poblarSelectCompanias();
 
+  // ---------- Sub-pestaña Equipos: qué entra a la reparación ----------
+  // Cada fila es un equipo (reductor, motor, motor ZD, o motoreductor =
+  // motor + reductor juntos). El "Tipo" se busca en el mismo catálogo de
+  // Equipos que usa Pedidos, con autocompletar. La particularidad acá: si el
+  // equipo NO existe en el catálogo (porque no es de nuestra marca, por
+  // ejemplo), al guardar la reparación se crea automáticamente en Equipos
+  // con la variante "Reparación" — así, si el mismo modelo vuelve a llegar
+  // más adelante, ya aparece en el buscador y no hay que escribirlo de nuevo.
+
+  // Tipos que puede ser una pieza individual (Motoreductor no aparece acá:
+  // se maneja aparte con el checkbox "Es Motoreductor").
+  function opcionesTipoFiltroHtml() {
+    const permitidos = ['motor', 'reductor', 'motor zd'];
+    const tipos = (window.tiposEquipoCache || []).filter(t => permitidos.includes(normalizar(t.nombre)));
+    return '<option value="">Tipo...</option>' +
+      tipos.map(t => `<option value="${t.id}">${t.icono ? t.icono + ' ' : ''}${escapeHtml(t.nombre)}</option>`).join('');
+  }
+
+  function actualizarEmptyEquipos() {
+    reparacionEquiposEmpty.style.display = reparacionEquiposList.children.length ? 'none' : 'block';
+  }
+
+  // Buscador con autocompletar del catálogo de Equipos (igual que en
+  // Pedidos), con el agregado del aviso "se registrará como equipo nuevo"
+  // cuando lo escrito no coincide con nada del catálogo.
+  function inicializarBuscadorEquipoReparacion(contenedor, { idSelector, obtenerTipoId, avisoEl, seleccionInicialId }) {
+    const inputTexto = contenedor.querySelector('.buscador-input');
+    const inputValor = contenedor.querySelector(idSelector);
+    const resultados = contenedor.querySelector('.buscador-resultados');
+
+    function catalogoFiltrado(texto) {
+      const equipos = window.equiposCache || [];
+      const tid = obtenerTipoId ? obtenerTipoId() : '';
+      const porTipo = tid ? equipos.filter(eq => eq.tipoId === tid) : equipos;
+      const t = normalizar(texto);
+      return (t ? porTipo.filter(eq => normalizar(eq.nombre + ' ' + (eq.variante || '')).includes(t)) : porTipo).slice(0, 8);
+    }
+
+    function actualizarAviso() {
+      if (!avisoEl) return;
+      const texto = inputTexto.value.trim();
+      avisoEl.style.display = (texto && !inputValor.value) ? 'block' : 'none';
+    }
+
+    function mostrarResultados() {
+      const lista = catalogoFiltrado(inputTexto.value);
+      resultados.innerHTML = lista.length
+        ? lista.map(eq => `<div class="buscador-item" data-id="${eq.id}">${escapeHtml(nombreMostrableEquipo(eq))}</div>`).join('')
+        : `<div class="buscador-item-vacio">Sin coincidencias — se registrará como equipo nuevo</div>`;
+      resultados.classList.add('open');
+      resultados.querySelectorAll('.buscador-item').forEach(el => {
+        el.addEventListener('mousedown', (e) => {
+          e.preventDefault(); // evita que el blur cierre la lista antes del click
+          const eq = (window.equiposCache || []).find(x => x.id === el.dataset.id);
+          if (eq) seleccionar(eq);
+        });
+      });
+    }
+
+    function seleccionar(eq) {
+      inputValor.value = eq.id;
+      inputTexto.value = nombreMostrableEquipo(eq);
+      resultados.classList.remove('open');
+      actualizarAviso();
+    }
+
+    inputTexto.addEventListener('input', () => {
+      inputValor.value = ''; // hasta que elija algo de la lista, se trata como "nuevo"
+      mostrarResultados();
+      actualizarAviso();
+    });
+    inputTexto.addEventListener('focus', mostrarResultados);
+    inputTexto.addEventListener('blur', () => {
+      setTimeout(() => resultados.classList.remove('open'), 120);
+    });
+
+    if (seleccionInicialId) {
+      const eq = (window.equiposCache || []).find(x => x.id === seleccionInicialId);
+      if (eq) {
+        inputValor.value = eq.id;
+        inputTexto.value = nombreMostrableEquipo(eq);
+      }
+    }
+
+    return { refrescar: mostrarResultados };
+  }
+
+  function nuevaFilaReparacionEquipo(item) {
+    const esMotoreductor = item?.tipoLinea === 'motoreductor';
+
+    const row = document.createElement('div');
+    row.className = 'equipo-pedido-row-wrap';
+    row.innerHTML = `
+      <label class="extra-check chk-es-motoreductor" style="margin-bottom:8px;">
+        <input type="checkbox" class="reparacion-equipo-es-motoreductor" ${esMotoreductor ? 'checked' : ''}>
+        🔗 Es Motoreductor (Motor + Reductor)
+      </label>
+
+      <div class="bloque-individual" style="${esMotoreductor ? 'display:none;' : ''}">
+        <div class="equipo-pedido-row tiene-filtro" style="grid-template-columns: 130px 2fr auto;">
+          <select class="reparacion-equipo-tipo-filtro">${opcionesTipoFiltroHtml()}</select>
+          <div class="buscador-equipo">
+            <input type="text" class="buscador-input" placeholder="Escribe el nombre/modelo del equipo..." autocomplete="off">
+            <input type="hidden" class="reparacion-equipo-select">
+            <div class="buscador-resultados"></div>
+          </div>
+          <button type="button" class="remove-reparacion-equipo" title="Quitar equipo">✕</button>
+        </div>
+        <div class="aviso-equipo-nuevo" style="display:none;">🆕 No está en el catálogo — al guardar se registrará como equipo nuevo (variante "Reparación") para poder reutilizarlo si vuelve a llegar.</div>
+      </div>
+
+      <div class="reparacion-equipo-motoreductor" style="${esMotoreductor ? '' : 'display:none;'}">
+        <div class="motoreductor-selects">
+          <div>
+            <label class="mini-label">⚡ Motor</label>
+            <div class="buscador-equipo">
+              <input type="text" class="buscador-input" placeholder="Escribe el motor..." autocomplete="off">
+              <input type="hidden" class="reparacion-equipo-motor">
+              <div class="buscador-resultados"></div>
+            </div>
+            <div class="aviso-equipo-nuevo" style="display:none;">🆕 Motor nuevo — se registrará en el catálogo (variante "Reparación").</div>
+          </div>
+          <div>
+            <label class="mini-label">⚙️ Reductor</label>
+            <div class="buscador-equipo">
+              <input type="text" class="buscador-input" placeholder="Escribe el reductor..." autocomplete="off">
+              <input type="hidden" class="reparacion-equipo-reductor">
+              <div class="buscador-resultados"></div>
+            </div>
+            <div class="aviso-equipo-nuevo" style="display:none;">🆕 Reductor nuevo — se registrará en el catálogo (variante "Reparación").</div>
+          </div>
+        </div>
+        <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+          <button type="button" class="remove-reparacion-equipo" title="Quitar equipo">✕</button>
+        </div>
+      </div>
+    `;
+
+    row.querySelectorAll('.remove-reparacion-equipo').forEach(btn => {
+      btn.addEventListener('click', () => {
+        row.remove();
+        actualizarEmptyEquipos();
+      });
+    });
+
+    const chkEsMotoreductor = row.querySelector('.reparacion-equipo-es-motoreductor');
+    const bloqueIndividual = row.querySelector('.bloque-individual');
+    const bloqueMotoreductor = row.querySelector('.reparacion-equipo-motoreductor');
+    const selectTipoFiltro = row.querySelector('.reparacion-equipo-tipo-filtro');
+
+    function actualizarModo() {
+      const esMr = chkEsMotoreductor.checked;
+      bloqueIndividual.style.display = esMr ? 'none' : 'block';
+      bloqueMotoreductor.style.display = esMr ? 'block' : 'none';
+    }
+    chkEsMotoreductor.addEventListener('change', actualizarModo);
+
+    const contenedorIndividual = bloqueIndividual.querySelector('.buscador-equipo');
+    const apiIndividual = inicializarBuscadorEquipoReparacion(contenedorIndividual, {
+      idSelector: '.reparacion-equipo-select',
+      obtenerTipoId: () => selectTipoFiltro.value,
+      avisoEl: bloqueIndividual.querySelector('.aviso-equipo-nuevo'),
+      seleccionInicialId: !esMotoreductor ? item?.equipoId : null
+    });
+
+    // Si cambia el tipo, la búsqueda se re-filtra y cualquier selección
+    // previa deja de ser válida (era de otro tipo).
+    selectTipoFiltro.addEventListener('change', () => {
+      contenedorIndividual.querySelector('.reparacion-equipo-select').value = '';
+      apiIndividual.refrescar();
+    });
+
+    // Precarga del tipo, en modo edición, a partir del equipo ya guardado.
+    if (!esMotoreductor && item?.equipoId) {
+      const equipo = buscarEquipoCatalogo(item.equipoId);
+      if (equipo) selectTipoFiltro.value = equipo.tipoId || '';
+    }
+
+    const contenedoresMR = bloqueMotoreductor.querySelectorAll('.buscador-equipo');
+    const avisosMR = bloqueMotoreductor.querySelectorAll('.aviso-equipo-nuevo');
+    inicializarBuscadorEquipoReparacion(contenedoresMR[0], {
+      idSelector: '.reparacion-equipo-motor',
+      obtenerTipoId: () => tipoIdPorNombre('motor'),
+      avisoEl: avisosMR[0],
+      seleccionInicialId: esMotoreductor ? item?.motorEquipoId : null
+    });
+    inicializarBuscadorEquipoReparacion(contenedoresMR[1], {
+      idSelector: '.reparacion-equipo-reductor',
+      obtenerTipoId: () => tipoIdPorNombre('reductor'),
+      avisoEl: avisosMR[1],
+      seleccionInicialId: esMotoreductor ? item?.reductorEquipoId : null
+    });
+
+    reparacionEquiposList.appendChild(row);
+  }
+
+  btnAgregarReparacionEquipo.addEventListener('click', () => {
+    nuevaFilaReparacionEquipo(null);
+    actualizarEmptyEquipos();
+  });
+
+  // Si ya hay un equipo elegido del catálogo, se usa tal cual. Si no, pero
+  // hay texto escrito, se crea un equipo NUEVO en el catálogo con la
+  // variante "Reparación" — para poder reutilizarlo si el mismo modelo
+  // vuelve a llegar en una reparación futura.
+  async function resolverEquipoId(texto, idExistente, tipoId) {
+    if (idExistente) return idExistente;
+    if (!texto) return '';
+    const nuevo = await db.collection('equipos').add({
+      nombre: texto,
+      tipoId: tipoId || '',
+      variante: 'Reparación',
+      peso: null,
+      usaSerial: false,
+      creadoEn: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    return nuevo.id;
+  }
+
+  // Recorre las filas del formulario y resuelve cada una a un objeto listo
+  // para guardar en la reparación, creando en el catálogo los equipos que
+  // hagan falta. Filas vacías (sin nada escrito) se ignoran en silencio.
+  async function resolverEquiposDeFormulario() {
+    const resultado = [];
+    for (const fila of Array.from(reparacionEquiposList.children)) {
+      const esMr = fila.querySelector('.reparacion-equipo-es-motoreductor').checked;
+
+      if (esMr) {
+        const mrBlock = fila.querySelector('.reparacion-equipo-motoreductor');
+        const buscadores = mrBlock.querySelectorAll('.buscador-input');
+        const idsOcultos = mrBlock.querySelectorAll('input[type="hidden"]');
+        const motorTexto = buscadores[0].value.trim();
+        const reductorTexto = buscadores[1].value.trim();
+        if (!motorTexto && !reductorTexto) continue; // fila vacía
+
+        const motorEquipoId = await resolverEquipoId(motorTexto, idsOcultos[0].value, tipoIdPorNombre('motor'));
+        const reductorEquipoId = await resolverEquipoId(reductorTexto, idsOcultos[1].value, tipoIdPorNombre('reductor'));
+        resultado.push({ tipoLinea: 'motoreductor', motorEquipoId, reductorEquipoId });
+      } else {
+        const bloque = fila.querySelector('.bloque-individual');
+        const texto = bloque.querySelector('.buscador-input').value.trim();
+        const idExistente = bloque.querySelector('.reparacion-equipo-select').value;
+        const tipoId = bloque.querySelector('.reparacion-equipo-tipo-filtro').value;
+        if (!texto) continue; // fila vacía
+
+        if (!idExistente && !tipoId) {
+          return { error: 'Falta elegir el "Tipo" de uno de los equipos — se necesita para poder registrarlo si es nuevo.' };
+        }
+
+        const equipoId = await resolverEquipoId(texto, idExistente, tipoId);
+        const tipoIdFinal = tipoId || (buscarEquipoCatalogo(equipoId)?.tipoId || '');
+        resultado.push({ tipoLinea: 'individual', tipoId: tipoIdFinal, equipoId });
+      }
+    }
+    return { equipos: resultado };
+  }
+
   // ---------- Modal ----------
 
   function cargarFormularioDesdeReparacion(reparacion) {
@@ -212,6 +486,9 @@
     inputEvidencia.value = reparacion?.evidenciaFotografica || '';
     ocultarEdicionEvidencia();
     headerNumero.textContent = textoHeader(reparacion);
+    reparacionEquiposList.innerHTML = '';
+    (reparacion?.equipos || []).forEach(item => nuevaFilaReparacionEquipo(item));
+    actualizarEmptyEquipos();
     resetSubtabs();
   }
 
@@ -251,6 +528,8 @@
     resetSubtabs();
     ocultarEdicionEvidencia();
     previewEvidencia.style.display = 'none';
+    reparacionEquiposList.innerHTML = '';
+    actualizarEmptyEquipos();
     borradorId = null;
     modal.classList.remove('open');
   }
@@ -278,12 +557,19 @@
     btnGuardar.textContent = 'Guardando...';
 
     try {
+      const resuelto = await resolverEquiposDeFormulario();
+      if (resuelto.error) {
+        alert(resuelto.error);
+        return;
+      }
+
       if (id) {
         await db.collection(COLECCION).doc(id).update({
           companiaId,
           contacto: inputContacto.value.trim(),
           fechaIngreso: inputFechaIngreso.value || null,
-          evidenciaFotografica: inputEvidencia.value.trim()
+          evidenciaFotografica: inputEvidencia.value.trim(),
+          equipos: resuelto.equipos
         });
       } else {
         const numero = siguienteNumeroDisponible(); // recalculado justo antes de guardar
@@ -293,6 +579,7 @@
           contacto: inputContacto.value.trim(),
           fechaIngreso: inputFechaIngreso.value || fechaHoyISO(),
           evidenciaFotografica: inputEvidencia.value.trim(),
+          equipos: resuelto.equipos,
           creadoEn: firebase.firestore.FieldValue.serverTimestamp()
         });
       }
@@ -300,6 +587,8 @@
       resetSubtabs();
       ocultarEdicionEvidencia();
       previewEvidencia.style.display = 'none';
+      reparacionEquiposList.innerHTML = '';
+      actualizarEmptyEquipos();
       borradorId = null;
       modal.classList.remove('open');
     } catch (err) {
