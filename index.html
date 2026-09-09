@@ -529,6 +529,12 @@
   .modal.modal-ficha .subtabs{ padding-top: 4px; }
   .modal.modal-ficha .modal-actions{ padding-bottom: 22px; }
 
+  /* Ficha sin subtabs (ej. reparaciones): el padding lateral que las demás
+     fichas heredan de .subtab-panel hay que darlo directo acá. */
+  .modal.modal-ficha > .ficha-seccion{
+    padding: 20px 26px 8px 26px;
+  }
+
   .ficha-header{
     background: linear-gradient(135deg, var(--graphite) 0%, #30384a 100%);
     color: #fff;
@@ -2262,6 +2268,23 @@
           <button type="submit" class="btn">Guardar</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal: FICHA de reparación (solo lectura, distinta al modal de crear/editar) -->
+  <div class="modal-backdrop" id="modal-ficha-reparacion">
+    <div class="modal modal-ficha">
+      <div class="ficha-header">
+        <div class="ficha-header-numero" id="ficha-reparacion-header-numero">Reparación</div>
+        <div class="ficha-header-tags" id="ficha-reparacion-header-tags"></div>
+      </div>
+
+      <div class="ficha-seccion" id="ficha-reparacion-seccion-datos"><!-- generado por reparaciones.js --></div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" id="btn-cerrar-ficha-reparacion">Cerrar</button>
+        <button type="button" class="btn" id="btn-editar-desde-ficha-reparacion">Editar</button>
+      </div>
     </div>
   </div>
 

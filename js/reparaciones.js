@@ -59,6 +59,18 @@
   const headerNumero = document.getElementById('reparacion-header-numero');
   const form = document.getElementById('form-reparacion');
 
+  // ---------- Ficha de reparación (solo lectura, distinta al modal de crear/editar) ----------
+  // Mismo patrón visual y de flujo que la ficha de Pedidos: se abre al hacer
+  // clic en una reparación existente; solo desde su botón "Editar" se pasa
+  // al formulario editable de siempre (que no cambia en nada). Crear una
+  // reparación nueva sigue yendo directo al formulario, sin pasar por acá.
+  const modalFicha = document.getElementById('modal-ficha-reparacion');
+  const fichaHeaderNumero = document.getElementById('ficha-reparacion-header-numero');
+  const fichaHeaderTags = document.getElementById('ficha-reparacion-header-tags');
+  const fichaSeccionDatos = document.getElementById('ficha-reparacion-seccion-datos');
+  const btnCerrarFicha = document.getElementById('btn-cerrar-ficha-reparacion');
+  const btnEditarDesdeFicha = document.getElementById('btn-editar-desde-ficha-reparacion');
+
   const inputId = document.getElementById('reparacion-id');
   const inputNumero = document.getElementById('reparacion-numero');
   const selectCompania = document.getElementById('reparacion-compania');
@@ -293,6 +305,66 @@
     }
     return compania ? `Nueva reparación - ${compania.nombre}` : 'Nueva reparación';
   }
+
+  // Igual que textoHeader, pero para la ficha (no depende del <select> del
+  // formulario, sino directamente de los datos guardados de la reparación).
+  function fichaTextoHeader(reparacion) {
+    const compania = buscarCompania(reparacion.companiaId);
+    return `${formatearNumero(reparacion.numero)}${compania ? ' - ' + compania.nombre : ''}`;
+  }
+
+  function campoFicha(label, valor) {
+    return `
+      <div class="ficha-campo">
+        <div class="campo-label">${escapeHtml(label)}</div>
+        <div class="campo-valor">${valor}</div>
+      </div>
+    `;
+  }
+
+  function renderFichaDatos(reparacion) {
+    const compania = buscarCompania(reparacion.companiaId);
+    const nombreCompania = compania
+      ? escapeHtml(compania.nombre)
+      : '<span style="color:var(--danger);">Compañía no encontrada</span>';
+    const contacto = reparacion.contacto ? escapeHtml(reparacion.contacto) : '— (sin asignar)';
+    const fecha = reparacion.fechaIngreso ? formatearFechaCorta(reparacion.fechaIngreso) : '—';
+    const evidencia = reparacion.evidenciaFotografica
+      ? `<a href="${escapeAttr(reparacion.evidenciaFotografica)}" target="_blank" rel="noopener noreferrer">📷 Ver evidencia ↗</a>`
+      : '— (sin evidencia)';
+
+    fichaSeccionDatos.innerHTML = `
+      <h4>Datos generales</h4>
+      <div class="ficha-campos">
+        ${campoFicha('Compañía', nombreCompania)}
+        ${campoFicha('Encargado de reparaciones', contacto)}
+        ${campoFicha('Día de ingreso', fecha)}
+        ${campoFicha('Evidencia fotográfica', evidencia)}
+      </div>
+    `;
+  }
+
+  function abrirFicha(reparacion) {
+    fichaHeaderNumero.textContent = fichaTextoHeader(reparacion);
+    fichaHeaderTags.innerHTML = '';
+    renderFichaDatos(reparacion);
+    btnEditarDesdeFicha.dataset.id = reparacion.id;
+    modalFicha.classList.add('open');
+  }
+
+  function cerrarFicha() {
+    modalFicha.classList.remove('open');
+  }
+
+  btnCerrarFicha.addEventListener('click', () => cerrarFicha());
+  modalFicha.addEventListener('click', (e) => {
+    if (e.target === modalFicha) cerrarFicha();
+  });
+  btnEditarDesdeFicha.addEventListener('click', () => {
+    const reparacion = reparacionesCache.find(r => r.id === btnEditarDesdeFicha.dataset.id);
+    cerrarFicha();
+    if (reparacion) abrirModalEditar(reparacion);
+  });
 
   // ---------- Evidencia fotográfica: link a carpeta compartida ----------
   // El campo de edición (el input) está oculto por defecto y solo aparece
@@ -969,12 +1041,11 @@
     }
   }
 
-  // Permite abrir la ficha (el mismo modal de editar) de una reparación
-  // desde otro archivo — ej. pedidos.js, desde el pedido creado a partir de
-  // ella.
+  // Permite abrir la ficha (solo lectura) de una reparación desde otro
+  // archivo — ej. pedidos.js, desde el pedido creado a partir de ella.
   window.abrirFichaReparacion = function (reparacionId) {
     const reparacion = reparacionesCache.find(r => r.id === reparacionId);
-    if (reparacion) abrirModalEditar(reparacion);
+    if (reparacion) abrirFicha(reparacion);
   };
 
   function cancelarYLimpiar() {
@@ -1020,15 +1091,22 @@
       const observacionesHtml = sanearHtmlObservaciones(inputObservaciones.innerHTML);
       const observacionesIniciales = htmlObservacionesEstaVacio(observacionesHtml) ? '' : observacionesHtml;
 
+      // Se guardan estos valores ANTES del form.reset() de más abajo, para
+      // poder reabrir la ficha con los datos recién guardados (igual que
+      // hace Pedidos al editar desde su ficha).
+      let datosGuardados = null;
+
       if (id) {
-        await db.collection(COLECCION).doc(id).update({
+        const datosActualizados = {
           companiaId,
           contacto: inputContacto.value.trim(),
           fechaIngreso: inputFechaIngreso.value || null,
           evidenciaFotografica: inputEvidencia.value.trim(),
           equipo: resuelto.equipo,
           observacionesIniciales
-        });
+        };
+        await db.collection(COLECCION).doc(id).update(datosActualizados);
+        datosGuardados = { id, numero: Number(inputNumero.value), ...datosActualizados };
       } else {
         const numero = siguienteNumeroDisponible(); // recalculado justo antes de guardar
         await db.collection(COLECCION).add({
@@ -1050,6 +1128,7 @@
       limpiarObservacionesReparacion();
       borradorId = null;
       modal.classList.remove('open');
+      if (datosGuardados) abrirFicha(datosGuardados);
     } catch (err) {
       console.error('Error guardando reparación:', err);
       alert('No se pudo guardar la reparación. Revisa la consola.');
@@ -1193,12 +1272,13 @@
     }).join('');
 
     // Clic en cualquier parte de la tarjeta (fuera del botón eliminar o del
-    // link de evidencia) abre directamente la edición, igual que Clientes.
+    // link de evidencia) abre la ficha de solo lectura, igual que Pedidos.
+    // Solo desde el botón "Editar" de esa ficha se llega al formulario editable.
     listaContenedor.querySelectorAll('.reparacion-card').forEach(card => {
       card.addEventListener('click', (e) => {
         if (e.target.closest('button') || e.target.closest('a')) return;
         const reparacion = reparacionesCache.find(r => r.id === card.dataset.id);
-        if (reparacion) abrirModalEditar(reparacion);
+        if (reparacion) abrirFicha(reparacion);
       });
     });
     listaContenedor.querySelectorAll('.btn-eliminar').forEach(btn => {
