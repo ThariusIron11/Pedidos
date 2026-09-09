@@ -28,7 +28,7 @@
   const buscador = document.getElementById('buscador-reparaciones');
 
   const modal = document.getElementById('modal-reparacion');
-  const modalTitulo = document.getElementById('modal-reparacion-titulo');
+  const headerNumero = document.getElementById('reparacion-header-numero');
   const form = document.getElementById('form-reparacion');
 
   const inputId = document.getElementById('reparacion-id');
@@ -37,6 +37,7 @@
   const inputContacto = document.getElementById('reparacion-contacto');
   const inputFechaIngreso = document.getElementById('reparacion-fecha-ingreso');
   const inputEvidencia = document.getElementById('reparacion-evidencia');
+  const btnEditarEvidencia = document.getElementById('btn-editar-evidencia');
   const previewEvidencia = document.getElementById('reparacion-evidencia-preview');
   const linkEvidencia = document.getElementById('reparacion-evidencia-link');
 
@@ -102,10 +103,22 @@
     });
   });
 
+  // "R01 - Contegral Cartago" si ya existe (número + compañía elegida), o
+  // "Nueva reparación" mientras se está creando y todavía no hay compañía.
+  function textoHeader(reparacion) {
+    const compania = buscarCompania(selectCompania.value);
+    if (reparacion) {
+      return `${formatearNumero(reparacion.numero)}${compania ? ' - ' + compania.nombre : ''}`;
+    }
+    return compania ? `Nueva reparación - ${compania.nombre}` : 'Nueva reparación';
+  }
+
   // ---------- Evidencia fotográfica: link a carpeta compartida ----------
   // Mientras se escribe/pega el link, se ve en vivo debajo del campo como
   // texto clickeable (abre en pestaña nueva), para poder confirmar que
-  // quedó bien antes de guardar.
+  // quedó bien antes de guardar. Una vez que ya tiene un valor, el campo
+  // queda bloqueado (readonly) para no correr el riesgo de dañarlo sin
+  // querer — el lápiz lo desbloquea a propósito.
 
   function actualizarPreviewEvidencia() {
     const url = inputEvidencia.value.trim();
@@ -117,7 +130,17 @@
     }
   }
 
+  function bloquearEvidenciaSiTieneValor() {
+    inputEvidencia.readOnly = !!inputEvidencia.value.trim();
+  }
+
   inputEvidencia.addEventListener('input', actualizarPreviewEvidencia);
+
+  btnEditarEvidencia.addEventListener('click', () => {
+    inputEvidencia.readOnly = false;
+    inputEvidencia.focus();
+    inputEvidencia.select();
+  });
 
   // 3 -> "R03". El número real que se guarda es el entero (3); esto es
   // solo cómo se muestra.
@@ -148,6 +171,7 @@
   selectCompania.addEventListener('change', () => {
     const compania = buscarCompania(selectCompania.value);
     inputContacto.value = compania?.contactoReparaciones || '';
+    headerNumero.textContent = textoHeader(inputId.value ? { numero: inputNumero.value } : null);
   });
 
   document.addEventListener('clientes:cambio', () => {
@@ -169,19 +193,21 @@
       : ''; // en una reparación nueva se llena solo al elegir la compañía
     inputFechaIngreso.value = reparacion?.fechaIngreso || fechaHoyISO();
     inputEvidencia.value = reparacion?.evidenciaFotografica || '';
+    bloquearEvidenciaSiTieneValor();
     actualizarPreviewEvidencia();
+    headerNumero.textContent = textoHeader(reparacion);
     resetSubtabs();
   }
 
   function abrirModalNuevo() {
     if (borradorId === '') {
-      // Ya había un borrador de reparación nueva en curso: se retoma tal cual.
-      modalTitulo.textContent = 'Nueva reparación';
+      // Ya había un borrador de reparación nueva en curso: se retoma tal cual
+      // (incluye lo que ya tenía escrito, así que se recalcula el header).
+      headerNumero.textContent = textoHeader(null);
       modal.classList.add('open');
       selectCompania.focus();
       return;
     }
-    modalTitulo.textContent = 'Nueva reparación';
     cargarFormularioDesdeReparacion(null);
     borradorId = '';
     modal.classList.add('open');
@@ -190,11 +216,10 @@
 
   function abrirModalEditar(reparacion) {
     if (borradorId === reparacion.id) {
-      modalTitulo.textContent = `Editar reparación ${formatearNumero(reparacion.numero)}`;
+      headerNumero.textContent = textoHeader(reparacion);
       modal.classList.add('open');
       return;
     }
-    modalTitulo.textContent = `Editar reparación ${formatearNumero(reparacion.numero)}`;
     cargarFormularioDesdeReparacion(reparacion);
     borradorId = reparacion.id;
     modal.classList.add('open');

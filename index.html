@@ -1082,6 +1082,23 @@
     border-radius: 999px;
   }
 
+  .btn-icon-inline{
+    background: transparent;
+    border: 1px solid #d4d7dc;
+    border-radius: var(--radius);
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    cursor: pointer;
+    color: var(--ink-soft);
+  }
+  .btn-icon-inline:hover{ color: var(--copper); border-color: var(--copper); background: rgba(0,0,0,0.03); }
+
   /* ---------- Tarjetas de la lista de reparaciones ---------- */
   .reparaciones-cards{
     display: flex;
@@ -1962,8 +1979,11 @@
 
   <!-- Modal: nueva/editar reparación (usado por reparaciones.js) -->
   <div class="modal-backdrop" id="modal-reparacion">
-    <div class="modal">
-      <h3 id="modal-reparacion-titulo">Nueva reparación</h3>
+    <div class="modal modal-ficha">
+      <div class="ficha-header">
+        <div class="ficha-header-numero" id="reparacion-header-numero">Nueva reparación</div>
+      </div>
+
       <form id="form-reparacion">
         <input type="hidden" id="reparacion-id">
         <input type="hidden" id="reparacion-numero">
@@ -1993,7 +2013,11 @@
 
           <div class="form-group">
             <label for="reparacion-evidencia">📷 Evidencia fotográfica</label>
-            <input type="text" id="reparacion-evidencia" placeholder="Pega aquí el link de la carpeta compartida con las fotos (motor, reductor, motoreductor...)">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <input type="text" id="reparacion-evidencia" style="flex:1;" readonly placeholder="Pega aquí el link de la carpeta compartida con las fotos (motor, reductor, motoreductor...)">
+              <button type="button" class="btn-icon-inline" id="btn-editar-evidencia" title="Editar el link">✏️</button>
+            </div>
+            <div class="hint-peso-calculado" style="display:block;">Queda bloqueado una vez escrito, para evitar borrarlo o cambiarlo sin querer — toca el lápiz para editarlo.</div>
             <div id="reparacion-evidencia-preview" style="display:none; margin-top:6px;">
               <a href="#" id="reparacion-evidencia-link" target="_blank" rel="noopener noreferrer">📷 Evidencia fotográfica ↗</a>
             </div>
@@ -2414,16 +2438,16 @@
   <!-- Firebase (SDK compat, para poder usarlo con <script> normales sin bundler) -->
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
-  <script src="js/firebase-init.js?v=18"></script>
+  <script src="js/firebase-init.js?v=19"></script>
 
   <!-- Un archivo JS por pestaña -->
-  <script src="js/config.js?v=18"></script>
-  <script src="js/clientes.js?v=18"></script>
-  <script src="js/equipos.js?v=18"></script>
-  <script src="js/pedidos.js?v=18"></script>
-  <script src="js/envios.js?v=18"></script>
-  <script src="js/reparaciones.js?v=18"></script>
-  <script src="js/historial.js?v=18"></script>
+  <script src="js/config.js?v=19"></script>
+  <script src="js/clientes.js?v=19"></script>
+  <script src="js/equipos.js?v=19"></script>
+  <script src="js/pedidos.js?v=19"></script>
+  <script src="js/envios.js?v=19"></script>
+  <script src="js/reparaciones.js?v=19"></script>
+  <script src="js/historial.js?v=19"></script>
 
 </body>
 </html>
