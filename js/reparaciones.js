@@ -291,17 +291,57 @@
     if (!mostrar) inputEl.value = '';
   }
 
+  // IDs de tipo permitidos (motor, reductor, motor zd) — usado tanto para
+  // poblar el select "Tipo..." como para que el buscador de equipo, cuando
+  // todavía no se ha elegido un tipo, no muestre TODO el catálogo (acoples,
+  // cadenas, etc.) sino solo estos tres.
+  function tipoIdsPermitidos() {
+    const permitidos = ['motor', 'reductor', 'motor zd'];
+    return new Set(
+      (window.tiposEquipoCache || [])
+        .filter(t => permitidos.includes(normalizar(t.nombre)))
+        .map(t => t.id)
+    );
+  }
+
+  // Posiciona el desplegable de resultados como "position: fixed" en base
+  // a la posición real del input en la pantalla, para que no quede
+  // recortado por el scroll interno de la ficha (el modal tiene poco alto
+  // y el panel de "Equipos" hace scroll propio).
+  function posicionarResultados(inputTexto, resultados) {
+    const rect = inputTexto.getBoundingClientRect();
+    resultados.style.position = 'fixed';
+    resultados.style.top = (rect.bottom + 4) + 'px';
+    resultados.style.left = rect.left + 'px';
+    resultados.style.width = rect.width + 'px';
+    resultados.style.right = 'auto';
+  }
+
   // Buscador con autocompletar del catálogo de Equipos (igual que en
   // Pedidos), con el agregado del aviso "se registrará como equipo nuevo"
   // cuando lo escrito no coincide con nada del catálogo, y un callback para
   // mostrar/ocultar el campo de serial según si el equipo elegido lo maneja.
-  function inicializarBuscadorEquipoReparacion({ inputTexto, inputValor, avisoEl, obtenerTipoId, onSeleccion }) {
+  //
+  // `restringirATiposPermitidos`: cuando no hay un tipo elegido todavía
+  // (obtenerTipoId() devuelve vacío), en vez de mostrar todo el catálogo
+  // solo muestra motor/reductor/motor ZD. Se usa en el buscador individual,
+  // que es el único con tipo variable (motor y reductor del motoreductor ya
+  // vienen con su tipo fijo).
+  function inicializarBuscadorEquipoReparacion({ inputTexto, inputValor, avisoEl, obtenerTipoId, restringirATiposPermitidos, onSeleccion }) {
     const resultados = inputTexto.closest('.buscador-equipo').querySelector('.buscador-resultados');
 
     function catalogoFiltrado(texto) {
       const equipos = window.equiposCache || [];
       const tid = obtenerTipoId ? obtenerTipoId() : '';
-      const porTipo = tid ? equipos.filter(eq => eq.tipoId === tid) : equipos;
+      let porTipo;
+      if (tid) {
+        porTipo = equipos.filter(eq => eq.tipoId === tid);
+      } else if (restringirATiposPermitidos) {
+        const idsPermitidos = tipoIdsPermitidos();
+        porTipo = equipos.filter(eq => idsPermitidos.has(eq.tipoId));
+      } else {
+        porTipo = equipos;
+      }
       const t = normalizar(texto);
       return (t ? porTipo.filter(eq => normalizar(eq.nombre + ' ' + (eq.variante || '')).includes(t)) : porTipo).slice(0, 8);
     }
@@ -317,6 +357,7 @@
       resultados.innerHTML = lista.length
         ? lista.map(eq => `<div class="buscador-item" data-id="${eq.id}">${escapeHtml(nombreMostrableEquipo(eq))}</div>`).join('')
         : `<div class="buscador-item-vacio">Sin coincidencias — se registrará como equipo nuevo</div>`;
+      posicionarResultados(inputTexto, resultados);
       resultados.classList.add('open');
       resultados.querySelectorAll('.buscador-item').forEach(el => {
         el.addEventListener('mousedown', (e) => {
@@ -345,6 +386,10 @@
     inputTexto.addEventListener('blur', () => {
       setTimeout(() => resultados.classList.remove('open'), 120);
     });
+    // Si se hace scroll (el panel de la ficha tiene su propio scroll
+    // interno), el desplegable quedaría desalineado del input — mejor
+    // cerrarlo, igual que pasaría al hacer blur.
+    window.addEventListener('scroll', () => resultados.classList.remove('open'), true);
 
     return { refrescar: mostrarResultados };
   }
@@ -354,7 +399,13 @@
     inputValor: inputEquipoId,
     avisoEl: avisoEquipoNuevo,
     obtenerTipoId: () => selectTipoFiltro.value,
-    onSeleccion: (eq) => mostrarOcultarSerial(serialWrapIndividual, inputSerialIndividual, eq)
+    restringirATiposPermitidos: true,
+    onSeleccion: (eq) => {
+      mostrarOcultarSerial(serialWrapIndividual, inputSerialIndividual, eq);
+      // Autocompleta el "Tipo" según el equipo elegido (ej. al escoger
+      // "YE3 L112-4 5HP" del catálogo, se sabe que es un Motor).
+      if (eq && eq.tipoId) selectTipoFiltro.value = eq.tipoId;
+    }
   });
 
   // Si cambia el tipo, la búsqueda se re-filtra y cualquier selección
