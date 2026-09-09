@@ -122,12 +122,17 @@
 
   function mostrarEdicionEvidencia() {
     evidenciaInputWrap.style.display = 'block';
+    btnEditarEvidencia.textContent = '💾';
+    btnEditarEvidencia.title = 'Guardar este link y cerrar el campo';
     inputEvidencia.focus();
     inputEvidencia.select();
   }
 
   function ocultarEdicionEvidencia() {
     evidenciaInputWrap.style.display = 'none';
+    btnEditarEvidencia.textContent = '✏️';
+    btnEditarEvidencia.title = 'Agregar o editar el link';
+    actualizarPreviewEvidencia();
   }
 
   function actualizarPreviewEvidencia() {
@@ -142,7 +147,17 @@
 
   inputEvidencia.addEventListener('input', actualizarPreviewEvidencia);
 
-  btnEditarEvidencia.addEventListener('click', mostrarEdicionEvidencia);
+  // El botón alterna entre lápiz (abre el campo) y disket (guarda el valor
+  // escrito y vuelve a esconder el campo) — un solo botón para las dos
+  // acciones, según si el campo está abierto o cerrado en ese momento.
+  btnEditarEvidencia.addEventListener('click', () => {
+    const estaAbierto = evidenciaInputWrap.style.display !== 'none';
+    if (estaAbierto) {
+      ocultarEdicionEvidencia();
+    } else {
+      mostrarEdicionEvidencia();
+    }
+  });
 
   // 3 -> "R03". El número real que se guarda es el entero (3); esto es
   // solo cómo se muestra.
@@ -196,7 +211,6 @@
     inputFechaIngreso.value = reparacion?.fechaIngreso || fechaHoyISO();
     inputEvidencia.value = reparacion?.evidenciaFotografica || '';
     ocultarEdicionEvidencia();
-    actualizarPreviewEvidencia();
     headerNumero.textContent = textoHeader(reparacion);
     resetSubtabs();
   }
