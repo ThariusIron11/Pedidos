@@ -529,12 +529,6 @@
   .modal.modal-ficha .subtabs{ padding-top: 4px; }
   .modal.modal-ficha .modal-actions{ padding-bottom: 22px; }
 
-  /* Ficha sin subtabs (ej. reparaciones): el padding lateral que las demás
-     fichas heredan de .subtab-panel hay que darlo directo acá. */
-  .modal.modal-ficha > .ficha-seccion{
-    padding: 20px 26px 8px 26px;
-  }
-
   .ficha-header{
     background: linear-gradient(135deg, var(--graphite) 0%, #30384a 100%);
     color: #fff;
@@ -2279,7 +2273,26 @@
         <div class="ficha-header-tags" id="ficha-reparacion-header-tags"></div>
       </div>
 
-      <div class="ficha-seccion" id="ficha-reparacion-seccion-datos"><!-- generado por reparaciones.js --></div>
+      <div class="subtabs">
+        <button type="button" class="subtab-btn active" data-subtab="ficha-reparacion-datos">📋 Datos generales</button>
+        <button type="button" class="subtab-btn" data-subtab="ficha-reparacion-equipos">📦 Equipos</button>
+      </div>
+
+      <div class="subtab-panel active" id="subtab-ficha-reparacion-datos">
+        <div class="ficha-seccion" id="ficha-reparacion-seccion-datos"><!-- generado por reparaciones.js --></div>
+      </div>
+
+      <div class="subtab-panel" id="subtab-ficha-reparacion-equipos">
+        <div class="panel-header" style="margin-bottom:14px;">
+          <h2 style="font-size:14px;">Equipo que ingresó a esta reparación</h2>
+        </div>
+        <div id="ficha-reparacion-equipo-texto" class="reparacion-equipo-texto-view"><!-- generado por reparaciones.js --></div>
+
+        <div class="panel-header" style="margin-top:20px; margin-bottom:14px;">
+          <h2 style="font-size:14px;">Observaciones iniciales</h2>
+        </div>
+        <div id="ficha-reparacion-observaciones-texto" class="reparacion-equipo-texto-view reparacion-observaciones-texto-view"><!-- generado por reparaciones.js --></div>
+      </div>
 
       <div class="modal-actions">
         <button type="button" class="btn secondary" id="btn-cerrar-ficha-reparacion">Cerrar</button>

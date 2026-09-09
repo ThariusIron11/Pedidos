@@ -68,8 +68,28 @@
   const fichaHeaderNumero = document.getElementById('ficha-reparacion-header-numero');
   const fichaHeaderTags = document.getElementById('ficha-reparacion-header-tags');
   const fichaSeccionDatos = document.getElementById('ficha-reparacion-seccion-datos');
+  const fichaEquipoTexto = document.getElementById('ficha-reparacion-equipo-texto');
+  const fichaObservacionesTexto = document.getElementById('ficha-reparacion-observaciones-texto');
   const btnCerrarFicha = document.getElementById('btn-cerrar-ficha-reparacion');
   const btnEditarDesdeFicha = document.getElementById('btn-editar-desde-ficha-reparacion');
+
+  // Subpestañas propias de la ficha (Datos generales / Equipos), separadas
+  // de las del formulario de edición (`subtabButtons`/`subtabPanels` más
+  // abajo), ya que viven en modales distintos.
+  const fichaSubtabButtons = modalFicha.querySelectorAll('.subtab-btn');
+  const fichaSubtabPanels = modalFicha.querySelectorAll('.subtab-panel');
+
+  fichaSubtabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      fichaSubtabButtons.forEach(b => b.classList.toggle('active', b === btn));
+      fichaSubtabPanels.forEach(p => p.classList.toggle('active', p.id === 'subtab-' + btn.dataset.subtab));
+    });
+  });
+
+  function resetFichaSubtabs() {
+    fichaSubtabButtons.forEach(b => b.classList.toggle('active', b.dataset.subtab === 'ficha-reparacion-datos'));
+    fichaSubtabPanels.forEach(p => p.classList.toggle('active', p.id === 'subtab-ficha-reparacion-datos'));
+  }
 
   const inputId = document.getElementById('reparacion-id');
   const inputNumero = document.getElementById('reparacion-numero');
@@ -336,7 +356,6 @@
     fichaSeccionDatos.innerHTML = `
       <h4>Datos generales</h4>
       <div class="ficha-campos">
-        ${campoFicha('Equipo', htmlEquipoTarjeta(reparacion))}
         ${campoFicha('Compañía', nombreCompania)}
         ${campoFicha('Encargado de reparaciones', contacto)}
         ${campoFicha('Día de ingreso', fecha)}
@@ -345,10 +364,25 @@
     `;
   }
 
+  // Pestaña "Equipos" de la ficha: mismo contenido que se ve en la tarjeta
+  // (equipo + serial, vía htmlEquipoTarjeta) y las observaciones iniciales
+  // ya guardadas, ambos en solo lectura — nada de esto es editable acá,
+  // solo desde el botón "Editar" que lleva al formulario de siempre.
+  function renderFichaEquipos(reparacion) {
+    fichaEquipoTexto.innerHTML = htmlEquipoTarjeta(reparacion);
+
+    const observaciones = reparacion.observacionesIniciales;
+    fichaObservacionesTexto.innerHTML = htmlObservacionesEstaVacio(observaciones)
+      ? '<span class="reparacion-card-sin-equipo">Sin observaciones registradas.</span>'
+      : sanearHtmlObservaciones(observaciones);
+  }
+
   function abrirFicha(reparacion) {
     fichaHeaderNumero.textContent = fichaTextoHeader(reparacion);
     fichaHeaderTags.innerHTML = '';
     renderFichaDatos(reparacion);
+    renderFichaEquipos(reparacion);
+    resetFichaSubtabs();
     btnEditarDesdeFicha.dataset.id = reparacion.id;
     modalFicha.classList.add('open');
   }
