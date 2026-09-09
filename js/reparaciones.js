@@ -336,6 +336,7 @@
     fichaSeccionDatos.innerHTML = `
       <h4>Datos generales</h4>
       <div class="ficha-campos">
+        ${campoFicha('Equipo', htmlEquipoTarjeta(reparacion))}
         ${campoFicha('Compañía', nombreCompania)}
         ${campoFicha('Encargado de reparaciones', contacto)}
         ${campoFicha('Día de ingreso', fecha)}
