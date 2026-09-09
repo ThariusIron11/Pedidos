@@ -379,7 +379,7 @@
 
   function abrirFicha(reparacion) {
     fichaHeaderNumero.textContent = fichaTextoHeader(reparacion);
-    fichaHeaderTags.innerHTML = '';
+    actualizarHeaderAcciones(reparacion);
     renderFichaDatos(reparacion);
     renderFichaEquipos(reparacion);
     resetFichaSubtabs();
@@ -884,7 +884,6 @@
     inputEvidencia.value = reparacion?.evidenciaFotografica || '';
     ocultarEdicionEvidencia();
     headerNumero.textContent = textoHeader(reparacion);
-    actualizarHeaderAcciones(reparacion);
     cargarEquipoReparacion(reparacion?.equipo || null);
     cargarObservacionesReparacion(reparacion?.observacionesIniciales || '');
     resetSubtabs();
@@ -928,7 +927,9 @@
   // basta con buscar ese mismo ID en la otra colección). Se copia el
   // cliente, el encargado de recibirlo y el equipo ya cargado; lo demás
   // (cantidad, orden de compra, etc.) se termina de ajustar en Pedidos.
-  const headerAcciones = document.getElementById('reparacion-header-acciones');
+  // Vive en el header de la FICHA (solo lectura), no en el del formulario
+  // de edición.
+  const headerAcciones = fichaHeaderTags;
 
   function actualizarHeaderAcciones(reparacion) {
     if (!reparacion) {
@@ -942,7 +943,7 @@
           alert('No se pudo abrir el pedido: la pestaña de Pedidos no está cargada en esta página.');
           return;
         }
-        cerrarModalConservandoBorrador();
+        cerrarFicha();
         window.abrirFichaPedido(reparacion.pedidoId);
       });
     } else {
@@ -1022,12 +1023,16 @@
   async function crearPedidoDesdeReparacion(reparacion) {
     if (!reparacion.companiaId) {
       alert('Antes de crear el pedido, elige la compañía en "Datos generales".');
+      cerrarFicha();
+      abrirModalEditar(reparacion);
       subtabButtons[0].click();
       return;
     }
     const itemEquipo = equipoReparacionAItemPedido(reparacion.equipo);
     if (!itemEquipo) {
       alert('Antes de crear el pedido, completa el equipo en la sub-pestaña "Equipos".');
+      cerrarFicha();
+      abrirModalEditar(reparacion);
       subtabButtons[1].click();
       return;
     }
@@ -1062,7 +1067,7 @@
       await db.collection('pedidos').doc(reparacion.id).set(datosPedido);
       await db.collection(COLECCION).doc(reparacion.id).update({ pedidoId: reparacion.id });
 
-      cerrarModalConservandoBorrador();
+      cerrarFicha();
       const llego = await esperarPedidoEnCache(reparacion.id);
       if (llego && window.abrirFichaPedido) {
         window.abrirFichaPedido(reparacion.id);
