@@ -28,6 +28,10 @@
 //             sirve como referencia interna al preparar la entrega),
 //   fechaIngreso,
 //   evidenciaFotografica,
+//   observacionesIniciales (HTML simple — negrilla, cursiva y listas; texto
+//                           libre sobre el estado en que llegó el equipo.
+//                           Mismo patrón texto/edición que el equipo y la
+//                           evidencia),
 //   equipo: null, o uno de:
 //     { tipoLinea: 'individual', tipoId, equipoId, serial? }
 //     { tipoLinea: 'motoreductor', motorEquipoId, motorSerial?,
@@ -66,6 +70,114 @@
   const btnEditarEquipo = document.getElementById('btn-editar-equipo');
   const equipoTextoEl = document.getElementById('reparacion-equipo-texto');
   const equipoEdicionWrap = document.getElementById('reparacion-equipo-edicion-wrap');
+
+  // Observaciones iniciales: mismo patrón texto/edición que Equipo y que la
+  // Evidencia fotográfica. El campo es un editor de texto enriquecido
+  // simple (negrilla, cursiva, listas) hecho con contenteditable — se
+  // guarda como HTML, pero saneado a una lista corta de etiquetas permitidas
+  // para no arrastrar estilos ni scripts pegados desde otro lado.
+  const btnEditarObservaciones = document.getElementById('btn-editar-observaciones');
+  const observacionesTextoEl = document.getElementById('reparacion-observaciones-texto');
+  const observacionesEdicionWrap = document.getElementById('reparacion-observaciones-edicion-wrap');
+  const inputObservaciones = document.getElementById('reparacion-observaciones-input');
+
+  const ETIQUETAS_RTE_PERMITIDAS = new Set(['B', 'STRONG', 'I', 'EM', 'UL', 'OL', 'LI', 'BR', 'DIV', 'P']);
+
+  // Deja solo negrilla/cursiva/listas/saltos de línea; cualquier otra
+  // etiqueta (spans con estilos pegados, imágenes, links, etc.) se
+  // "desenvuelve" dejando su texto, sin el tag. Además borra todos los
+  // atributos (style, onclick...) de las etiquetas que sí se conservan.
+  function sanearHtmlObservaciones(html) {
+    const temp = document.createElement('div');
+    temp.innerHTML = html || '';
+
+    function limpiar(nodo) {
+      Array.from(nodo.childNodes).forEach(hijo => {
+        if (hijo.nodeType === Node.ELEMENT_NODE) {
+          limpiar(hijo);
+          if (!ETIQUETAS_RTE_PERMITIDAS.has(hijo.tagName)) {
+            while (hijo.firstChild) nodo.insertBefore(hijo.firstChild, hijo);
+            nodo.removeChild(hijo);
+          } else {
+            while (hijo.attributes.length) hijo.removeAttribute(hijo.attributes[0].name);
+          }
+        } else if (hijo.nodeType !== Node.TEXT_NODE) {
+          nodo.removeChild(hijo); // comentarios, etc.
+        }
+      });
+    }
+    limpiar(temp);
+    return temp.innerHTML;
+  }
+
+  // Un editor contenteditable "vacío" a veces queda con un <br> suelto
+  // adentro (lo agrega el navegador solo), por eso no basta con mirar si
+  // el HTML es una cadena vacía.
+  function htmlObservacionesEstaVacio(html) {
+    const temp = document.createElement('div');
+    temp.innerHTML = html || '';
+    return temp.textContent.trim() === '';
+  }
+
+  function actualizarTextoObservaciones() {
+    const html = sanearHtmlObservaciones(inputObservaciones.innerHTML);
+    observacionesTextoEl.innerHTML = htmlObservacionesEstaVacio(html)
+      ? '<span class="reparacion-card-sin-equipo">Sin observaciones registradas.</span>'
+      : html;
+  }
+
+  function mostrarEdicionObservaciones() {
+    observacionesEdicionWrap.style.display = 'block';
+    observacionesTextoEl.style.display = 'none';
+    btnEditarObservaciones.textContent = '💾';
+    btnEditarObservaciones.title = 'Guardar y volver a la vista de texto';
+    inputObservaciones.focus();
+  }
+
+  function ocultarEdicionObservaciones() {
+    observacionesEdicionWrap.style.display = 'none';
+    observacionesTextoEl.style.display = 'block';
+    btnEditarObservaciones.textContent = '✏️';
+    btnEditarObservaciones.title = 'Agregar o editar las observaciones';
+    actualizarTextoObservaciones();
+  }
+
+  btnEditarObservaciones.addEventListener('click', () => {
+    const estaAbierto = observacionesEdicionWrap.style.display !== 'none';
+    if (estaAbierto) {
+      ocultarEdicionObservaciones();
+    } else {
+      mostrarEdicionObservaciones();
+    }
+  });
+
+  // Barra de herramientas: negrilla, cursiva, lista con viñetas, lista
+  // numerada. document.execCommand sigue funcionando bien para este tipo de
+  // edición simple dentro de un contenteditable en todos los navegadores
+  // de escritorio habituales.
+  document.querySelectorAll('#reparacion-observaciones-toolbar .rte-btn').forEach(btn => {
+    btn.addEventListener('mousedown', (e) => e.preventDefault()); // no perder la selección al hacer click
+    btn.addEventListener('click', () => {
+      document.execCommand(btn.dataset.cmd, false, null);
+      inputObservaciones.focus();
+    });
+  });
+
+  // Carga (o deja en blanco) el campo y decide el modo inicial: si ya
+  // había texto guardado, arranca en modo texto; si no, en modo edición.
+  function cargarObservacionesReparacion(html) {
+    inputObservaciones.innerHTML = sanearHtmlObservaciones(html || '');
+    if (!htmlObservacionesEstaVacio(inputObservaciones.innerHTML)) {
+      ocultarEdicionObservaciones();
+    } else {
+      inputObservaciones.innerHTML = '';
+      mostrarEdicionObservaciones();
+    }
+  }
+
+  function limpiarObservacionesReparacion() {
+    inputObservaciones.innerHTML = '';
+  }
 
   const chkEsMotoreductor = document.getElementById('reparacion-equipo-es-motoreductor');
   const bloqueIndividual = document.getElementById('reparacion-bloque-individual');
@@ -656,6 +768,7 @@
     ocultarEdicionEvidencia();
     headerNumero.textContent = textoHeader(reparacion);
     cargarEquipoReparacion(reparacion?.equipo || null);
+    cargarObservacionesReparacion(reparacion?.observacionesIniciales || '');
     resetSubtabs();
   }
 
@@ -696,6 +809,7 @@
     ocultarEdicionEvidencia();
     previewEvidencia.style.display = 'none';
     limpiarEquipoReparacion();
+    limpiarObservacionesReparacion();
     borradorId = null;
     modal.classList.remove('open');
   }
@@ -729,13 +843,17 @@
         return;
       }
 
+      const observacionesHtml = sanearHtmlObservaciones(inputObservaciones.innerHTML);
+      const observacionesIniciales = htmlObservacionesEstaVacio(observacionesHtml) ? '' : observacionesHtml;
+
       if (id) {
         await db.collection(COLECCION).doc(id).update({
           companiaId,
           contacto: inputContacto.value.trim(),
           fechaIngreso: inputFechaIngreso.value || null,
           evidenciaFotografica: inputEvidencia.value.trim(),
-          equipo: resuelto.equipo
+          equipo: resuelto.equipo,
+          observacionesIniciales
         });
       } else {
         const numero = siguienteNumeroDisponible(); // recalculado justo antes de guardar
@@ -746,6 +864,7 @@
           fechaIngreso: inputFechaIngreso.value || fechaHoyISO(),
           evidenciaFotografica: inputEvidencia.value.trim(),
           equipo: resuelto.equipo,
+          observacionesIniciales,
           creadoEn: firebase.firestore.FieldValue.serverTimestamp()
         });
       }
@@ -754,6 +873,7 @@
       ocultarEdicionEvidencia();
       previewEvidencia.style.display = 'none';
       limpiarEquipoReparacion();
+      limpiarObservacionesReparacion();
       borradorId = null;
       modal.classList.remove('open');
     } catch (err) {

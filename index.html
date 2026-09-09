@@ -294,7 +294,7 @@
     color: var(--ink-soft);
     margin-bottom: 5px;
   }
-  .form-group input[type="text"], .form-group input[type="tel"], .form-group select{
+  .form-group input[type="text"], .form-group input[type="tel"], .form-group select, .form-group textarea{
     width: 100%;
     font-family: inherit;
     font-size: 13.5px;
@@ -303,10 +303,58 @@
     border-radius: var(--radius);
     background: #fff;
   }
-  .form-group input:focus, .form-group select:focus{
+  .form-group textarea{
+    resize: vertical;
+    min-height: 70px;
+    line-height: 1.4;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus{
     outline: none;
     border-color: var(--copper);
   }
+
+  /* ---------- Editor de texto enriquecido (Observaciones) ---------- */
+  .rte-toolbar{
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+  .rte-btn{
+    min-width: 30px;
+    height: 28px;
+    padding: 0 8px;
+    font-size: 12.5px;
+    font-family: inherit;
+    color: var(--ink-soft);
+    background: #fff;
+    border: 1px solid #d4d7dc;
+    border-radius: var(--radius);
+    cursor: pointer;
+  }
+  .rte-btn:hover{ color: var(--copper); border-color: var(--copper); background: rgba(0,0,0,0.03); }
+  .rte-sep{ width: 1px; height: 20px; background: #d4d7dc; margin: 0 4px; }
+  .rte-editable{
+    width: 100%;
+    min-height: 90px;
+    max-height: 260px;
+    overflow-y: auto;
+    font-family: inherit;
+    font-size: 13.5px;
+    line-height: 1.45;
+    padding: 8px 10px;
+    border: 1px solid #d4d7dc;
+    border-radius: var(--radius);
+    background: #fff;
+  }
+  .rte-editable:focus{ outline: none; border-color: var(--copper); }
+  .rte-editable:empty:before{
+    content: attr(data-placeholder);
+    color: var(--ink-soft);
+  }
+  .rte-editable ul, .rte-editable ol{ margin: 4px 0 4px 20px; padding: 0; }
+  .rte-editable p, .rte-editable div{ margin: 0; }
+  .reparacion-observaciones-texto-view ul, .reparacion-observaciones-texto-view ol{ margin: 4px 0 4px 20px; padding: 0; }
   .form-group select{
     appearance: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235b6472'/%3E%3C/svg%3E");
@@ -727,6 +775,7 @@
     border-radius: var(--radius);
     min-height: 20px;
     line-height: 1.4;
+    white-space: pre-wrap;
   }
   .reparacion-equipo-texto-view .reparacion-card-sin-equipo{
     font-weight: 500;
@@ -739,6 +788,16 @@
     font-weight: 700;
     color: var(--ok);
     margin-left: 4px;
+  }
+  .reparacion-observaciones-texto-view{
+    font-weight: 400;
+    font-size: 13.5px;
+    color: var(--ink);
+    white-space: normal;
+  }
+  .reparacion-observaciones-texto-view .reparacion-card-sin-equipo{
+    color: var(--ink-soft);
+    font-style: italic;
   }
 
   .tipo-pedido-toggle{
@@ -2145,6 +2204,24 @@
                 </div>
               </div>
             </div>
+          </div>
+
+          <div class="panel-header" style="margin-top:20px; margin-bottom:14px;">
+            <h2 style="font-size:14px;">Observaciones iniciales</h2>
+            <button type="button" class="btn-icon-inline" id="btn-editar-observaciones" title="Agregar o editar las observaciones">✏️</button>
+          </div>
+
+          <div id="reparacion-observaciones-texto" class="reparacion-equipo-texto-view reparacion-observaciones-texto-view"><!-- generado por reparaciones.js --></div>
+
+          <div class="form-group" id="reparacion-observaciones-edicion-wrap" style="display:none; margin-bottom:0;">
+            <div class="rte-toolbar" id="reparacion-observaciones-toolbar">
+              <button type="button" class="rte-btn" data-cmd="bold" title="Negrilla (Ctrl+B)"><b>N</b></button>
+              <button type="button" class="rte-btn" data-cmd="italic" title="Cursiva (Ctrl+I)"><i>K</i></button>
+              <span class="rte-sep"></span>
+              <button type="button" class="rte-btn" data-cmd="insertUnorderedList" title="Lista con viñetas">☰ •</button>
+              <button type="button" class="rte-btn" data-cmd="insertOrderedList" title="Lista numerada">☰ 1.</button>
+            </div>
+            <div id="reparacion-observaciones-input" class="rte-editable" contenteditable="true" data-placeholder="Describe el estado en que llegó el equipo: golpes, ruidos, fugas, piezas faltantes, etc."></div>
           </div>
         </div>
 
