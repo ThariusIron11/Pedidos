@@ -60,6 +60,13 @@
   const subtabPanels = modal.querySelectorAll('.subtab-panel');
 
   // Sub-pestaña Equipos: un único bloque fijo (no una lista repetible).
+  // Igual que la Evidencia fotográfica: una vez guardado, se ve como texto;
+  // el botón ✏️ abre la edición y al volver a tocarlo (💾) se guarda y
+  // vuelve a mostrarse como texto.
+  const btnEditarEquipo = document.getElementById('btn-editar-equipo');
+  const equipoTextoEl = document.getElementById('reparacion-equipo-texto');
+  const equipoEdicionWrap = document.getElementById('reparacion-equipo-edicion-wrap');
+
   const chkEsMotoreductor = document.getElementById('reparacion-equipo-es-motoreductor');
   const bloqueIndividual = document.getElementById('reparacion-bloque-individual');
   const bloqueMotoreductor = document.getElementById('reparacion-bloque-motoreductor');
@@ -433,6 +440,70 @@
     onSeleccion: (eq) => mostrarOcultarSerial(serialWrapReductor, inputSerialReductor, eq)
   });
 
+  // Icono del tipo de equipo según su tipoId (para la vista de texto, antes
+  // de que el equipo exista como objeto del catálogo resuelto).
+  function iconoDeTipoId(tipoId) {
+    const tipo = (window.tiposEquipoCache || []).find(t => t.id === tipoId);
+    return tipo?.icono ? tipo.icono + ' ' : '';
+  }
+
+  // Arma el HTML de la vista de solo lectura a partir de lo que hay
+  // escrito/elegido en ese momento en el formulario (sin tocar Firestore:
+  // si el equipo es nuevo, no se crea en el catálogo hasta guardar la
+  // reparación completa — acá solo se marca con la etiqueta "(nuevo)").
+  function previewEquipoDesdeFormulario() {
+    if (chkEsMotoreductor.checked) {
+      const motorTexto = inputMotorTexto.value.trim();
+      const reductorTexto = inputReductorTexto.value.trim();
+      if (!motorTexto && !reductorTexto) return '';
+
+      const motorHtml = motorTexto
+        ? escapeHtml(motorTexto) + (inputMotorId.value ? '' : ' <span class="tag-nuevo-equipo">(nuevo)</span>')
+        : '<span style="color:var(--danger);">Falta el motor</span>';
+      const reductorHtml = reductorTexto
+        ? escapeHtml(reductorTexto) + (inputReductorId.value ? '' : ' <span class="tag-nuevo-equipo">(nuevo)</span>')
+        : '<span style="color:var(--danger);">Falta el reductor</span>';
+      const serialMotor = inputSerialMotor.value.trim() ? `<span class="reparacion-card-serial">S/N ${escapeHtml(inputSerialMotor.value.trim())}</span>` : '';
+      const serialReductor = inputSerialReductor.value.trim() ? `<span class="reparacion-card-serial">S/N ${escapeHtml(inputSerialReductor.value.trim())}</span>` : '';
+      return `🔗 Motoreductor — ⚡ ${motorHtml}${serialMotor} + ⚙️ ${reductorHtml}${serialReductor}`;
+    }
+
+    const texto = inputEquipoTexto.value.trim();
+    if (!texto) return '';
+    const nuevoTag = inputEquipoId.value ? '' : ' <span class="tag-nuevo-equipo">(nuevo)</span>';
+    const serial = inputSerialIndividual.value.trim() ? `<span class="reparacion-card-serial">S/N ${escapeHtml(inputSerialIndividual.value.trim())}</span>` : '';
+    return `${iconoDeTipoId(selectTipoFiltro.value)}${escapeHtml(texto)}${nuevoTag}${serial}`;
+  }
+
+  function actualizarTextoEquipo() {
+    const html = previewEquipoDesdeFormulario();
+    equipoTextoEl.innerHTML = html || '<span class="reparacion-card-sin-equipo">Aún no se ha registrado ningún equipo.</span>';
+  }
+
+  function mostrarEdicionEquipo() {
+    equipoEdicionWrap.style.display = 'block';
+    equipoTextoEl.style.display = 'none';
+    btnEditarEquipo.textContent = '💾';
+    btnEditarEquipo.title = 'Guardar y volver a la vista de texto';
+  }
+
+  function ocultarEdicionEquipo() {
+    equipoEdicionWrap.style.display = 'none';
+    equipoTextoEl.style.display = 'block';
+    btnEditarEquipo.textContent = '✏️';
+    btnEditarEquipo.title = 'Agregar o editar el equipo';
+    actualizarTextoEquipo();
+  }
+
+  btnEditarEquipo.addEventListener('click', () => {
+    const estaAbierto = equipoEdicionWrap.style.display !== 'none';
+    if (estaAbierto) {
+      ocultarEdicionEquipo();
+    } else {
+      mostrarEdicionEquipo();
+    }
+  });
+
   // Deja el bloque de equipo completamente en blanco (equipo nuevo/borrado).
   function limpiarEquipoReparacion() {
     chkEsMotoreductor.checked = false;
@@ -460,7 +531,12 @@
   function cargarEquipoReparacion(equipo) {
     limpiarEquipoReparacion();
     poblarSelectTipoFiltro();
-    if (!equipo) return;
+    if (!equipo) {
+      // Nada guardado todavía: se muestra directamente el formulario para
+      // completarlo (no tiene sentido mostrar una vista de texto vacía).
+      mostrarEdicionEquipo();
+      return;
+    }
 
     if (equipo.tipoLinea === 'motoreductor') {
       chkEsMotoreductor.checked = true;
@@ -494,6 +570,10 @@
       mostrarOcultarSerial(serialWrapIndividual, inputSerialIndividual, !!(equipo.serial || eq?.usaSerial));
       inputSerialIndividual.value = equipo.serial || '';
     }
+
+    // Ya había un equipo guardado: se muestra como texto, listo para
+    // tocar el lápiz si hay que corregirlo.
+    ocultarEdicionEquipo();
   }
 
   // Si ya hay un equipo elegido del catálogo, se usa tal cual. Si no, pero

@@ -717,6 +717,30 @@
     padding: 10px 0;
   }
 
+  .reparacion-equipo-texto-view{
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink);
+    padding: 10px 12px;
+    background: #fafafb;
+    border: 1px solid #e2e4e9;
+    border-radius: var(--radius);
+    min-height: 20px;
+    line-height: 1.4;
+  }
+  .reparacion-equipo-texto-view .reparacion-card-sin-equipo{
+    font-weight: 500;
+    font-style: italic;
+    color: var(--ink-soft);
+  }
+  .reparacion-equipo-texto-view .tag-nuevo-equipo{
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--ok);
+    margin-left: 4px;
+  }
+
   .tipo-pedido-toggle{
     display: flex;
     gap: 10px;
@@ -2062,9 +2086,12 @@
         <div class="subtab-panel" id="subtab-reparacion-equipos">
           <div class="panel-header" style="margin-bottom:14px;">
             <h2 style="font-size:14px;">Equipo que ingresa a esta reparación</h2>
+            <button type="button" class="btn-icon-inline" id="btn-editar-equipo" title="Agregar o editar el equipo">✏️</button>
           </div>
 
-          <div class="equipo-pedido-row-wrap">
+          <div id="reparacion-equipo-texto" class="reparacion-equipo-texto-view"><!-- generado por reparaciones.js --></div>
+
+          <div class="equipo-pedido-row-wrap" id="reparacion-equipo-edicion-wrap" style="display:none;">
             <label class="extra-check chk-es-motoreductor" style="margin-bottom:8px;">
               <input type="checkbox" id="reparacion-equipo-es-motoreductor">
               🔗 Es Motoreductor (Motor + Reductor)
