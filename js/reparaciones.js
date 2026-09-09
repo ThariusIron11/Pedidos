@@ -1342,6 +1342,18 @@
         reparacionesCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         window.reparacionesCache = reparacionesCache;
         renderLista();
+        // Si la ficha de esta reparación está abierta, se refresca en vivo
+        // (ej. al eliminar desde Pedidos el pedido asociado: pedidos.js le
+        // borra el pedidoId a este documento, y sin esto el botón "Ver
+        // pedido ↗" se quedaría ahí hasta cerrar y reabrir la ficha).
+        if (modalFicha.classList.contains('open')) {
+          const reparacionAbierta = reparacionesCache.find(r => r.id === btnEditarDesdeFicha.dataset.id);
+          if (reparacionAbierta) {
+            actualizarHeaderAcciones(reparacionAbierta);
+            renderFichaDatos(reparacionAbierta);
+            renderFichaEquipos(reparacionAbierta);
+          }
+        }
         document.dispatchEvent(new CustomEvent('reparaciones:cambio', { detail: { reparaciones: reparacionesCache } }));
       },
       (err) => {

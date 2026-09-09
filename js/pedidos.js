@@ -701,6 +701,15 @@
     if (!ok) return;
     try {
       await db.collection(COLECCION).doc(pedido.id).delete();
+      // Si el pedido venía de una reparación (enlace 1 a 1 vía mismo ID),
+      // esta queda con un `pedidoId` apuntando a un documento que ya no
+      // existe — sin esto, su ficha sigue mostrando "Ver pedido" en vez de
+      // volver a ofrecer "Crear pedido".
+      if (pedido.reparacionId) {
+        await db.collection('reparaciones').doc(pedido.reparacionId).update({
+          pedidoId: firebase.firestore.FieldValue.delete()
+        });
+      }
     } catch (err) {
       console.error('Error eliminando pedido:', err);
       alert('No se pudo eliminar el pedido. Revisa la consola.');
