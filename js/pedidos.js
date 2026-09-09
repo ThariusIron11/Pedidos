@@ -6,6 +6,11 @@
 //   numero (entero, se reutiliza el menor número libre si se borra un pedido),
 //   companiaId (referencia a "clientes"),
 //   contacto (nombre, tomado de contactosPedidos de la compañía),
+//   tipo ('normal' | 'reparacion' — se pone 'reparacion' automáticamente
+//         cuando el pedido se creó desde la ficha de una reparación),
+//   reparacionId (solo si viene de una reparación — mismo valor que el ID
+//                 de este mismo pedido, porque se crea con ese mismo ID;
+//                 ver "Enlace con Pedidos" en reparaciones.js),
 //   equipos: [{ equipoId, cantidad, ordenCompra }]
 // }
 //
@@ -739,6 +744,16 @@
       personaMostrada = `${persona} / ${contactoSubsidiaria}`;
     }
 
+    // Si este pedido se generó a partir de una reparación (mismo ID en las
+    // dos colecciones), se muestra de dónde viene con un enlace directo a
+    // esa ficha.
+    let origenHtml = '';
+    if (pedido.reparacionId) {
+      const reparacion = (window.reparacionesCache || []).find(r => r.id === pedido.reparacionId);
+      const numeroTexto = reparacion ? ('R' + String(reparacion.numero).padStart(2, '0')) : 'reparación de origen';
+      origenHtml = campoFicha('Viene de', `🔧 ${escapeHtml(numeroTexto)} <button type="button" class="btn-link-inline" data-abrir-reparacion="${pedido.reparacionId}">Ver ficha ↗</button>`);
+    }
+
     fichaSeccionCliente.innerHTML = `
       <h4>Cliente</h4>
       <div class="ficha-campos">
@@ -748,6 +763,7 @@
         ${campoFicha('Dirección', direccion)}
         ${campoFicha('Dirección de remisión', direccionRemision)}
         ${campoFicha('¿Contraentrega?', contraentrega)}
+        ${origenHtml}
       </div>
     `;
   }
@@ -1215,6 +1231,20 @@
     origenEdicion = 'ficha';
     cerrarFicha({ mantenerVolver: true });
     if (pedido) abrirModalEditar(pedido);
+  });
+
+  // Enlace "Viene de" dentro de la sección Cliente: abre la ficha de la
+  // reparación que dio origen a este pedido (ver reparaciones.js).
+  fichaSeccionCliente.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-abrir-reparacion]');
+    if (!btn) return;
+    const idReparacion = btn.dataset.abrirReparacion;
+    if (!window.abrirFichaReparacion) {
+      alert('No se pudo abrir la reparación: la pestaña de Reparaciones no está cargada en esta página.');
+      return;
+    }
+    cerrarFicha();
+    window.abrirFichaReparacion(idReparacion);
   });
 
   // ---------- Sub-modal: números de serial de un equipo del pedido ----------

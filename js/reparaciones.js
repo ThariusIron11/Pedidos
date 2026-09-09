@@ -32,11 +32,21 @@
 //                           libre sobre el estado en que llegó el equipo.
 //                           Mismo patrón texto/edición que el equipo y la
 //                           evidencia),
+//   pedidoId (se llena cuando esta reparación ya se convirtió en un pedido
+//             de salida — ver más abajo "Enlace con Pedidos". Vale siempre
+//             lo mismo que el propio ID de la reparación, porque el pedido
+//             se crea con ese mismo ID),
 //   equipo: null, o uno de:
 //     { tipoLinea: 'individual', tipoId, equipoId, serial? }
 //     { tipoLinea: 'motoreductor', motorEquipoId, motorSerial?,
 //       reductorEquipoId, reductorSerial? }
 // }
+//
+// Depende también de window.pedidosCache (expuesto por pedidos.js) para
+// calcular el siguiente N° de pedido y confirmar que el pedido recién
+// creado ya llegó por su propio listener antes de abrir su ficha; y expone
+// window.abrirFichaReparacion(reparacionId) para que pedidos.js pueda abrir
+// la ficha de la reparación de origen de un pedido.
 
 (function () {
   const COLECCION = 'reparaciones';
@@ -767,6 +777,7 @@
     inputEvidencia.value = reparacion?.evidenciaFotografica || '';
     ocultarEdicionEvidencia();
     headerNumero.textContent = textoHeader(reparacion);
+    actualizarHeaderAcciones(reparacion);
     cargarEquipoReparacion(reparacion?.equipo || null);
     cargarObservacionesReparacion(reparacion?.observacionesIniciales || '');
     resetSubtabs();
@@ -802,6 +813,169 @@
     // Clic por fuera: solo oculta, no toca los datos digitados.
     modal.classList.remove('open');
   }
+
+  // ---------- Enlace con Pedidos: "Crear pedido" / "Ver pedido" ----------
+  // Cuando una reparación ya está encaminada, se convierte en un pedido de
+  // salida con el MISMO ID que la reparación (así quedan enlazados 1 a 1
+  // sin tener que mantener referencias cruzadas para poder encontrarlos:
+  // basta con buscar ese mismo ID en la otra colección). Se copia el
+  // cliente, el encargado de recibirlo y el equipo ya cargado; lo demás
+  // (cantidad, orden de compra, etc.) se termina de ajustar en Pedidos.
+  const headerAcciones = document.getElementById('reparacion-header-acciones');
+
+  function actualizarHeaderAcciones(reparacion) {
+    if (!reparacion) {
+      headerAcciones.innerHTML = ''; // reparación nueva, todavía sin guardar
+      return;
+    }
+    if (reparacion.pedidoId) {
+      headerAcciones.innerHTML = `<button type="button" class="btn-pill-header" id="btn-ver-pedido-desde-reparacion">🧾 Ver pedido ↗</button>`;
+      document.getElementById('btn-ver-pedido-desde-reparacion').addEventListener('click', () => {
+        if (!window.abrirFichaPedido) {
+          alert('No se pudo abrir el pedido: la pestaña de Pedidos no está cargada en esta página.');
+          return;
+        }
+        cerrarModalConservandoBorrador();
+        window.abrirFichaPedido(reparacion.pedidoId);
+      });
+    } else {
+      headerAcciones.innerHTML = `<button type="button" class="btn-pill-header" id="btn-crear-pedido-desde-reparacion">🧾 Crear pedido</button>`;
+      document.getElementById('btn-crear-pedido-desde-reparacion').addEventListener('click', () => crearPedidoDesdeReparacion(reparacion));
+    }
+  }
+
+  // Menor número entero libre, pero mirando los N° ya usados en Pedidos
+  // (otra colección, expuesta por pedidos.js en window.pedidosCache).
+  function siguienteNumeroPedidoDisponible() {
+    const usados = new Set((window.pedidosCache || []).map(p => p.numero));
+    let n = 1;
+    while (usados.has(n)) n++;
+    return n;
+  }
+
+  // Traduce el equipo cargado en esta reparación al formato que espera el
+  // arreglo `equipos` de un pedido (un solo ítem, cantidad 1). Si el equipo
+  // tenía serial capturado al ingresar, se precarga también.
+  function equipoReparacionAItemPedido(equipo) {
+    if (!equipo) return null;
+    if (equipo.tipoLinea === 'motoreductor') {
+      if (!equipo.motorEquipoId || !equipo.reductorEquipoId) return null;
+      const item = {
+        tipoLinea: 'motoreductor',
+        motorEquipoId: equipo.motorEquipoId,
+        reductorEquipoId: equipo.reductorEquipoId,
+        cantidad: 1,
+        ordenCompra: '',
+        llevaBrazo: false,
+        llevaEje: false,
+        unidadesPreparadas: []
+      };
+      if (equipo.motorSerial) item.serialesMotor = [equipo.motorSerial];
+      if (equipo.reductorSerial) item.serialesReductor = [equipo.reductorSerial];
+      return item;
+    }
+    if (!equipo.equipoId) return null;
+    const item = {
+      tipoLinea: 'individual',
+      equipoId: equipo.equipoId,
+      cantidad: 1,
+      ordenCompra: '',
+      llevaBrazo: false,
+      llevaEje: false,
+      unidadesPreparadas: []
+    };
+    if (equipo.serial) item.seriales = [equipo.serial];
+    return item;
+  }
+
+  // El "encargado" de la reparación es texto libre, mientras que Pedidos
+  // elige el contacto de una lista fija (contactosPedidos de la compañía).
+  // Si el texto coincide con alguno de esa lista (sin importar mayúsculas),
+  // se usa tal cual está ahí para que el select de Pedidos lo reconozca; si
+  // no coincide con ninguno, igual se guarda el texto escrito.
+  function contactoParaPedido(companiaId, contactoReparacion) {
+    if (!contactoReparacion) return '';
+    const compania = buscarCompania(companiaId);
+    const opciones = compania?.contactosPedidos || [];
+    const match = opciones.find(nombre => normalizar(nombre) === normalizar(contactoReparacion));
+    return match || contactoReparacion;
+  }
+
+  // Tras crear el pedido, pedidos.js lo recibe por su propio listener en
+  // tiempo real (window.pedidosCache) — normalmente casi al instante, pero
+  // por si acaso se espera un poco antes de intentar abrir su ficha.
+  async function esperarPedidoEnCache(id, intentos = 12) {
+    for (let i = 0; i < intentos; i++) {
+      if ((window.pedidosCache || []).some(p => p.id === id)) return true;
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+    return false;
+  }
+
+  async function crearPedidoDesdeReparacion(reparacion) {
+    if (!reparacion.companiaId) {
+      alert('Antes de crear el pedido, elige la compañía en "Datos generales".');
+      subtabButtons[0].click();
+      return;
+    }
+    const itemEquipo = equipoReparacionAItemPedido(reparacion.equipo);
+    if (!itemEquipo) {
+      alert('Antes de crear el pedido, completa el equipo en la sub-pestaña "Equipos".');
+      subtabButtons[1].click();
+      return;
+    }
+
+    const compania = buscarCompania(reparacion.companiaId);
+    const confirmar = confirm(
+      `¿Crear un pedido a partir de esta reparación?\n\n` +
+      `Se copiará el cliente (${compania ? compania.nombre : 'compañía'}), el encargado de recibirlo y el equipo ya cargado. ` +
+      `Lo demás (cantidad, orden de compra, etc.) se completa después en Pedidos.`
+    );
+    if (!confirmar) return;
+
+    const btn = document.getElementById('btn-crear-pedido-desde-reparacion');
+    if (btn) { btn.disabled = true; btn.textContent = 'Creando...'; }
+
+    try {
+      const numero = siguienteNumeroPedidoDisponible();
+      const datosPedido = {
+        numero,
+        companiaId: reparacion.companiaId,
+        contacto: contactoParaPedido(reparacion.companiaId, reparacion.contacto),
+        tipo: 'reparacion',
+        equipos: [itemEquipo],
+        envioSubsidiaria: false,
+        subsidiariaId: null,
+        subsidiariaContacto: null,
+        reparacionId: reparacion.id,
+        creadoEn: firebase.firestore.FieldValue.serverTimestamp()
+      };
+
+      // Mismo ID que la reparación: quedan enlazados 1 a 1 automáticamente.
+      await db.collection('pedidos').doc(reparacion.id).set(datosPedido);
+      await db.collection(COLECCION).doc(reparacion.id).update({ pedidoId: reparacion.id });
+
+      cerrarModalConservandoBorrador();
+      const llego = await esperarPedidoEnCache(reparacion.id);
+      if (llego && window.abrirFichaPedido) {
+        window.abrirFichaPedido(reparacion.id);
+      } else {
+        alert(`Pedido creado (N°${numero}). Ábrelo desde la pestaña Pedidos.`);
+      }
+    } catch (err) {
+      console.error('Error creando el pedido desde la reparación:', err);
+      alert('No se pudo crear el pedido. Revisa la consola.');
+      if (btn) { btn.disabled = false; btn.textContent = '🧾 Crear pedido'; }
+    }
+  }
+
+  // Permite abrir la ficha (el mismo modal de editar) de una reparación
+  // desde otro archivo — ej. pedidos.js, desde el pedido creado a partir de
+  // ella.
+  window.abrirFichaReparacion = function (reparacionId) {
+    const reparacion = reparacionesCache.find(r => r.id === reparacionId);
+    if (reparacion) abrirModalEditar(reparacion);
+  };
 
   function cancelarYLimpiar() {
     form.reset();

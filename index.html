@@ -857,6 +857,37 @@
     margin-left: 6px;
   }
 
+  /* ---------- Enlace Reparación ↔ Pedido ---------- */
+  .btn-pill-header{
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--graphite);
+    background: #fff;
+    border: none;
+    padding: 6px 13px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .btn-pill-header:hover{ background: #f3d4c4; color: var(--copper); }
+  .btn-pill-header:disabled{ opacity: 0.6; cursor: not-allowed; }
+  .btn-link-inline{
+    display: inline;
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: 600;
+    color: var(--copper);
+    background: none;
+    border: none;
+    padding: 0;
+    margin-left: 6px;
+    cursor: pointer;
+  }
+  .btn-link-inline:hover{ text-decoration: underline; }
+
   /* ---------- Ficha de pedido (solo lectura) ---------- */
   .ficha-seccion{
     margin-bottom: 18px;
@@ -2098,6 +2129,7 @@
     <div class="modal modal-ficha">
       <div class="ficha-header">
         <div class="ficha-header-numero" id="reparacion-header-numero">Nueva reparación</div>
+        <div class="ficha-header-tags" id="reparacion-header-acciones"><!-- generado por reparaciones.js: Crear/Ver pedido --></div>
       </div>
 
       <form id="form-reparacion">
