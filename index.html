@@ -1117,34 +1117,67 @@
     border-color: #b8bcc4;
     box-shadow: 0 1px 4px rgba(28,33,40,0.06);
   }
-  .reparacion-card-header{
+  .reparacion-card-top{
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
   }
   .reparacion-card-icono{ font-size: 15px; }
   .reparacion-card-numero{
     font-weight: 700;
-    font-size: 14px;
+    font-size: 13px;
     color: var(--copper);
+    background: var(--copper-soft);
+    padding: 2px 9px;
+    border-radius: 999px;
+  }
+  .reparacion-card-equipo{
+    font-weight: 700;
+    font-size: 15.5px;
+    color: var(--ink);
+    line-height: 1.35;
+    margin-bottom: 4px;
+  }
+  .reparacion-card-equipo .reparacion-card-sin-equipo{
+    font-weight: 500;
+    font-style: italic;
+    color: var(--ink-soft);
+  }
+  .reparacion-card-serial{
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    background: #f1f2f4;
+    border: 1px solid #e2e4e9;
+    border-radius: 999px;
+    padding: 1px 8px;
+    margin-left: 4px;
+    vertical-align: middle;
   }
   .reparacion-card-compania{
     font-weight: 600;
-    font-size: 14px;
-    color: var(--ink);
-  }
-  .reparacion-card-resumen{
+    font-size: 13.5px;
     color: var(--ink-soft);
-    font-size: 13px;
   }
-  .reparacion-card-resumen a{
+  .reparacion-card-footer{
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed #e2e4e9;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+  }
+  .reparacion-card-evidencia{
     color: var(--copper);
     font-weight: 600;
     text-decoration: none;
   }
-  .reparacion-card-resumen a:hover{ text-decoration: underline; }
+  .reparacion-card-evidencia:hover{ text-decoration: underline; }
   .reparacion-card-actions{
     margin-left: auto;
     display: flex;
@@ -1785,7 +1818,7 @@
         </div>
 
         <div class="form-group" style="max-width:340px;">
-          <input type="text" id="buscador-reparaciones" placeholder="Buscar por compañía, encargado o número...">
+          <input type="text" id="buscador-reparaciones" placeholder="Buscar por compañía, equipo, serial o número...">
         </div>
 
         <div class="reparaciones-cards" id="reparaciones-cards">
@@ -2028,11 +2061,64 @@
 
         <div class="subtab-panel" id="subtab-reparacion-equipos">
           <div class="panel-header" style="margin-bottom:14px;">
-            <h2 style="font-size:14px;">Equipos que ingresan a esta reparación</h2>
-            <button type="button" class="btn" id="btn-agregar-reparacion-equipo">+ Agregar equipo</button>
+            <h2 style="font-size:14px;">Equipo que ingresa a esta reparación</h2>
           </div>
-          <div class="equipos-pedido-list" id="reparacion-equipos-list"><!-- generado por reparaciones.js --></div>
-          <div class="empty-equipos-pedido" id="reparacion-equipos-empty">Todavía no has agregado ningún equipo a esta reparación.</div>
+
+          <div class="equipo-pedido-row-wrap">
+            <label class="extra-check chk-es-motoreductor" style="margin-bottom:8px;">
+              <input type="checkbox" id="reparacion-equipo-es-motoreductor">
+              🔗 Es Motoreductor (Motor + Reductor)
+            </label>
+
+            <div class="bloque-individual" id="reparacion-bloque-individual">
+              <div class="equipo-pedido-row tiene-filtro" style="grid-template-columns: 130px 2fr;">
+                <select id="reparacion-equipo-tipo-filtro">
+                  <option value="">Tipo...</option>
+                </select>
+                <div class="buscador-equipo">
+                  <input type="text" id="reparacion-equipo-buscador-input" placeholder="Escribe el nombre/modelo del equipo..." autocomplete="off">
+                  <input type="hidden" id="reparacion-equipo-select">
+                  <div class="buscador-resultados"></div>
+                </div>
+              </div>
+              <div class="aviso-equipo-nuevo" id="reparacion-equipo-aviso-nuevo" style="display:none;">🆕 No está en el catálogo — al guardar se registrará como equipo nuevo (variante "Reparación") para poder reutilizarlo si vuelve a llegar.</div>
+              <div class="form-group" id="reparacion-equipo-serial-wrap" style="display:none; margin-top:10px; margin-bottom:0;">
+                <label for="reparacion-equipo-serial">🔢 Número de serial</label>
+                <input type="text" id="reparacion-equipo-serial" placeholder="Número de serial del equipo">
+              </div>
+            </div>
+
+            <div class="reparacion-equipo-motoreductor" id="reparacion-bloque-motoreductor" style="display:none;">
+              <div class="motoreductor-selects">
+                <div>
+                  <label class="mini-label">⚡ Motor</label>
+                  <div class="buscador-equipo">
+                    <input type="text" id="reparacion-motor-buscador-input" placeholder="Escribe el motor..." autocomplete="off">
+                    <input type="hidden" id="reparacion-motor-select">
+                    <div class="buscador-resultados"></div>
+                  </div>
+                  <div class="aviso-equipo-nuevo" id="reparacion-motor-aviso-nuevo" style="display:none;">🆕 Motor nuevo — se registrará en el catálogo (variante "Reparación").</div>
+                  <div class="form-group" id="reparacion-motor-serial-wrap" style="display:none; margin-top:8px; margin-bottom:0;">
+                    <label for="reparacion-motor-serial">🔢 Serial del motor</label>
+                    <input type="text" id="reparacion-motor-serial" placeholder="Número de serial">
+                  </div>
+                </div>
+                <div>
+                  <label class="mini-label">⚙️ Reductor</label>
+                  <div class="buscador-equipo">
+                    <input type="text" id="reparacion-reductor-buscador-input" placeholder="Escribe el reductor..." autocomplete="off">
+                    <input type="hidden" id="reparacion-reductor-select">
+                    <div class="buscador-resultados"></div>
+                  </div>
+                  <div class="aviso-equipo-nuevo" id="reparacion-reductor-aviso-nuevo" style="display:none;">🆕 Reductor nuevo — se registrará en el catálogo (variante "Reparación").</div>
+                  <div class="form-group" id="reparacion-reductor-serial-wrap" style="display:none; margin-top:8px; margin-bottom:0;">
+                    <label for="reparacion-reductor-serial">🔢 Serial del reductor</label>
+                    <input type="text" id="reparacion-reductor-serial" placeholder="Número de serial">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="modal-actions">

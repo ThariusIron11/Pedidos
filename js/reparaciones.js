@@ -1,13 +1,20 @@
 // ================== Pestaña: Reparaciones ==================
 // CRUD de reparaciones sobre Firestore (colección "reparaciones").
 //
-// PASO 1 (este archivo, por ahora): solo se registra QUÉ COMPAÑÍA trae
-// equipos a reparar y QUIÉN es el encargado de reparaciones de esa
-// compañía (a diferencia de Pedidos, que usa "encargado de PEDIDOS", acá
-// se usa el campo "encargado de reparaciones" del cliente).
+// Se registra QUÉ COMPAÑÍA trae el equipo a reparar, QUIÉN es el encargado
+// de reparaciones de esa compañía (a diferencia de Pedidos, que usa
+// "encargado de PEDIDOS", acá se usa el campo "encargado de reparaciones"
+// del cliente) y el EQUIPO que ingresa.
 //
-// El detalle de los equipos que ingresan (reductores, motores, motor ZD,
-// motoreductor) se agrega en un paso siguiente, sobre esta misma base.
+// Una reparación solo puede traer UN equipo: un motor, un reductor, un
+// motor ZD, o un motoreductor (motor + reductor juntos, con el checkbox
+// "Es Motoreductor"). El "Tipo" se busca en el mismo catálogo de Equipos
+// que usa Pedidos, con autocompletar. Si el equipo elegido en el catálogo
+// tiene número de serial habilitado ("usaSerial"), aparece un campo para
+// escribirlo. Si el equipo NO existe en el catálogo (porque no es de
+// nuestra marca, por ejemplo), al guardar la reparación se crea
+// automáticamente en Equipos con la variante "Reparación" — así, si el
+// mismo modelo vuelve a llegar más adelante, ya aparece en el buscador.
 //
 // Cada reparación:
 // {
@@ -17,7 +24,14 @@
 //   companiaId,
 //   contacto (encargado de reparaciones; se autocompleta desde el cliente
 //             elegido, pero se puede ajustar a mano por si ese día recibe
-//             otra persona)
+//             otra persona — no se muestra en la ficha de listado, solo
+//             sirve como referencia interna al preparar la entrega),
+//   fechaIngreso,
+//   evidenciaFotografica,
+//   equipo: null, o uno de:
+//     { tipoLinea: 'individual', tipoId, equipoId, serial? }
+//     { tipoLinea: 'motoreductor', motorEquipoId, motorSerial?,
+//       reductorEquipoId, reductorSerial? }
 // }
 
 (function () {
@@ -45,9 +59,29 @@
   const subtabButtons = modal.querySelectorAll('.subtab-btn');
   const subtabPanels = modal.querySelectorAll('.subtab-panel');
 
-  const reparacionEquiposList = document.getElementById('reparacion-equipos-list');
-  const reparacionEquiposEmpty = document.getElementById('reparacion-equipos-empty');
-  const btnAgregarReparacionEquipo = document.getElementById('btn-agregar-reparacion-equipo');
+  // Sub-pestaña Equipos: un único bloque fijo (no una lista repetible).
+  const chkEsMotoreductor = document.getElementById('reparacion-equipo-es-motoreductor');
+  const bloqueIndividual = document.getElementById('reparacion-bloque-individual');
+  const bloqueMotoreductor = document.getElementById('reparacion-bloque-motoreductor');
+  const selectTipoFiltro = document.getElementById('reparacion-equipo-tipo-filtro');
+
+  const inputEquipoTexto = document.getElementById('reparacion-equipo-buscador-input');
+  const inputEquipoId = document.getElementById('reparacion-equipo-select');
+  const avisoEquipoNuevo = document.getElementById('reparacion-equipo-aviso-nuevo');
+  const serialWrapIndividual = document.getElementById('reparacion-equipo-serial-wrap');
+  const inputSerialIndividual = document.getElementById('reparacion-equipo-serial');
+
+  const inputMotorTexto = document.getElementById('reparacion-motor-buscador-input');
+  const inputMotorId = document.getElementById('reparacion-motor-select');
+  const avisoMotorNuevo = document.getElementById('reparacion-motor-aviso-nuevo');
+  const serialWrapMotor = document.getElementById('reparacion-motor-serial-wrap');
+  const inputSerialMotor = document.getElementById('reparacion-motor-serial');
+
+  const inputReductorTexto = document.getElementById('reparacion-reductor-buscador-input');
+  const inputReductorId = document.getElementById('reparacion-reductor-select');
+  const avisoReductorNuevo = document.getElementById('reparacion-reductor-aviso-nuevo');
+  const serialWrapReductor = document.getElementById('reparacion-reductor-serial-wrap');
+  const inputSerialReductor = document.getElementById('reparacion-reductor-serial');
 
   let reparacionesCache = []; // también expuesto en window.reparacionesCache
   let borradorId = null;
@@ -215,13 +249,16 @@
   if (window.clientesCache && window.clientesCache.length) poblarSelectCompanias();
 
   // ---------- Sub-pestaña Equipos: qué entra a la reparación ----------
-  // Cada fila es un equipo (reductor, motor, motor ZD, o motoreductor =
-  // motor + reductor juntos). El "Tipo" se busca en el mismo catálogo de
-  // Equipos que usa Pedidos, con autocompletar. La particularidad acá: si el
-  // equipo NO existe en el catálogo (porque no es de nuestra marca, por
-  // ejemplo), al guardar la reparación se crea automáticamente en Equipos
-  // con la variante "Reparación" — así, si el mismo modelo vuelve a llegar
-  // más adelante, ya aparece en el buscador y no hay que escribirlo de nuevo.
+  // Un único equipo por reparación: motor, reductor, motor ZD, o
+  // motoreductor (motor + reductor juntos, con el checkbox "Es
+  // Motoreductor"). El "Tipo" se busca en el mismo catálogo de Equipos que
+  // usa Pedidos, con autocompletar. Si el equipo elegido en el catálogo
+  // maneja número de serial ("usaSerial"), se muestra un campo para
+  // escribirlo. Si el equipo NO existe en el catálogo (porque no es de
+  // nuestra marca, por ejemplo), al guardar la reparación se crea
+  // automáticamente en Equipos con la variante "Reparación" — así, si el
+  // mismo modelo vuelve a llegar más adelante, ya aparece en el buscador y
+  // no hay que escribirlo de nuevo.
 
   // Tipos que puede ser una pieza individual (Motoreductor no aparece acá:
   // se maneja aparte con el checkbox "Es Motoreductor").
@@ -232,17 +269,34 @@
       tipos.map(t => `<option value="${t.id}">${t.icono ? t.icono + ' ' : ''}${escapeHtml(t.nombre)}</option>`).join('');
   }
 
-  function actualizarEmptyEquipos() {
-    reparacionEquiposEmpty.style.display = reparacionEquiposList.children.length ? 'none' : 'block';
+  function poblarSelectTipoFiltro() {
+    const actual = selectTipoFiltro.value;
+    selectTipoFiltro.innerHTML = opcionesTipoFiltroHtml();
+    if (actual) selectTipoFiltro.value = actual;
+  }
+
+  function actualizarModoEquipo() {
+    const esMr = chkEsMotoreductor.checked;
+    bloqueIndividual.style.display = esMr ? 'none' : 'block';
+    bloqueMotoreductor.style.display = esMr ? 'block' : 'none';
+  }
+  chkEsMotoreductor.addEventListener('change', actualizarModoEquipo);
+
+  // Muestra/oculta el campo de serial correspondiente. `mostrar` puede ser
+  // el equipo del catálogo (se muestra si `usaSerial`) o directamente un
+  // booleano.
+  function mostrarOcultarSerial(wrapEl, inputEl, eqOMostrar) {
+    const mostrar = typeof eqOMostrar === 'boolean' ? eqOMostrar : !!(eqOMostrar && eqOMostrar.usaSerial);
+    wrapEl.style.display = mostrar ? 'block' : 'none';
+    if (!mostrar) inputEl.value = '';
   }
 
   // Buscador con autocompletar del catálogo de Equipos (igual que en
   // Pedidos), con el agregado del aviso "se registrará como equipo nuevo"
-  // cuando lo escrito no coincide con nada del catálogo.
-  function inicializarBuscadorEquipoReparacion(contenedor, { idSelector, obtenerTipoId, avisoEl, seleccionInicialId }) {
-    const inputTexto = contenedor.querySelector('.buscador-input');
-    const inputValor = contenedor.querySelector(idSelector);
-    const resultados = contenedor.querySelector('.buscador-resultados');
+  // cuando lo escrito no coincide con nada del catálogo, y un callback para
+  // mostrar/ocultar el campo de serial según si el equipo elegido lo maneja.
+  function inicializarBuscadorEquipoReparacion({ inputTexto, inputValor, avisoEl, obtenerTipoId, onSeleccion }) {
+    const resultados = inputTexto.closest('.buscador-equipo').querySelector('.buscador-resultados');
 
     function catalogoFiltrado(texto) {
       const equipos = window.equiposCache || [];
@@ -278,142 +332,118 @@
       inputTexto.value = nombreMostrableEquipo(eq);
       resultados.classList.remove('open');
       actualizarAviso();
+      if (onSeleccion) onSeleccion(eq);
     }
 
     inputTexto.addEventListener('input', () => {
       inputValor.value = ''; // hasta que elija algo de la lista, se trata como "nuevo"
       mostrarResultados();
       actualizarAviso();
+      if (onSeleccion) onSeleccion(null); // equipo nuevo: nunca tiene serial en catálogo todavía
     });
     inputTexto.addEventListener('focus', mostrarResultados);
     inputTexto.addEventListener('blur', () => {
       setTimeout(() => resultados.classList.remove('open'), 120);
     });
 
-    if (seleccionInicialId) {
-      const eq = (window.equiposCache || []).find(x => x.id === seleccionInicialId);
-      if (eq) {
-        inputValor.value = eq.id;
-        inputTexto.value = nombreMostrableEquipo(eq);
-      }
-    }
-
     return { refrescar: mostrarResultados };
   }
 
-  function nuevaFilaReparacionEquipo(item) {
-    const esMotoreductor = item?.tipoLinea === 'motoreductor';
+  const apiEquipoIndividual = inicializarBuscadorEquipoReparacion({
+    inputTexto: inputEquipoTexto,
+    inputValor: inputEquipoId,
+    avisoEl: avisoEquipoNuevo,
+    obtenerTipoId: () => selectTipoFiltro.value,
+    onSeleccion: (eq) => mostrarOcultarSerial(serialWrapIndividual, inputSerialIndividual, eq)
+  });
 
-    const row = document.createElement('div');
-    row.className = 'equipo-pedido-row-wrap';
-    row.innerHTML = `
-      <label class="extra-check chk-es-motoreductor" style="margin-bottom:8px;">
-        <input type="checkbox" class="reparacion-equipo-es-motoreductor" ${esMotoreductor ? 'checked' : ''}>
-        🔗 Es Motoreductor (Motor + Reductor)
-      </label>
+  // Si cambia el tipo, la búsqueda se re-filtra y cualquier selección
+  // previa deja de ser válida (era de otro tipo).
+  selectTipoFiltro.addEventListener('change', () => {
+    inputEquipoId.value = '';
+    inputEquipoTexto.value = '';
+    mostrarOcultarSerial(serialWrapIndividual, inputSerialIndividual, false);
+    apiEquipoIndividual.refrescar();
+  });
 
-      <div class="bloque-individual" style="${esMotoreductor ? 'display:none;' : ''}">
-        <div class="equipo-pedido-row tiene-filtro" style="grid-template-columns: 130px 2fr auto;">
-          <select class="reparacion-equipo-tipo-filtro">${opcionesTipoFiltroHtml()}</select>
-          <div class="buscador-equipo">
-            <input type="text" class="buscador-input" placeholder="Escribe el nombre/modelo del equipo..." autocomplete="off">
-            <input type="hidden" class="reparacion-equipo-select">
-            <div class="buscador-resultados"></div>
-          </div>
-          <button type="button" class="remove-reparacion-equipo" title="Quitar equipo">✕</button>
-        </div>
-        <div class="aviso-equipo-nuevo" style="display:none;">🆕 No está en el catálogo — al guardar se registrará como equipo nuevo (variante "Reparación") para poder reutilizarlo si vuelve a llegar.</div>
-      </div>
+  inicializarBuscadorEquipoReparacion({
+    inputTexto: inputMotorTexto,
+    inputValor: inputMotorId,
+    avisoEl: avisoMotorNuevo,
+    obtenerTipoId: () => tipoIdPorNombre('motor'),
+    onSeleccion: (eq) => mostrarOcultarSerial(serialWrapMotor, inputSerialMotor, eq)
+  });
 
-      <div class="reparacion-equipo-motoreductor" style="${esMotoreductor ? '' : 'display:none;'}">
-        <div class="motoreductor-selects">
-          <div>
-            <label class="mini-label">⚡ Motor</label>
-            <div class="buscador-equipo">
-              <input type="text" class="buscador-input" placeholder="Escribe el motor..." autocomplete="off">
-              <input type="hidden" class="reparacion-equipo-motor">
-              <div class="buscador-resultados"></div>
-            </div>
-            <div class="aviso-equipo-nuevo" style="display:none;">🆕 Motor nuevo — se registrará en el catálogo (variante "Reparación").</div>
-          </div>
-          <div>
-            <label class="mini-label">⚙️ Reductor</label>
-            <div class="buscador-equipo">
-              <input type="text" class="buscador-input" placeholder="Escribe el reductor..." autocomplete="off">
-              <input type="hidden" class="reparacion-equipo-reductor">
-              <div class="buscador-resultados"></div>
-            </div>
-            <div class="aviso-equipo-nuevo" style="display:none;">🆕 Reductor nuevo — se registrará en el catálogo (variante "Reparación").</div>
-          </div>
-        </div>
-        <div style="display:flex; justify-content:flex-end; margin-top:8px;">
-          <button type="button" class="remove-reparacion-equipo" title="Quitar equipo">✕</button>
-        </div>
-      </div>
-    `;
+  inicializarBuscadorEquipoReparacion({
+    inputTexto: inputReductorTexto,
+    inputValor: inputReductorId,
+    avisoEl: avisoReductorNuevo,
+    obtenerTipoId: () => tipoIdPorNombre('reductor'),
+    onSeleccion: (eq) => mostrarOcultarSerial(serialWrapReductor, inputSerialReductor, eq)
+  });
 
-    row.querySelectorAll('.remove-reparacion-equipo').forEach(btn => {
-      btn.addEventListener('click', () => {
-        row.remove();
-        actualizarEmptyEquipos();
-      });
-    });
+  // Deja el bloque de equipo completamente en blanco (equipo nuevo/borrado).
+  function limpiarEquipoReparacion() {
+    chkEsMotoreductor.checked = false;
+    actualizarModoEquipo();
 
-    const chkEsMotoreductor = row.querySelector('.reparacion-equipo-es-motoreductor');
-    const bloqueIndividual = row.querySelector('.bloque-individual');
-    const bloqueMotoreductor = row.querySelector('.reparacion-equipo-motoreductor');
-    const selectTipoFiltro = row.querySelector('.reparacion-equipo-tipo-filtro');
+    inputEquipoTexto.value = '';
+    inputEquipoId.value = '';
+    selectTipoFiltro.value = '';
+    avisoEquipoNuevo.style.display = 'none';
+    mostrarOcultarSerial(serialWrapIndividual, inputSerialIndividual, false);
 
-    function actualizarModo() {
-      const esMr = chkEsMotoreductor.checked;
-      bloqueIndividual.style.display = esMr ? 'none' : 'block';
-      bloqueMotoreductor.style.display = esMr ? 'block' : 'none';
-    }
-    chkEsMotoreductor.addEventListener('change', actualizarModo);
+    inputMotorTexto.value = '';
+    inputMotorId.value = '';
+    avisoMotorNuevo.style.display = 'none';
+    mostrarOcultarSerial(serialWrapMotor, inputSerialMotor, false);
 
-    const contenedorIndividual = bloqueIndividual.querySelector('.buscador-equipo');
-    const apiIndividual = inicializarBuscadorEquipoReparacion(contenedorIndividual, {
-      idSelector: '.reparacion-equipo-select',
-      obtenerTipoId: () => selectTipoFiltro.value,
-      avisoEl: bloqueIndividual.querySelector('.aviso-equipo-nuevo'),
-      seleccionInicialId: !esMotoreductor ? item?.equipoId : null
-    });
-
-    // Si cambia el tipo, la búsqueda se re-filtra y cualquier selección
-    // previa deja de ser válida (era de otro tipo).
-    selectTipoFiltro.addEventListener('change', () => {
-      contenedorIndividual.querySelector('.reparacion-equipo-select').value = '';
-      apiIndividual.refrescar();
-    });
-
-    // Precarga del tipo, en modo edición, a partir del equipo ya guardado.
-    if (!esMotoreductor && item?.equipoId) {
-      const equipo = buscarEquipoCatalogo(item.equipoId);
-      if (equipo) selectTipoFiltro.value = equipo.tipoId || '';
-    }
-
-    const contenedoresMR = bloqueMotoreductor.querySelectorAll('.buscador-equipo');
-    const avisosMR = bloqueMotoreductor.querySelectorAll('.aviso-equipo-nuevo');
-    inicializarBuscadorEquipoReparacion(contenedoresMR[0], {
-      idSelector: '.reparacion-equipo-motor',
-      obtenerTipoId: () => tipoIdPorNombre('motor'),
-      avisoEl: avisosMR[0],
-      seleccionInicialId: esMotoreductor ? item?.motorEquipoId : null
-    });
-    inicializarBuscadorEquipoReparacion(contenedoresMR[1], {
-      idSelector: '.reparacion-equipo-reductor',
-      obtenerTipoId: () => tipoIdPorNombre('reductor'),
-      avisoEl: avisosMR[1],
-      seleccionInicialId: esMotoreductor ? item?.reductorEquipoId : null
-    });
-
-    reparacionEquiposList.appendChild(row);
+    inputReductorTexto.value = '';
+    inputReductorId.value = '';
+    avisoReductorNuevo.style.display = 'none';
+    mostrarOcultarSerial(serialWrapReductor, inputSerialReductor, false);
   }
 
-  btnAgregarReparacionEquipo.addEventListener('click', () => {
-    nuevaFilaReparacionEquipo(null);
-    actualizarEmptyEquipos();
-  });
+  // Carga en el bloque fijo el equipo ya guardado de una reparación (o lo
+  // deja vacío si `equipo` es null/undefined, ej. reparación nueva).
+  function cargarEquipoReparacion(equipo) {
+    limpiarEquipoReparacion();
+    poblarSelectTipoFiltro();
+    if (!equipo) return;
+
+    if (equipo.tipoLinea === 'motoreductor') {
+      chkEsMotoreductor.checked = true;
+      actualizarModoEquipo();
+
+      const motor = buscarEquipoCatalogo(equipo.motorEquipoId);
+      if (motor) {
+        inputMotorId.value = motor.id;
+        inputMotorTexto.value = nombreMostrableEquipo(motor);
+      }
+      mostrarOcultarSerial(serialWrapMotor, inputSerialMotor, !!(equipo.motorSerial || motor?.usaSerial));
+      inputSerialMotor.value = equipo.motorSerial || '';
+
+      const reductor = buscarEquipoCatalogo(equipo.reductorEquipoId);
+      if (reductor) {
+        inputReductorId.value = reductor.id;
+        inputReductorTexto.value = nombreMostrableEquipo(reductor);
+      }
+      mostrarOcultarSerial(serialWrapReductor, inputSerialReductor, !!(equipo.reductorSerial || reductor?.usaSerial));
+      inputSerialReductor.value = equipo.reductorSerial || '';
+    } else {
+      chkEsMotoreductor.checked = false;
+      actualizarModoEquipo();
+
+      const eq = buscarEquipoCatalogo(equipo.equipoId);
+      if (eq) {
+        selectTipoFiltro.value = eq.tipoId || '';
+        inputEquipoId.value = eq.id;
+        inputEquipoTexto.value = nombreMostrableEquipo(eq);
+      }
+      mostrarOcultarSerial(serialWrapIndividual, inputSerialIndividual, !!(equipo.serial || eq?.usaSerial));
+      inputSerialIndividual.value = equipo.serial || '';
+    }
+  }
 
   // Si ya hay un equipo elegido del catálogo, se usa tal cual. Si no, pero
   // hay texto escrito, se crea un equipo NUEVO en el catálogo con la
@@ -433,42 +463,50 @@
     return nuevo.id;
   }
 
-  // Recorre las filas del formulario y resuelve cada una a un objeto listo
-  // para guardar en la reparación, creando en el catálogo los equipos que
-  // hagan falta. Filas vacías (sin nada escrito) se ignoran en silencio.
-  async function resolverEquiposDeFormulario() {
-    const resultado = [];
-    for (const fila of Array.from(reparacionEquiposList.children)) {
-      const esMr = fila.querySelector('.reparacion-equipo-es-motoreductor').checked;
+  // Resuelve el bloque de equipo del formulario a un objeto listo para
+  // guardar en la reparación, creando en el catálogo el equipo que haga
+  // falta. Si el bloque está vacío, devuelve equipo: null en silencio.
+  async function resolverEquipoDeFormulario() {
+    if (chkEsMotoreductor.checked) {
+      const motorTexto = inputMotorTexto.value.trim();
+      const reductorTexto = inputReductorTexto.value.trim();
+      if (!motorTexto && !reductorTexto) return { equipo: null };
 
-      if (esMr) {
-        const mrBlock = fila.querySelector('.reparacion-equipo-motoreductor');
-        const buscadores = mrBlock.querySelectorAll('.buscador-input');
-        const idsOcultos = mrBlock.querySelectorAll('input[type="hidden"]');
-        const motorTexto = buscadores[0].value.trim();
-        const reductorTexto = buscadores[1].value.trim();
-        if (!motorTexto && !reductorTexto) continue; // fila vacía
-
-        const motorEquipoId = await resolverEquipoId(motorTexto, idsOcultos[0].value, tipoIdPorNombre('motor'));
-        const reductorEquipoId = await resolverEquipoId(reductorTexto, idsOcultos[1].value, tipoIdPorNombre('reductor'));
-        resultado.push({ tipoLinea: 'motoreductor', motorEquipoId, reductorEquipoId });
-      } else {
-        const bloque = fila.querySelector('.bloque-individual');
-        const texto = bloque.querySelector('.buscador-input').value.trim();
-        const idExistente = bloque.querySelector('.reparacion-equipo-select').value;
-        const tipoId = bloque.querySelector('.reparacion-equipo-tipo-filtro').value;
-        if (!texto) continue; // fila vacía
-
-        if (!idExistente && !tipoId) {
-          return { error: 'Falta elegir el "Tipo" de uno de los equipos — se necesita para poder registrarlo si es nuevo.' };
+      const motorEquipoId = await resolverEquipoId(motorTexto, inputMotorId.value, tipoIdPorNombre('motor'));
+      const reductorEquipoId = await resolverEquipoId(reductorTexto, inputReductorId.value, tipoIdPorNombre('reductor'));
+      const motorSerial = inputSerialMotor.value.trim();
+      const reductorSerial = inputSerialReductor.value.trim();
+      return {
+        equipo: {
+          tipoLinea: 'motoreductor',
+          motorEquipoId,
+          ...(motorSerial ? { motorSerial } : {}),
+          reductorEquipoId,
+          ...(reductorSerial ? { reductorSerial } : {})
         }
-
-        const equipoId = await resolverEquipoId(texto, idExistente, tipoId);
-        const tipoIdFinal = tipoId || (buscarEquipoCatalogo(equipoId)?.tipoId || '');
-        resultado.push({ tipoLinea: 'individual', tipoId: tipoIdFinal, equipoId });
-      }
+      };
     }
-    return { equipos: resultado };
+
+    const texto = inputEquipoTexto.value.trim();
+    const idExistente = inputEquipoId.value;
+    const tipoId = selectTipoFiltro.value;
+    if (!texto) return { equipo: null };
+
+    if (!idExistente && !tipoId) {
+      return { error: 'Falta elegir el "Tipo" del equipo — se necesita para poder registrarlo si es nuevo.' };
+    }
+
+    const equipoId = await resolverEquipoId(texto, idExistente, tipoId);
+    const tipoIdFinal = tipoId || (buscarEquipoCatalogo(equipoId)?.tipoId || '');
+    const serial = inputSerialIndividual.value.trim();
+    return {
+      equipo: {
+        tipoLinea: 'individual',
+        tipoId: tipoIdFinal,
+        equipoId,
+        ...(serial ? { serial } : {})
+      }
+    };
   }
 
   // ---------- Modal ----------
@@ -486,9 +524,7 @@
     inputEvidencia.value = reparacion?.evidenciaFotografica || '';
     ocultarEdicionEvidencia();
     headerNumero.textContent = textoHeader(reparacion);
-    reparacionEquiposList.innerHTML = '';
-    (reparacion?.equipos || []).forEach(item => nuevaFilaReparacionEquipo(item));
-    actualizarEmptyEquipos();
+    cargarEquipoReparacion(reparacion?.equipo || null);
     resetSubtabs();
   }
 
@@ -528,8 +564,7 @@
     resetSubtabs();
     ocultarEdicionEvidencia();
     previewEvidencia.style.display = 'none';
-    reparacionEquiposList.innerHTML = '';
-    actualizarEmptyEquipos();
+    limpiarEquipoReparacion();
     borradorId = null;
     modal.classList.remove('open');
   }
@@ -557,7 +592,7 @@
     btnGuardar.textContent = 'Guardando...';
 
     try {
-      const resuelto = await resolverEquiposDeFormulario();
+      const resuelto = await resolverEquipoDeFormulario();
       if (resuelto.error) {
         alert(resuelto.error);
         return;
@@ -569,7 +604,7 @@
           contacto: inputContacto.value.trim(),
           fechaIngreso: inputFechaIngreso.value || null,
           evidenciaFotografica: inputEvidencia.value.trim(),
-          equipos: resuelto.equipos
+          equipo: resuelto.equipo
         });
       } else {
         const numero = siguienteNumeroDisponible(); // recalculado justo antes de guardar
@@ -579,7 +614,7 @@
           contacto: inputContacto.value.trim(),
           fechaIngreso: inputFechaIngreso.value || fechaHoyISO(),
           evidenciaFotografica: inputEvidencia.value.trim(),
-          equipos: resuelto.equipos,
+          equipo: resuelto.equipo,
           creadoEn: firebase.firestore.FieldValue.serverTimestamp()
         });
       }
@@ -587,8 +622,7 @@
       resetSubtabs();
       ocultarEdicionEvidencia();
       previewEvidencia.style.display = 'none';
-      reparacionEquiposList.innerHTML = '';
-      actualizarEmptyEquipos();
+      limpiarEquipoReparacion();
       borradorId = null;
       modal.classList.remove('open');
     } catch (err) {
@@ -620,16 +654,75 @@
     renderLista();
   });
 
+  // Icono del tipo de un equipo del catálogo (config de Tipos de equipo).
+  function iconoTipoDe(equipo) {
+    if (!equipo) return '';
+    const tipo = (window.tiposEquipoCache || []).find(t => t.id === equipo.tipoId);
+    return tipo?.icono ? tipo.icono + ' ' : '';
+  }
+
+  // Texto plano (para el buscador) con nombre(s) y serial(es) del equipo.
+  function textoEquipoBusqueda(reparacion) {
+    const item = reparacion.equipo;
+    if (!item) return '';
+    if (item.tipoLinea === 'motoreductor') {
+      const motor = buscarEquipoCatalogo(item.motorEquipoId);
+      const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      return normalizar([
+        motor ? nombreMostrableEquipo(motor) : '',
+        reductor ? nombreMostrableEquipo(reductor) : '',
+        item.motorSerial || '',
+        item.reductorSerial || ''
+      ].join(' '));
+    }
+    const eq = buscarEquipoCatalogo(item.equipoId);
+    return normalizar([(eq ? nombreMostrableEquipo(eq) : ''), item.serial || ''].join(' '));
+  }
+
+  // HTML (para la tarjeta) con el/los equipo(s) y su(s) serial(es), en
+  // grande, ya que es el dato más importante de la ficha junto a la
+  // compañía.
+  function htmlEquipoTarjeta(reparacion) {
+    const item = reparacion.equipo;
+    if (!item) return '<span class="reparacion-card-sin-equipo">Sin equipo registrado</span>';
+
+    if (item.tipoLinea === 'motoreductor') {
+      const motor = buscarEquipoCatalogo(item.motorEquipoId);
+      const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      const motorTxt = motor
+        ? escapeHtml(nombreMostrableEquipo(motor))
+        : '<span style="color:var(--danger);">Motor no encontrado</span>';
+      const reductorTxt = reductor
+        ? escapeHtml(nombreMostrableEquipo(reductor))
+        : '<span style="color:var(--danger);">Reductor no encontrado</span>';
+      const serialMotor = item.motorSerial ? `<span class="reparacion-card-serial">S/N ${escapeHtml(item.motorSerial)}</span>` : '';
+      const serialReductor = item.reductorSerial ? `<span class="reparacion-card-serial">S/N ${escapeHtml(item.reductorSerial)}</span>` : '';
+      return `🔗 Motoreductor — ⚡ ${motorTxt}${serialMotor} + ⚙️ ${reductorTxt}${serialReductor}`;
+    }
+
+    const eq = buscarEquipoCatalogo(item.equipoId);
+    const nombreTxt = eq
+      ? escapeHtml(nombreMostrableEquipo(eq))
+      : '<span style="color:var(--danger);">Equipo no encontrado</span>';
+    const serial = item.serial ? `<span class="reparacion-card-serial">S/N ${escapeHtml(item.serial)}</span>` : '';
+    return `${iconoTipoDe(eq)}${nombreTxt}${serial}`;
+  }
+
   function reparacionCoincide(reparacion) {
     if (!filtroTexto) return true;
     const compania = buscarCompania(reparacion.companiaId);
     if (compania && normalizar(compania.nombre).includes(filtroTexto)) return true;
     if (normalizar(reparacion.contacto).includes(filtroTexto)) return true;
     if (normalizar(formatearNumero(reparacion.numero)).includes(filtroTexto)) return true;
+    if (textoEquipoBusqueda(reparacion).includes(filtroTexto)) return true;
     return false;
   }
 
   // ---------- Render de la lista (tarjetas) ----------
+  // Prioridad visual: 1) equipo a reparar, 2) compañía. La fecha de
+  // ingreso y la evidencia fotográfica quedan visibles pero como datos
+  // secundarios; el encargado de reparaciones no se muestra acá (solo
+  // sirve como referencia interna al preparar la entrega).
 
   function renderLista() {
     const filtradas = reparacionesCache.filter(reparacionCoincide);
@@ -649,25 +742,27 @@
     listaContenedor.innerHTML = ordenadas.map(reparacion => {
       const compania = buscarCompania(reparacion.companiaId);
       const nombreCompania = compania ? escapeHtml(compania.nombre) : '<span style="color:var(--danger);">Compañía no encontrada</span>';
-      const contactoTexto = reparacion.contacto
-        ? escapeHtml(reparacion.contacto)
-        : 'Sin encargado de reparaciones asignado';
-      const fechaTexto = reparacion.fechaIngreso ? ` · Ingreso: ${formatearFechaCorta(reparacion.fechaIngreso)}` : '';
+      const fechaHtml = reparacion.fechaIngreso
+        ? `<span class="reparacion-card-fecha">📅 Ingreso: ${formatearFechaCorta(reparacion.fechaIngreso)}</span>`
+        : '';
       const evidenciaHtml = reparacion.evidenciaFotografica
-        ? ` · <a href="${escapeAttr(reparacion.evidenciaFotografica)}" target="_blank" rel="noopener noreferrer">📷 Evidencia fotográfica ↗</a>`
+        ? `<a class="reparacion-card-evidencia" href="${escapeAttr(reparacion.evidenciaFotografica)}" target="_blank" rel="noopener noreferrer">📷 Evidencia fotográfica ↗</a>`
+        : '';
+      const footerHtml = (fechaHtml || evidenciaHtml)
+        ? `<div class="reparacion-card-footer">${fechaHtml}${evidenciaHtml}</div>`
         : '';
 
       return `
         <div class="reparacion-card" data-id="${reparacion.id}">
-          <div class="reparacion-card-header">
-            <span class="reparacion-card-icono">🔧</span>
+          <div class="reparacion-card-top">
             <span class="reparacion-card-numero">${formatearNumero(reparacion.numero)}</span>
-            <span class="reparacion-card-compania">${nombreCompania}</span>
             <div class="reparacion-card-actions">
               <button type="button" class="btn-eliminar" data-id="${reparacion.id}" title="Eliminar">🗑️</button>
             </div>
           </div>
-          <div class="reparacion-card-resumen">Encargado: ${contactoTexto}${fechaTexto}${evidenciaHtml}</div>
+          <div class="reparacion-card-equipo">${htmlEquipoTarjeta(reparacion)}</div>
+          <div class="reparacion-card-compania">🏢 ${nombreCompania}</div>
+          ${footerHtml}
         </div>
       `;
     }).join('');
