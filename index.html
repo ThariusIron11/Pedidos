@@ -2012,12 +2012,14 @@
           </div>
 
           <div class="form-group">
-            <label for="reparacion-evidencia">📷 Evidencia fotográfica</label>
-            <div style="display:flex; align-items:center; gap:8px;">
-              <input type="text" id="reparacion-evidencia" style="flex:1;" readonly placeholder="Pega aquí el link de la carpeta compartida con las fotos (motor, reductor, motoreductor...)">
-              <button type="button" class="btn-icon-inline" id="btn-editar-evidencia" title="Editar el link">✏️</button>
+            <label for="reparacion-evidencia" style="display:flex; align-items:center; justify-content:space-between;">
+              <span>📷 Evidencia fotográfica</span>
+              <button type="button" class="btn-icon-inline" id="btn-editar-evidencia" title="Agregar o editar el link">✏️</button>
+            </label>
+            <div id="reparacion-evidencia-input-wrap" style="display:none; margin-top:4px;">
+              <input type="text" id="reparacion-evidencia" style="width:100%;" placeholder="Pega aquí el link de la carpeta compartida con las fotos (motor, reductor, motoreductor...)">
             </div>
-            <div class="hint-peso-calculado" style="display:block;">Queda bloqueado una vez escrito, para evitar borrarlo o cambiarlo sin querer — toca el lápiz para editarlo.</div>
+            <div class="hint-peso-calculado" style="display:block;">Toca el lápiz para agregar o editar el link.</div>
             <div id="reparacion-evidencia-preview" style="display:none; margin-top:6px;">
               <a href="#" id="reparacion-evidencia-link" target="_blank" rel="noopener noreferrer">📷 Evidencia fotográfica ↗</a>
             </div>

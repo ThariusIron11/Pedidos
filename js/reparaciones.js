@@ -37,6 +37,7 @@
   const inputContacto = document.getElementById('reparacion-contacto');
   const inputFechaIngreso = document.getElementById('reparacion-fecha-ingreso');
   const inputEvidencia = document.getElementById('reparacion-evidencia');
+  const evidenciaInputWrap = document.getElementById('reparacion-evidencia-input-wrap');
   const btnEditarEvidencia = document.getElementById('btn-editar-evidencia');
   const previewEvidencia = document.getElementById('reparacion-evidencia-preview');
   const linkEvidencia = document.getElementById('reparacion-evidencia-link');
@@ -114,11 +115,20 @@
   }
 
   // ---------- Evidencia fotográfica: link a carpeta compartida ----------
-  // Mientras se escribe/pega el link, se ve en vivo debajo del campo como
-  // texto clickeable (abre en pestaña nueva), para poder confirmar que
-  // quedó bien antes de guardar. Una vez que ya tiene un valor, el campo
-  // queda bloqueado (readonly) para no correr el riesgo de dañarlo sin
-  // querer — el lápiz lo desbloquea a propósito.
+  // El campo de edición (el input) está oculto por defecto y solo aparece
+  // al tocar el lápiz — así la ficha no se ve con un input vacío o con un
+  // link larguísimo ocupando espacio todo el tiempo. Al guardar (o cancelar)
+  // vuelve a esconderse, dejando ver solo el link ya guardado (si lo hay).
+
+  function mostrarEdicionEvidencia() {
+    evidenciaInputWrap.style.display = 'block';
+    inputEvidencia.focus();
+    inputEvidencia.select();
+  }
+
+  function ocultarEdicionEvidencia() {
+    evidenciaInputWrap.style.display = 'none';
+  }
 
   function actualizarPreviewEvidencia() {
     const url = inputEvidencia.value.trim();
@@ -130,17 +140,9 @@
     }
   }
 
-  function bloquearEvidenciaSiTieneValor() {
-    inputEvidencia.readOnly = !!inputEvidencia.value.trim();
-  }
-
   inputEvidencia.addEventListener('input', actualizarPreviewEvidencia);
 
-  btnEditarEvidencia.addEventListener('click', () => {
-    inputEvidencia.readOnly = false;
-    inputEvidencia.focus();
-    inputEvidencia.select();
-  });
+  btnEditarEvidencia.addEventListener('click', mostrarEdicionEvidencia);
 
   // 3 -> "R03". El número real que se guarda es el entero (3); esto es
   // solo cómo se muestra.
@@ -193,7 +195,7 @@
       : ''; // en una reparación nueva se llena solo al elegir la compañía
     inputFechaIngreso.value = reparacion?.fechaIngreso || fechaHoyISO();
     inputEvidencia.value = reparacion?.evidenciaFotografica || '';
-    bloquearEvidenciaSiTieneValor();
+    ocultarEdicionEvidencia();
     actualizarPreviewEvidencia();
     headerNumero.textContent = textoHeader(reparacion);
     resetSubtabs();
@@ -233,6 +235,7 @@
   function cancelarYLimpiar() {
     form.reset();
     resetSubtabs();
+    ocultarEdicionEvidencia();
     previewEvidencia.style.display = 'none';
     borradorId = null;
     modal.classList.remove('open');
@@ -281,6 +284,7 @@
       }
       form.reset();
       resetSubtabs();
+      ocultarEdicionEvidencia();
       previewEvidencia.style.display = 'none';
       borradorId = null;
       modal.classList.remove('open');
