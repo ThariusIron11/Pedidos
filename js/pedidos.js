@@ -981,6 +981,7 @@
     const equipos = pedido.equipos || [];
     return equipos.length > 0 && equipos.every(estaItemCompletado);
   }
+  window.pedidoEstaCompletado = pedidoEstaCompletado;
 
   function pedidoTieneDevolucion(pedido) {
     return (pedido.equipos || []).some(item => devueltasCountItem(item) > 0);

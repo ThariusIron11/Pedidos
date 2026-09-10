@@ -931,13 +931,25 @@
   // de edición.
   const headerAcciones = fichaHeaderTags;
 
+  // Una reparación queda "completada" cuando el pedido que generó (mismo ID)
+  // ya está totalmente despachado — se consulta window.pedidosCache /
+  // window.pedidoEstaCompletado, expuestos por pedidos.js. Se ve reflejado
+  // acá, en la tarjeta del listado (fondo naranja bajo + etiqueta) y en el
+  // header de la propia ficha.
+  function reparacionEstaCompletada(reparacion) {
+    if (!reparacion.pedidoId || !window.pedidoEstaCompletado) return false;
+    const pedido = (window.pedidosCache || []).find(p => p.id === reparacion.pedidoId);
+    return pedido ? window.pedidoEstaCompletado(pedido) : false;
+  }
+
   function actualizarHeaderAcciones(reparacion) {
     if (!reparacion) {
       headerAcciones.innerHTML = ''; // reparación nueva, todavía sin guardar
       return;
     }
+    const tagCompletado = reparacionEstaCompletada(reparacion) ? '<span class="tag-pedido-completado">COMPLETADO</span>' : '';
     if (reparacion.pedidoId) {
-      headerAcciones.innerHTML = `<button type="button" class="btn-pill-header" id="btn-ver-pedido-desde-reparacion">🧾 Ver pedido ↗</button>`;
+      headerAcciones.innerHTML = tagCompletado + `<button type="button" class="btn-pill-header" id="btn-ver-pedido-desde-reparacion">🧾 Ver pedido ↗</button>`;
       document.getElementById('btn-ver-pedido-desde-reparacion').addEventListener('click', () => {
         if (!window.abrirFichaPedido) {
           alert('No se pudo abrir el pedido: la pestaña de Pedidos no está cargada en esta página.');
@@ -1383,6 +1395,7 @@
     listaContenedor.innerHTML = ordenadas.map(reparacion => {
       const compania = buscarCompania(reparacion.companiaId);
       const nombreCompania = compania ? escapeHtml(compania.nombre) : '<span style="color:var(--danger);">Compañía no encontrada</span>';
+      const completada = reparacionEstaCompletada(reparacion);
       const fechaHtml = reparacion.fechaIngreso
         ? `<span class="reparacion-card-fecha">📅 Ingreso: ${formatearFechaCorta(reparacion.fechaIngreso)}</span>`
         : '';
@@ -1394,10 +1407,11 @@
         : '';
 
       return `
-        <div class="reparacion-card" data-id="${reparacion.id}">
+        <div class="reparacion-card ${completada ? 'completado' : ''}" data-id="${reparacion.id}">
           <div class="reparacion-card-top">
             <span class="reparacion-card-numero">${formatearNumero(reparacion.numero)}</span>
             ${reparacion.pedidoId ? '<span class="reparacion-card-tiene-pedido">🧾 Tiene pedido</span>' : ''}
+            ${completada ? '<span class="tag-pedido-completado">COMPLETADO</span>' : ''}
             <div class="reparacion-card-actions">
               <button type="button" class="btn-eliminar" data-id="${reparacion.id}" title="Eliminar">🗑️</button>
             </div>
@@ -1459,6 +1473,18 @@
       }
     );
   }
+
+  // El estado "completado" de una reparación depende del pedido vinculado
+  // (mismo ID), así que cuando ese pedido cambia (ej. se despachó un envío)
+  // hay que refrescar la tarjeta y, si está abierta, la ficha — aunque el
+  // documento de la reparación en sí no haya cambiado.
+  document.addEventListener('pedidos:cambio', () => {
+    renderLista();
+    if (modalFicha.classList.contains('open')) {
+      const reparacionAbierta = reparacionesCache.find(r => r.id === btnEditarDesdeFicha.dataset.id);
+      if (reparacionAbierta) actualizarHeaderAcciones(reparacionAbierta);
+    }
+  });
 
   document.addEventListener('tab:activada', (e) => {
     if (e.detail.tab !== 'reparaciones') return;
