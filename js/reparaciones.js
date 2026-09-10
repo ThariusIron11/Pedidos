@@ -1009,6 +1009,49 @@
     return match || contactoReparacion;
   }
 
+  // Si esta reparación ya tiene un pedido vinculado (mismo ID en ambas
+  // colecciones), sus datos de "de dónde viene" (compañía, contacto, qué
+  // equipo es) no se editan desde Pedidos — vienen de acá. Cada vez que se
+  // guarda la reparación, se empujan esos mismos datos al pedido. Solo se
+  // toca la identidad del equipo (tipoLinea + equipoId, o motor/reductor);
+  // la logística propia del pedido (cantidad, orden de compra, brazo/eje,
+  // seriales adicionales, unidades preparadas) se deja tal cual está, por
+  // si ya se ajustó desde allá.
+  async function sincronizarPedidoDesdeReparacion(reparacionId, companiaId, contacto, equipo) {
+    const refPedido = db.collection('pedidos').doc(reparacionId);
+    const snap = await refPedido.get();
+    if (!snap.exists) return;
+
+    const pedido = snap.data();
+    const datos = {
+      companiaId,
+      contacto: contactoParaPedido(companiaId, contacto)
+    };
+
+    const itemEquipo = equipoReparacionAItemPedido(equipo);
+    if (itemEquipo) {
+      const itemActual = { ...((pedido.equipos && pedido.equipos[0]) || {}) };
+      // Se reemplaza la identidad completa del equipo (tipoLinea + sus ids);
+      // el resto del ítem (cantidad, orden de compra, brazo/eje, seriales,
+      // unidades preparadas) se deja tal cual estaba. FieldValue.delete()
+      // no es válido dentro de un array, así que las claves viejas de la
+      // identidad se quitan a mano antes de armar el ítem nuevo.
+      delete itemActual.equipoId;
+      delete itemActual.motorEquipoId;
+      delete itemActual.reductorEquipoId;
+      const itemActualizado = {
+        ...itemActual,
+        tipoLinea: itemEquipo.tipoLinea,
+        ...(itemEquipo.tipoLinea === 'motoreductor'
+          ? { motorEquipoId: itemEquipo.motorEquipoId, reductorEquipoId: itemEquipo.reductorEquipoId }
+          : { equipoId: itemEquipo.equipoId })
+      };
+      datos.equipos = [itemActualizado, ...(pedido.equipos || []).slice(1)];
+    }
+
+    await refPedido.update(datos);
+  }
+
   // Tras crear el pedido, pedidos.js lo recibe por su propio listener en
   // tiempo real (window.pedidosCache) — normalmente casi al instante, pero
   // por si acaso se espera un poco antes de intentar abrir su ficha.
@@ -1147,6 +1190,14 @@
         };
         await db.collection(COLECCION).doc(id).update(datosActualizados);
         datosGuardados = { id, numero: Number(inputNumero.value), ...datosActualizados };
+
+        // Si esta reparación ya tiene un pedido vinculado, se le empujan los
+        // mismos cambios de compañía, contacto y equipo (ver comentario en
+        // sincronizarPedidoDesdeReparacion).
+        const original = reparacionesCache.find(r => r.id === id);
+        if (original?.pedidoId) {
+          await sincronizarPedidoDesdeReparacion(original.pedidoId, companiaId, datosActualizados.contacto, resuelto.equipo);
+        }
       } else {
         const numero = siguienteNumeroDisponible(); // recalculado justo antes de guardar
         await db.collection(COLECCION).add({

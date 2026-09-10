@@ -765,6 +765,18 @@
     padding: 10px 0;
   }
 
+  .nota-vinculo-reparacion{
+    background: #fdf3ec;
+    border: 1px solid #f0ddc9;
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    margin-bottom: 14px;
+  }
+  .nota-vinculo-reparacion strong{ color: var(--ink); }
+
   .reparacion-equipo-texto-view{
     font-size: 14px;
     font-weight: 600;
@@ -2446,6 +2458,11 @@
         <input type="hidden" id="pedido-numero">
 
         <div class="subtab-panel active" id="subtab-datos">
+          <div class="nota-vinculo-reparacion" id="pedido-nota-reparacion" style="display:none;">
+            🔧 La compañía y el contacto de este pedido vienen de la reparación <strong id="pedido-nota-reparacion-numero"></strong> — se actualizan solos al editarla allá.
+            <button type="button" class="btn-link-inline" id="btn-ver-reparacion-desde-pedido">Ver ficha ↗</button>
+          </div>
+
           <div class="form-group">
             <label for="pedido-compania">Compañía destino</label>
             <select id="pedido-compania" required>
@@ -2497,6 +2514,9 @@
         </div>
 
         <div class="subtab-panel" id="subtab-equipos">
+          <div class="nota-vinculo-reparacion" id="pedido-equipos-nota-reparacion" style="display:none;">
+            🔧 El equipo de este pedido viene de la reparación vinculada y no se puede cambiar aquí.
+          </div>
           <div class="equipos-pedido-list" id="equipos-pedido-list"></div>
           <button type="button" class="btn-link" id="btn-add-equipo-pedido">+ Agregar equipo</button>
         </div>

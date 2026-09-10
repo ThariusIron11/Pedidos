@@ -41,6 +41,18 @@
   const selectSubsidiariaContacto = document.getElementById('pedido-subsidiaria-contacto');
   const equiposPedidoList = document.getElementById('equipos-pedido-list');
   const radiosTipoPedido = form.querySelectorAll('input[name="tipo-pedido"]');
+  const btnAddEquipoPedido = document.getElementById('btn-add-equipo-pedido');
+
+  // Compañía, contacto y equipo de un pedido que viene de una reparación
+  // (mismo ID, ver "Enlace con Pedidos" en reparaciones.js) no se editan
+  // acá: se bloquean y se sincronizan solos cada vez que se guarda la
+  // reparación de origen. Cantidad, orden de compra, brazo/eje, etc. sí
+  // siguen siendo editables desde acá (son logística propia del pedido).
+  let pedidoBloqueadoPorReparacion = false;
+  const notaReparacionDatos = document.getElementById('pedido-nota-reparacion');
+  const notaReparacionNumero = document.getElementById('pedido-nota-reparacion-numero');
+  const notaReparacionEquipos = document.getElementById('pedido-equipos-nota-reparacion');
+  const btnVerReparacionDesdePedido = document.getElementById('btn-ver-reparacion-desde-pedido');
 
   const modalFicha = document.getElementById('modal-ficha-pedido');
   const fichaHeaderNumero = document.getElementById('ficha-header-numero');
@@ -395,6 +407,23 @@
       });
     }
 
+    // Si el pedido viene de una reparación, el equipo (qué es, si es
+    // motoreductor, motor/reductor elegidos) no se edita acá — solo la
+    // logística (cantidad, orden de compra, brazo/eje, preparado) sigue
+    // libre. Se deshabilita en vez de ocultarse para que se siga viendo
+    // claramente qué equipo es.
+    if (pedidoBloqueadoPorReparacion) {
+      row.querySelector('.equipo-pedido-es-motoreductor').disabled = true;
+      row.querySelector('.equipo-pedido-tipo-filtro').disabled = true;
+      row.querySelectorAll('.buscador-input').forEach(inp => { inp.disabled = true; });
+      row.querySelectorAll('.remove-equipo-pedido').forEach(btn => {
+        btn.disabled = true;
+        btn.title = 'El equipo viene de la reparación vinculada, no se puede quitar aquí';
+        btn.style.opacity = '0.35';
+        btn.style.cursor = 'not-allowed';
+      });
+    }
+
     const chkEsMotoreductor = row.querySelector('.equipo-pedido-es-motoreductor');
     const bloqueIndividual = row.querySelector('.bloque-individual');
     const bloqueMotoreductor = row.querySelector('.equipo-pedido-motoreductor');
@@ -548,6 +577,23 @@
       poblarSelectSubsidiariaContacto('', '');
     }
 
+    // Compañía, contacto, tipo y equipo se bloquean cuando el pedido viene de
+    // una reparación: esos datos ya no se editan acá, se sincronizan solos
+    // al guardar la reparación de origen (ver reparaciones.js).
+    pedidoBloqueadoPorReparacion = !!pedido?.reparacionId;
+    selectCompania.disabled = pedidoBloqueadoPorReparacion;
+    selectContacto.disabled = pedidoBloqueadoPorReparacion;
+    radiosTipoPedido.forEach(r => { r.disabled = pedidoBloqueadoPorReparacion; });
+    btnAddEquipoPedido.style.display = pedidoBloqueadoPorReparacion ? 'none' : '';
+    notaReparacionEquipos.style.display = pedidoBloqueadoPorReparacion ? 'block' : 'none';
+    if (pedidoBloqueadoPorReparacion) {
+      const reparacion = (window.reparacionesCache || []).find(r => r.id === pedido.reparacionId);
+      notaReparacionNumero.textContent = reparacion ? ('R' + String(reparacion.numero).padStart(2, '0')) : 'de origen';
+      notaReparacionDatos.style.display = 'block';
+    } else {
+      notaReparacionDatos.style.display = 'none';
+    }
+
     const items = pedido?.equipos || [];
     if (items.length) {
       items.forEach((item, idx) => nuevaFilaEquipoPedido(item, idx));
@@ -558,6 +604,17 @@
     const tipoActual = pedido?.tipo || 'normal';
     radiosTipoPedido.forEach(r => { r.checked = (r.value === tipoActual); });
   }
+
+  btnVerReparacionDesdePedido.addEventListener('click', () => {
+    const pedido = pedidosCache.find(p => p.id === inputId.value);
+    if (!pedido?.reparacionId) return;
+    if (!window.abrirFichaReparacion) {
+      alert('No se pudo abrir la reparación: la pestaña de Reparaciones no está cargada en esta página.');
+      return;
+    }
+    cerrarModalConservandoBorrador();
+    window.abrirFichaReparacion(pedido.reparacionId);
+  });
 
   // ---------- Abrir / cerrar modal ----------
 
