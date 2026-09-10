@@ -1348,19 +1348,21 @@
 
   let indexEquipoEnSeriales = null;
 
-  function camposSerialesHtml(prefijoClase, campoNombre, cantidad, serialesActuales, etiqueta, unidadesCompletadas, unidadesDevueltas) {
+  function camposSerialesHtml(prefijoClase, campoNombre, cantidad, serialesActuales, etiqueta, unidadesCompletadas, unidadesDevueltas, unidadesBloqueadasReparacion) {
     return `
       <div class="seriales-grupo-titulo">${etiqueta}</div>
       <div class="seriales-campos-list">${
         Array.from({ length: cantidad }).map((_, i) => {
           const devuelta = (unidadesDevueltas || []).includes(i);
           const completada = (unidadesCompletadas || []).includes(i);
-          const bloqueada = devuelta || completada;
-          const etiquetaUnidad = devuelta ? ' 🔵 (devuelto)' : (completada ? ' 🔒 (ya despachada)' : '');
+          const desdeReparacion = (unidadesBloqueadasReparacion || new Set()).has(i);
+          const bloqueada = devuelta || completada || desdeReparacion;
+          const etiquetaUnidad = devuelta ? ' 🔵 (devuelto)' : (completada ? ' 🔒 (ya despachada)' : (desdeReparacion ? ' 🔧 (de la reparación)' : ''));
+          const tituloBloqueo = desdeReparacion && !devuelta && !completada ? ' title="Este serial viene de la reparación vinculada, se edita allá"' : '';
           return `
             <div class="serial-campo ${devuelta ? 'devuelto' : ''}">
               <label>Unidad ${i + 1}${etiquetaUnidad}</label>
-              <input type="text" class="serial-input-campo ${prefijoClase}" data-campo="${campoNombre}" data-unidad="${i}" value="${serialesActuales[i] ? escapeHtml(serialesActuales[i]) : ''}" placeholder="Número de serial" ${bloqueada ? 'disabled' : ''}>
+              <input type="text" class="serial-input-campo ${prefijoClase}" data-campo="${campoNombre}" data-unidad="${i}" value="${serialesActuales[i] ? escapeHtml(serialesActuales[i]) : ''}" placeholder="Número de serial" ${bloqueada ? 'disabled' : ''}${tituloBloqueo}>
               <div class="serial-duplicado-aviso" style="display:none;"></div>
             </div>
           `;
@@ -1589,17 +1591,23 @@
     const unidadesDevueltas = item.unidadesDevueltas || [];
 
     let htmlSeriales = '';
+    // La unidad 0 es siempre la que trae la reparación de origen (si la hay)
+    // — su serial se sincroniza solo al guardar esa reparación (ver
+    // sincronizarPedidoDesdeReparacion en reparaciones.js) y no se edita
+    // acá. Unidades adicionales (si la cantidad se subió desde Pedidos) sí
+    // son libres.
+    const unidadesBloqueadasReparacion = pedido.reparacionId ? new Set([0]) : new Set();
     if (item.tipoLinea === 'motoreductor') {
       const motor = buscarEquipoCatalogo(item.motorEquipoId);
       const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
       modalSerialesTitulo.textContent = 'Unidades — Motoreductor';
 
-      if (motor?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input-motor', 'motor', cantidad, item.serialesMotor || [], `⚡ Motor — ${escapeHtml(motor.nombre)}`, unidadesCompletadas, unidadesDevueltas);
-      if (reductor?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input-reductor', 'reductor', cantidad, item.serialesReductor || [], `⚙️ Reductor — ${escapeHtml(reductor.nombre)}`, unidadesCompletadas, unidadesDevueltas);
+      if (motor?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input-motor', 'motor', cantidad, item.serialesMotor || [], `⚡ Motor — ${escapeHtml(motor.nombre)}`, unidadesCompletadas, unidadesDevueltas, unidadesBloqueadasReparacion);
+      if (reductor?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input-reductor', 'reductor', cantidad, item.serialesReductor || [], `⚙️ Reductor — ${escapeHtml(reductor.nombre)}`, unidadesCompletadas, unidadesDevueltas, unidadesBloqueadasReparacion);
     } else {
       const equipo = buscarEquipoCatalogo(item.equipoId);
       modalSerialesTitulo.textContent = `Unidades — ${equipo ? equipo.nombre : 'Equipo'}`;
-      if (equipo?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input', 'individual', cantidad, item.seriales || [], '', unidadesCompletadas, unidadesDevueltas);
+      if (equipo?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input', 'individual', cantidad, item.seriales || [], '', unidadesCompletadas, unidadesDevueltas, unidadesBloqueadasReparacion);
     }
 
     serialesCampos.innerHTML = htmlSeriales + unidadesEstadoHtml(item);

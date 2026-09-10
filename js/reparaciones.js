@@ -1002,12 +1002,13 @@
 
   // Si esta reparación ya tiene un pedido vinculado (mismo ID en ambas
   // colecciones), sus datos de "de dónde viene" (compañía, contacto, qué
-  // equipo es) no se editan desde Pedidos — vienen de acá. Cada vez que se
-  // guarda la reparación, se empujan esos mismos datos al pedido. Solo se
-  // toca la identidad del equipo (tipoLinea + equipoId, o motor/reductor);
-  // la logística propia del pedido (cantidad, orden de compra, brazo/eje,
-  // seriales adicionales, unidades preparadas) se deja tal cual está, por
-  // si ya se ajustó desde allá.
+  // equipo es, y el serial con el que ingresó) no se editan desde Pedidos —
+  // vienen de acá. Cada vez que se guarda la reparación, se empujan esos
+  // mismos datos al pedido. Solo se toca la identidad del equipo (tipoLinea
+  // + equipoId, o motor/reductor) y el serial de la UNIDAD 0 (la única que
+  // trae la reparación); si desde Pedidos se subió la cantidad a más de 1,
+  // las unidades adicionales y el resto del ítem (orden de compra, brazo/eje,
+  // unidades preparadas) se dejan tal cual estaban.
   async function sincronizarPedidoDesdeReparacion(reparacionId, companiaId, contacto, equipo) {
     const refPedido = db.collection('pedidos').doc(reparacionId);
     const snap = await refPedido.get();
@@ -1023,9 +1024,9 @@
     if (itemEquipo) {
       const itemActual = { ...((pedido.equipos && pedido.equipos[0]) || {}) };
       // Se reemplaza la identidad completa del equipo (tipoLinea + sus ids);
-      // el resto del ítem (cantidad, orden de compra, brazo/eje, seriales,
-      // unidades preparadas) se deja tal cual estaba. FieldValue.delete()
-      // no es válido dentro de un array, así que las claves viejas de la
+      // el resto del ítem (cantidad, orden de compra, brazo/eje, unidades
+      // preparadas) se deja tal cual estaba. FieldValue.delete() no es
+      // válido dentro de un array, así que las claves viejas de la
       // identidad se quitan a mano antes de armar el ítem nuevo.
       delete itemActual.equipoId;
       delete itemActual.motorEquipoId;
@@ -1037,6 +1038,25 @@
           ? { motorEquipoId: itemEquipo.motorEquipoId, reductorEquipoId: itemEquipo.reductorEquipoId }
           : { equipoId: itemEquipo.equipoId })
       };
+
+      // Serial(es) de la unidad 0: siempre igual al que tiene la reparación
+      // ahora mismo (incluso si se borró, para que no quede un serial viejo
+      // huérfano). Unidades 1 en adelante (si el pedido subió la cantidad)
+      // no se tocan.
+      if (itemEquipo.tipoLinea === 'motoreductor') {
+        const serialesMotor = [...(itemActual.serialesMotor || [])];
+        serialesMotor[0] = equipo.motorSerial || '';
+        itemActualizado.serialesMotor = serialesMotor;
+
+        const serialesReductor = [...(itemActual.serialesReductor || [])];
+        serialesReductor[0] = equipo.reductorSerial || '';
+        itemActualizado.serialesReductor = serialesReductor;
+      } else {
+        const seriales = [...(itemActual.seriales || [])];
+        seriales[0] = equipo.serial || '';
+        itemActualizado.seriales = seriales;
+      }
+
       datos.equipos = [itemActualizado, ...(pedido.equipos || []).slice(1)];
     }
 
@@ -1377,6 +1397,7 @@
         <div class="reparacion-card" data-id="${reparacion.id}">
           <div class="reparacion-card-top">
             <span class="reparacion-card-numero">${formatearNumero(reparacion.numero)}</span>
+            ${reparacion.pedidoId ? '<span class="reparacion-card-tiene-pedido">🧾 Tiene pedido</span>' : ''}
             <div class="reparacion-card-actions">
               <button type="button" class="btn-eliminar" data-id="${reparacion.id}" title="Eliminar">🗑️</button>
             </div>
