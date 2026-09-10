@@ -68,6 +68,15 @@
   const btnCancelarSeriales = document.getElementById('btn-cancelar-seriales');
   const btnGuardarSeriales = document.getElementById('btn-guardar-seriales');
 
+  const modalReemplazoEquipo = document.getElementById('modal-reemplazo-equipo');
+  const reemplazoEquipoTitulo = document.getElementById('reemplazo-equipo-titulo');
+  const reemplazoEquipoOriginalTexto = document.getElementById('reemplazo-equipo-original-texto');
+  const reemplazoEquipoSerialWrap = document.getElementById('reemplazo-equipo-serial-wrap');
+  const inputReemplazoEquipoSerial = document.getElementById('reemplazo-equipo-serial');
+  const btnCancelarReemplazoEquipo = document.getElementById('btn-cancelar-reemplazo-equipo');
+  const btnConfirmarReemplazoEquipo = document.getElementById('btn-confirmar-reemplazo-equipo');
+  const contenedorBuscadorReemplazo = document.querySelector('#modal-reemplazo-equipo .buscador-equipo');
+
   const modalFichaDevolucion = document.getElementById('modal-ficha-devolucion');
   const fichaDevolucionNumero = document.getElementById('ficha-devolucion-numero');
   const fichaDevolucionContenido = document.getElementById('ficha-devolucion-contenido');
@@ -1102,7 +1111,193 @@
     return totalPreparable > 0 && cantidadPreparadaItem(item) >= totalPreparable;
   }
 
-  function renderTarjetaIndividual(item, index) {
+  // ---------- Reemplazo de equipo (exclusivo a pedidos de Reparación) ----------
+  // Cambia el motor, el reductor, o el equipo individual por otro del mismo
+  // catálogo (mismo Tipo), conservando en item.reemplazo[<parte>] la
+  // identidad + serial del equipo que trajo la reparación, para poder
+  // "Volver al original" en cualquier momento sin perder ese dato. Solo
+  // tiene sentido con cantidad 1 (siempre una unidad, un serial) y solo en
+  // pedidos que vienen de una reparación (ver reparaciones.js).
+  function puedeReemplazarEquipo(pedido, item) {
+    return !!pedido.reparacionId && (item.cantidad || 1) === 1 && conteoCompletadoItem(item).hecho === 0;
+  }
+
+  function reemplazoDeParte(item, parte) {
+    return item.reemplazo && item.reemplazo[parte] ? item.reemplazo[parte] : null;
+  }
+
+  function camposDeParte(parte) {
+    return parte === 'motor'
+      ? { campoId: 'motorEquipoId', campoSeriales: 'serialesMotor' }
+      : parte === 'reductor'
+        ? { campoId: 'reductorEquipoId', campoSeriales: 'serialesReductor' }
+        : { campoId: 'equipoId', campoSeriales: 'seriales' };
+  }
+
+  let reemplazoEnCurso = null; // { indexItem, parte }
+
+  function abrirModalReemplazoEquipo(indexItem, parte) {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) return;
+    const item = (pedido.equipos || [])[indexItem];
+    if (!item) return;
+
+    const { campoId } = camposDeParte(parte);
+    const equipoActual = buscarEquipoCatalogo(item[campoId]);
+    reemplazoEnCurso = { indexItem, parte, tipoId: equipoActual ? equipoActual.tipoId : null };
+
+    const etiquetaParte = parte === 'motor' ? 'el motor' : (parte === 'reductor' ? 'el reductor' : 'el equipo');
+    reemplazoEquipoTitulo.textContent = `Reemplazar ${etiquetaParte}`;
+    reemplazoEquipoOriginalTexto.textContent = equipoActual
+      ? `Equipo actual: ${nombreMostrableEquipo(equipoActual)}`
+      : 'Equipo actual no encontrado en el catálogo.';
+
+    reemplazoEquipoSerialWrap.style.display = 'none';
+    inputReemplazoEquipoSerial.value = '';
+    // Se regenera el buscador desde cero en cada apertura para no ir
+    // acumulando listeners de aperturas anteriores sobre el mismo
+    // contenedor (a diferencia de una fila de equipo del formulario, que
+    // se crea nueva cada vez, este contenedor es fijo en el HTML).
+    contenedorBuscadorReemplazo.innerHTML = `
+      <input type="text" class="buscador-input" id="reemplazo-equipo-buscador-input" placeholder="Escribe para buscar el equipo nuevo..." autocomplete="off">
+      <input type="hidden" id="reemplazo-equipo-select">
+      <div class="buscador-resultados"></div>
+    `;
+
+    inicializarBuscadorEquipo(contenedorBuscadorReemplazo, {
+      obtenerTipoId: () => reemplazoEnCurso.tipoId,
+      onChange: (equipoId) => {
+        const eq = equipoId ? buscarEquipoCatalogo(equipoId) : null;
+        reemplazoEquipoSerialWrap.style.display = eq?.usaSerial ? 'block' : 'none';
+        if (!eq?.usaSerial) inputReemplazoEquipoSerial.value = '';
+      }
+    });
+
+    modalReemplazoEquipo.classList.add('open');
+  }
+
+  btnCancelarReemplazoEquipo.addEventListener('click', () => {
+    modalReemplazoEquipo.classList.remove('open');
+    reemplazoEnCurso = null;
+  });
+  modalReemplazoEquipo.addEventListener('click', (e) => {
+    if (e.target === modalReemplazoEquipo) {
+      modalReemplazoEquipo.classList.remove('open');
+      reemplazoEnCurso = null;
+    }
+  });
+
+  btnConfirmarReemplazoEquipo.addEventListener('click', async () => {
+    if (!reemplazoEnCurso) return;
+    const nuevoEquipoId = contenedorBuscadorReemplazo.querySelector('input[type="hidden"]').value;
+    if (!nuevoEquipoId) {
+      alert('Elige el equipo de reemplazo del catálogo.');
+      return;
+    }
+    const eq = buscarEquipoCatalogo(nuevoEquipoId);
+    if (eq?.usaSerial && !inputReemplazoEquipoSerial.value.trim()) {
+      alert('Este equipo usa número de serial: escríbelo antes de confirmar.');
+      return;
+    }
+    const { indexItem, parte } = reemplazoEnCurso;
+    await confirmarReemplazoEquipo(indexItem, parte, nuevoEquipoId, inputReemplazoEquipoSerial.value.trim());
+    modalReemplazoEquipo.classList.remove('open');
+    reemplazoEnCurso = null;
+  });
+
+  async function confirmarReemplazoEquipo(indexItem, parte, nuevoEquipoId, nuevoSerial) {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) return;
+    const equipos = [...(pedido.equipos || [])];
+    const item = { ...equipos[indexItem] };
+    const { campoId, campoSeriales } = camposDeParte(parte);
+
+    // Se guarda la identidad + serial de lo que había ANTES de este cambio
+    // (que puede ser el equipo original de la reparación, o un reemplazo
+    // anterior si ya se había cambiado más de una vez) para poder volver.
+    item.reemplazo = {
+      ...(item.reemplazo || {}),
+      [parte]: { equipoId: item[campoId], serial: (item[campoSeriales] || [])[0] || '' }
+    };
+    item[campoId] = nuevoEquipoId;
+    const seriales = [...(item[campoSeriales] || [])];
+    seriales[0] = nuevoSerial || '';
+    item[campoSeriales] = seriales;
+
+    equipos[indexItem] = item;
+    try {
+      await db.collection(COLECCION).doc(pedido.id).update({ equipos });
+    } catch (err) {
+      console.error('Error reemplazando equipo:', err);
+      alert('No se pudo reemplazar el equipo. Revisa la consola.');
+    }
+  }
+
+  async function deshacerReemplazoEquipo(indexItem, parte) {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) return;
+    const item = (pedido.equipos || [])[indexItem];
+    const original = item ? reemplazoDeParte(item, parte) : null;
+    if (!original) return;
+
+    const ok = confirm('¿Volver al equipo original? Se deshace este reemplazo.');
+    if (!ok) return;
+
+    const equipos = [...(pedido.equipos || [])];
+    const itemNuevo = { ...equipos[indexItem] };
+    const { campoId, campoSeriales } = camposDeParte(parte);
+
+    itemNuevo[campoId] = original.equipoId;
+    const seriales = [...(itemNuevo[campoSeriales] || [])];
+    seriales[0] = original.serial || '';
+    itemNuevo[campoSeriales] = seriales;
+
+    const reemplazoRestante = { ...(itemNuevo.reemplazo || {}) };
+    delete reemplazoRestante[parte];
+    if (Object.keys(reemplazoRestante).length) itemNuevo.reemplazo = reemplazoRestante;
+    else delete itemNuevo.reemplazo;
+
+    equipos[indexItem] = itemNuevo;
+    try {
+      await db.collection(COLECCION).doc(pedido.id).update({ equipos });
+    } catch (err) {
+      console.error('Error deshaciendo el reemplazo:', err);
+      alert('No se pudo deshacer el reemplazo. Revisa la consola.');
+    }
+  }
+
+  // Fila visual "equipo viejo → equipo nuevo" para una parte reemplazada
+  // (motor, reductor, o el equipo individual). Se usa tanto para el ícono de
+  // la parte (⚡/⚙️/el que corresponda) como para el botón "Volver al
+  // original".
+  function filaReemplazoHtml(parte, icono, viejo, viejoSerial, nuevo, nuevoSerial, indexItem, puedeDeshacer) {
+    const nombreViejo = viejo ? escapeHtml(nombreMostrableEquipo(viejo)) : '<span style="color:var(--danger);">Equipo no encontrado</span>';
+    const nombreNuevo = nuevo ? escapeHtml(nombreMostrableEquipo(nuevo)) : '<span style="color:var(--danger);">Equipo no encontrado</span>';
+    return `
+      <div class="reemplazo-fila">
+        <div class="equipo-mini-card viejo">
+          <div class="equipo-mini-card-header">${icono} Original</div>
+          <div class="equipo-mini-card-body">
+            <div class="equipo-mini-nombre">${nombreViejo}</div>
+            ${viejoSerial ? `<div class="equipo-mini-serial">S/N ${escapeHtml(viejoSerial)}</div>` : ''}
+          </div>
+        </div>
+        <div class="flecha-reemplazo">
+          <svg width="30" height="16" viewBox="0 0 30 16" fill="none"><path d="M0 8H24" stroke="#6b3fa0" stroke-width="2"/><path d="M19 2L25 8L19 14" stroke="#6b3fa0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="equipo-mini-card nuevo">
+          <div class="equipo-mini-card-header">${icono} Nuevo<span class="tag-reemplazado">REEMPLAZO</span></div>
+          <div class="equipo-mini-card-body">
+            <div class="equipo-mini-nombre">${nombreNuevo}</div>
+            ${nuevoSerial ? `<div class="equipo-mini-serial">S/N ${escapeHtml(nuevoSerial)}</div>` : ''}
+          </div>
+        </div>
+      </div>
+      ${puedeDeshacer ? `<button type="button" class="btn-deshacer-reemplazo" data-deshacer-reemplazo data-index="${indexItem}" data-parte="${parte}">↩️ Volver al original</button>` : ''}
+    `;
+  }
+
+  function renderTarjetaIndividual(item, index, pedido) {
     const equipo = buscarEquipoCatalogo(item.equipoId);
     const tipo = equipo ? buscarTipoEquipo(equipo.tipoId) : null;
     const preparado = itemEstaFullyPreparado(item);
@@ -1120,6 +1315,11 @@
     const nombreEquipo = equipo
       ? escapeHtml(equipo.nombre) + (equipo.variante ? ` <span class="tag-variante">${escapeHtml(equipo.variante)}</span>` : '') + extrasNombre
       : '<span style="color:var(--danger);">Equipo no encontrado</span>';
+
+    const reemplazo = reemplazoDeParte(item, 'individual');
+    const reemplazoHtml = reemplazo
+      ? filaReemplazoHtml('individual', icono, buscarEquipoCatalogo(reemplazo.equipoId), reemplazo.serial, equipo, (item.seriales || [])[0], index, conteoCompletadoItem(item).hecho === 0)
+      : (puedeReemplazarEquipo(pedido, item) ? `<button type="button" class="btn-reemplazar-equipo" data-reemplazar data-index="${index}" data-parte="individual">🔁 Reemplazar equipo</button>` : '');
 
     const usaSerial = !!equipo?.usaSerial;
     const ocHtml = item.ordenCompra
@@ -1139,11 +1339,12 @@
         </div>
         <div class="equipo-card-body" style="background:${color}15;">
           <div>
-            <div class="equipo-card-nombre">${nombreEquipo}</div>
+            ${reemplazo ? '' : `<div class="equipo-card-nombre">${nombreEquipo}</div>`}
             ${ocHtml}
             <div class="equipo-card-meta">${metaChips}</div>
+            ${reemplazoHtml}
           </div>
-          ${usaSerial ? resumenSeriales(item, item.cantidad) : ''}
+          ${(usaSerial && !reemplazo) ? resumenSeriales(item, item.cantidad) : ''}
         </div>
         <div class="equipo-card-preparado-toggle">
           ${textoResumenPreparado(item)} <span style="opacity:.6;">(clic para gestionar)</span>
@@ -1152,7 +1353,7 @@
     `;
   }
 
-  function renderTarjetaMotoreductor(item, index) {
+  function renderTarjetaMotoreductor(item, index, pedido) {
     const motor = buscarEquipoCatalogo(item.motorEquipoId);
     const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
     const tipoMotoreductor = (window.tiposEquipoCache || []).find(t => normalizar(t.nombre) === 'motoreductor');
@@ -1185,6 +1386,37 @@
     const cantDevueltas = devueltasCountItem(item);
     const chipDevuelto = cantDevueltas ? `<span class="meta-chip chip-devuelto" title="Unidad(es) devuelta(s)">🔵 ${cantDevueltas} devuelta${cantDevueltas > 1 ? 's' : ''}</span>` : '';
 
+    // El reemplazo (exclusivo a pedidos de Reparación, cantidad 1) sustituye,
+    // parte por parte, la fila normal del motor y/o del reductor por la fila
+    // "original → nuevo". Fuera de ese caso, todo se ve exactamente igual
+    // que siempre.
+    const puedeReemplazar = puedeReemplazarEquipo(pedido, item);
+    const reemplazoMotor = reemplazoDeParte(item, 'motor');
+    const reemplazoReductor = reemplazoDeParte(item, 'reductor');
+
+    const filaMotorHtml = reemplazoMotor
+      ? filaReemplazoHtml('motor', '⚡', buscarEquipoCatalogo(reemplazoMotor.equipoId), reemplazoMotor.serial, motor, (item.serialesMotor || [])[0], index, conteoCompletadoItem(item).hecho === 0)
+      : `
+        <div class="motoreductor-subitem">
+          <div class="equipo-card-nombre">⚡ ${nombreMotor}</div>
+          <div class="equipo-card-meta">
+            <span class="meta-chip">${formatearPesoFicha(motor?.peso)}</span>
+          </div>
+          ${puedeReemplazar ? `<button type="button" class="btn-reemplazar-equipo" data-reemplazar data-index="${index}" data-parte="motor">🔁 Reemplazar motor</button>` : ''}
+        </div>
+      `;
+    const filaReductorHtml = reemplazoReductor
+      ? filaReemplazoHtml('reductor', '⚙️', buscarEquipoCatalogo(reemplazoReductor.equipoId), reemplazoReductor.serial, reductor, (item.serialesReductor || [])[0], index, conteoCompletadoItem(item).hecho === 0)
+      : `
+        <div class="motoreductor-subitem">
+          <div class="equipo-card-nombre">⚙️ ${nombreReductor}</div>
+          <div class="equipo-card-meta">
+            <span class="meta-chip">${formatearPesoFicha(reductor?.peso)}</span>
+          </div>
+          ${puedeReemplazar ? `<button type="button" class="btn-reemplazar-equipo" data-reemplazar data-index="${index}" data-parte="reductor">🔁 Reemplazar reductor</button>` : ''}
+        </div>
+      `;
+
     return `
       <div class="equipo-card clicable ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''} ${cantDevueltas ? 'devuelto' : ''}" data-index="${index}" style="border-color:${color};">
         <div class="equipo-card-header" style="background:${color};">
@@ -1194,19 +1426,9 @@
         </div>
         <div class="equipo-card-body" style="background:${color}15; flex-direction:column; align-items:stretch;">
           ${ocHtml}
-          <div class="motoreductor-subitem">
-            <div class="equipo-card-nombre">⚡ ${nombreMotor}</div>
-            <div class="equipo-card-meta">
-              <span class="meta-chip">${formatearPesoFicha(motor?.peso)}</span>
-            </div>
-          </div>
-          <div class="motoreductor-subitem">
-            <div class="equipo-card-nombre">⚙️ ${nombreReductor}</div>
-            <div class="equipo-card-meta">
-              <span class="meta-chip">${formatearPesoFicha(reductor?.peso)}</span>
-            </div>
-          </div>
-          ${(usaSerialMotor || usaSerialReductor) ? `
+          ${filaMotorHtml}
+          ${filaReductorHtml}
+          ${((usaSerialMotor || usaSerialReductor) && !reemplazoMotor && !reemplazoReductor) ? `
             <div class="motoreductor-subitem" style="border-bottom:none;">
               <div class="equipo-card-nombre" style="font-size:12px; color:var(--ink-soft); margin-bottom:4px;">Serial motor / Serial reductor</div>
               ${resumenSerialesMotoreductor(item, item.cantidad)}
@@ -1228,12 +1450,24 @@
     }
 
     fichaEquiposContenido.innerHTML = `<div class="equipos-cards-list">${equipos.map((item, index) =>
-      item.tipoLinea === 'motoreductor' ? renderTarjetaMotoreductor(item, index) : renderTarjetaIndividual(item, index)
+      item.tipoLinea === 'motoreductor' ? renderTarjetaMotoreductor(item, index, pedido) : renderTarjetaIndividual(item, index, pedido)
     ).join('')}</div>`;
 
     fichaEquiposContenido.querySelectorAll('.equipo-card.clicable').forEach(card => {
       card.addEventListener('click', () => {
         abrirModalSeriales(parseInt(card.dataset.index, 10));
+      });
+    });
+    fichaEquiposContenido.querySelectorAll('[data-reemplazar]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        abrirModalReemplazoEquipo(parseInt(btn.dataset.index, 10), btn.dataset.parte);
+      });
+    });
+    fichaEquiposContenido.querySelectorAll('[data-deshacer-reemplazo]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deshacerReemplazoEquipo(parseInt(btn.dataset.index, 10), btn.dataset.parte);
       });
     });
   }
@@ -1596,19 +1830,21 @@
     // — su serial se sincroniza solo al guardar esa reparación (ver
     // sincronizarPedidoDesdeReparacion en reparaciones.js) y no se edita
     // acá. Unidades adicionales (si la cantidad se subió desde Pedidos) sí
-    // son libres.
-    const unidadesBloqueadasReparacion = pedido.reparacionId ? new Set([0]) : new Set();
+    // son libres. Si esa parte ya se reemplazó (ver reemplazoDeParte), el
+    // serial activo ya no es el de la reparación sino el que se escribió al
+    // reemplazar, así que vuelve a quedar editable acá.
+    const bloqueoUnidad0 = (parte) => (pedido.reparacionId && !reemplazoDeParte(item, parte)) ? new Set([0]) : new Set();
     if (item.tipoLinea === 'motoreductor') {
       const motor = buscarEquipoCatalogo(item.motorEquipoId);
       const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
       modalSerialesTitulo.textContent = 'Unidades — Motoreductor';
 
-      if (motor?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input-motor', 'motor', cantidad, item.serialesMotor || [], `⚡ Motor — ${escapeHtml(motor.nombre)}`, unidadesCompletadas, unidadesDevueltas, unidadesBloqueadasReparacion);
-      if (reductor?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input-reductor', 'reductor', cantidad, item.serialesReductor || [], `⚙️ Reductor — ${escapeHtml(reductor.nombre)}`, unidadesCompletadas, unidadesDevueltas, unidadesBloqueadasReparacion);
+      if (motor?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input-motor', 'motor', cantidad, item.serialesMotor || [], `⚡ Motor — ${escapeHtml(motor.nombre)}`, unidadesCompletadas, unidadesDevueltas, bloqueoUnidad0('motor'));
+      if (reductor?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input-reductor', 'reductor', cantidad, item.serialesReductor || [], `⚙️ Reductor — ${escapeHtml(reductor.nombre)}`, unidadesCompletadas, unidadesDevueltas, bloqueoUnidad0('reductor'));
     } else {
       const equipo = buscarEquipoCatalogo(item.equipoId);
       modalSerialesTitulo.textContent = `Unidades — ${equipo ? equipo.nombre : 'Equipo'}`;
-      if (equipo?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input', 'individual', cantidad, item.seriales || [], '', unidadesCompletadas, unidadesDevueltas, unidadesBloqueadasReparacion);
+      if (equipo?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input', 'individual', cantidad, item.seriales || [], '', unidadesCompletadas, unidadesDevueltas, bloqueoUnidad0('individual'));
     }
 
     serialesCampos.innerHTML = htmlSeriales + unidadesEstadoHtml(item);

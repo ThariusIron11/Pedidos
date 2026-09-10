@@ -376,8 +376,55 @@
   // (equipo + serial, vía htmlEquipoTarjeta) y las observaciones iniciales
   // ya guardadas, ambos en solo lectura — nada de esto es editable acá,
   // solo desde el botón "Editar" que lleva al formulario de siempre.
+  // Si el pedido vinculado a esta reparación tiene alguna parte reemplazada
+  // (ver "Reemplazar equipo" en pedidos.js), se refleja acá tal cual se ve
+  // allá — mismo estilo "original → nuevo" — pero de solo lectura, ya que
+  // el reemplazo se gestiona únicamente desde el pedido.
+  function htmlReemplazoFichaReparacion(reparacion) {
+    if (!reparacion.pedidoId) return '';
+    const pedido = (window.pedidosCache || []).find(p => p.id === reparacion.pedidoId);
+    const item = pedido ? (pedido.equipos || [])[0] : null;
+    if (!item || !item.reemplazo) return '';
+
+    const filaHtml = (parte, icono, activoId, activoSerial) => {
+      const original = item.reemplazo[parte];
+      if (!original) return '';
+      const viejo = buscarEquipoCatalogo(original.equipoId);
+      const nuevo = buscarEquipoCatalogo(activoId);
+      const nombreViejo = viejo ? escapeHtml(nombreMostrableEquipo(viejo)) : '<span style="color:var(--danger);">Equipo no encontrado</span>';
+      const nombreNuevo = nuevo ? escapeHtml(nombreMostrableEquipo(nuevo)) : '<span style="color:var(--danger);">Equipo no encontrado</span>';
+      return `
+        <div class="reemplazo-fila">
+          <div class="equipo-mini-card viejo">
+            <div class="equipo-mini-card-header">${icono} Original</div>
+            <div class="equipo-mini-card-body">
+              <div class="equipo-mini-nombre">${nombreViejo}</div>
+              ${original.serial ? `<div class="equipo-mini-serial">S/N ${escapeHtml(original.serial)}</div>` : ''}
+            </div>
+          </div>
+          <div class="flecha-reemplazo">
+            <svg width="30" height="16" viewBox="0 0 30 16" fill="none"><path d="M0 8H24" stroke="#6b3fa0" stroke-width="2"/><path d="M19 2L25 8L19 14" stroke="#6b3fa0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="equipo-mini-card nuevo">
+            <div class="equipo-mini-card-header">${icono} Nuevo<span class="tag-reemplazado">REEMPLAZO</span></div>
+            <div class="equipo-mini-card-body">
+              <div class="equipo-mini-nombre">${nombreNuevo}</div>
+              ${activoSerial ? `<div class="equipo-mini-serial">S/N ${escapeHtml(activoSerial)}</div>` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    };
+
+    const filas = item.tipoLinea === 'motoreductor'
+      ? filaHtml('motor', '⚡', item.motorEquipoId, (item.serialesMotor || [])[0]) + filaHtml('reductor', '⚙️', item.reductorEquipoId, (item.serialesReductor || [])[0])
+      : filaHtml('individual', '📦', item.equipoId, (item.seriales || [])[0]);
+
+    return filas ? `<div style="margin-top:14px;">${filas}</div>` : '';
+  }
+
   function renderFichaEquipos(reparacion) {
-    fichaEquipoTexto.innerHTML = htmlEquipoTarjeta(reparacion);
+    fichaEquipoTexto.innerHTML = htmlEquipoTarjeta(reparacion) + htmlReemplazoFichaReparacion(reparacion);
 
     const observaciones = reparacion.observacionesIniciales;
     fichaObservacionesTexto.innerHTML = htmlObservacionesEstaVacio(observaciones)
@@ -1094,6 +1141,26 @@
     const itemEquipo = equipoReparacionAItemPedido(equipo);
     if (itemEquipo) {
       const itemActual = { ...((pedido.equipos && pedido.equipos[0]) || {}) };
+      // Si alguna parte ya se reemplazó desde Pedidos (ver "Reemplazar
+      // equipo" en pedidos.js), su identidad + serial activos NO se pisan
+      // acá — mientras el reemplazo siga activo, lo que sale en el pedido es
+      // el equipo nuevo, no el de esta reparación. Solo se refresca la
+      // copia "original" guardada dentro de item.reemplazo, para que
+      // "Volver al original" siempre use el dato más reciente de acá. Si
+      // cambió el tipo de línea (raro: pasar de individual a motoreductor o
+      // viceversa), cualquier reemplazo anterior deja de tener sentido y se
+      // descarta.
+      const mismoTipo = !itemActual.tipoLinea || itemActual.tipoLinea === itemEquipo.tipoLinea;
+      const reemplazoPrevio = mismoTipo ? (itemActual.reemplazo || {}) : {};
+      const activo = {
+        motorEquipoId: itemActual.motorEquipoId,
+        reductorEquipoId: itemActual.reductorEquipoId,
+        equipoId: itemActual.equipoId,
+        serialesMotor: itemActual.serialesMotor || [],
+        serialesReductor: itemActual.serialesReductor || [],
+        seriales: itemActual.seriales || []
+      };
+
       // Se reemplaza la identidad completa del equipo (tipoLinea + sus ids);
       // el resto del ítem (cantidad, orden de compra, brazo/eje, unidades
       // preparadas) se deja tal cual estaba. FieldValue.delete() no es
@@ -1102,31 +1169,46 @@
       delete itemActual.equipoId;
       delete itemActual.motorEquipoId;
       delete itemActual.reductorEquipoId;
-      const itemActualizado = {
-        ...itemActual,
-        tipoLinea: itemEquipo.tipoLinea,
-        ...(itemEquipo.tipoLinea === 'motoreductor'
-          ? { motorEquipoId: itemEquipo.motorEquipoId, reductorEquipoId: itemEquipo.reductorEquipoId }
-          : { equipoId: itemEquipo.equipoId })
-      };
+      delete itemActual.reemplazo;
+      const itemActualizado = { ...itemActual, tipoLinea: itemEquipo.tipoLinea };
+      const nuevoReemplazo = {};
 
-      // Serial(es) de la unidad 0: siempre igual al que tiene la reparación
-      // ahora mismo (incluso si se borró, para que no quede un serial viejo
-      // huérfano). Unidades 1 en adelante (si el pedido subió la cantidad)
-      // no se tocan.
       if (itemEquipo.tipoLinea === 'motoreductor') {
-        const serialesMotor = [...(itemActual.serialesMotor || [])];
-        serialesMotor[0] = equipo.motorSerial || '';
-        itemActualizado.serialesMotor = serialesMotor;
+        if (reemplazoPrevio.motor) {
+          itemActualizado.motorEquipoId = activo.motorEquipoId;
+          itemActualizado.serialesMotor = [...activo.serialesMotor];
+          nuevoReemplazo.motor = { equipoId: itemEquipo.motorEquipoId, serial: equipo.motorSerial || '' };
+        } else {
+          itemActualizado.motorEquipoId = itemEquipo.motorEquipoId;
+          const serialesMotor = [...activo.serialesMotor];
+          serialesMotor[0] = equipo.motorSerial || '';
+          itemActualizado.serialesMotor = serialesMotor;
+        }
 
-        const serialesReductor = [...(itemActual.serialesReductor || [])];
-        serialesReductor[0] = equipo.reductorSerial || '';
-        itemActualizado.serialesReductor = serialesReductor;
+        if (reemplazoPrevio.reductor) {
+          itemActualizado.reductorEquipoId = activo.reductorEquipoId;
+          itemActualizado.serialesReductor = [...activo.serialesReductor];
+          nuevoReemplazo.reductor = { equipoId: itemEquipo.reductorEquipoId, serial: equipo.reductorSerial || '' };
+        } else {
+          itemActualizado.reductorEquipoId = itemEquipo.reductorEquipoId;
+          const serialesReductor = [...activo.serialesReductor];
+          serialesReductor[0] = equipo.reductorSerial || '';
+          itemActualizado.serialesReductor = serialesReductor;
+        }
       } else {
-        const seriales = [...(itemActual.seriales || [])];
-        seriales[0] = equipo.serial || '';
-        itemActualizado.seriales = seriales;
+        if (reemplazoPrevio.individual) {
+          itemActualizado.equipoId = activo.equipoId;
+          itemActualizado.seriales = [...activo.seriales];
+          nuevoReemplazo.individual = { equipoId: itemEquipo.equipoId, serial: equipo.serial || '' };
+        } else {
+          itemActualizado.equipoId = itemEquipo.equipoId;
+          const seriales = [...activo.seriales];
+          seriales[0] = equipo.serial || '';
+          itemActualizado.seriales = seriales;
+        }
       }
+
+      if (Object.keys(nuevoReemplazo).length) itemActualizado.reemplazo = nuevoReemplazo;
 
       datos.equipos = [itemActualizado, ...(pedido.equipos || []).slice(1)];
     }
@@ -1587,7 +1669,10 @@
     renderLista();
     if (modalFicha.classList.contains('open')) {
       const reparacionAbierta = reparacionesCache.find(r => r.id === btnEditarDesdeFicha.dataset.id);
-      if (reparacionAbierta) actualizarHeaderAcciones(reparacionAbierta);
+      if (reparacionAbierta) {
+        actualizarHeaderAcciones(reparacionAbierta);
+        renderFichaEquipos(reparacionAbierta); // el reemplazo de equipo vive en el pedido, no acá
+      }
     }
   });
 

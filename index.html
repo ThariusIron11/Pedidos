@@ -1039,6 +1039,93 @@
   .equipo-card-serial.completo{ color: var(--ok); }
   .equipo-card-serial.pendiente{ color: var(--warn); }
 
+  /* ---------- Reemplazo de equipo (exclusivo a pedidos de Reparación) ---------- */
+  .btn-reemplazar-equipo{
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    color: #6b3fa0;
+    background: #efe6f7;
+    border: none;
+    border-radius: 999px;
+    padding: 3px 10px;
+    cursor: pointer;
+    margin-top: 6px;
+    display: inline-block;
+  }
+  .btn-reemplazar-equipo:hover{ background: #e2d1f2; }
+  .btn-deshacer-reemplazo{
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    background: rgba(28,33,40,0.06);
+    border: none;
+    border-radius: 999px;
+    padding: 3px 10px;
+    cursor: pointer;
+    margin-top: 8px;
+  }
+  .btn-deshacer-reemplazo:hover{ background: rgba(28,33,40,0.12); }
+
+  .reemplazo-fila{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  .equipo-mini-card{
+    flex: 1;
+    min-width: 160px;
+    border-radius: var(--radius);
+    border: 1px solid rgba(0,0,0,0.08);
+    overflow: hidden;
+  }
+  .equipo-mini-card.viejo{ opacity: 0.7; }
+  .equipo-mini-card-header{
+    padding: 4px 10px;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--ink-soft);
+  }
+  .equipo-mini-card.nuevo .equipo-mini-card-header{ background: #6b3fa0; }
+  .equipo-mini-card-body{ padding: 7px 10px; background: rgba(255,255,255,0.6); }
+  .equipo-mini-nombre{ font-size: 13px; font-weight: 600; color: var(--ink); }
+  .equipo-mini-card.viejo .equipo-mini-nombre{
+    text-decoration: line-through;
+    text-decoration-color: rgba(91,100,114,0.6);
+    color: var(--ink-soft);
+  }
+  .equipo-mini-serial{ font-size: 11px; color: var(--ink-soft); margin-top: 2px; font-weight: 600; }
+  .flecha-reemplazo{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    color: #6b3fa0;
+    flex-shrink: 0;
+  }
+  .flecha-reemplazo svg{ display: block; }
+  .flecha-reemplazo-etiqueta{ font-size: 8.5px; font-weight: 700; letter-spacing: 0.3px; white-space: nowrap; }
+  .tag-reemplazado{
+    display: inline-block;
+    font-size: 9.5px;
+    font-weight: 700;
+    color: #fff;
+    background: #6b3fa0;
+    padding: 1px 7px;
+    border-radius: 999px;
+    margin-left: 5px;
+    vertical-align: middle;
+  }
+  #modal-reemplazo-equipo .reemplazo-equipo-original-texto{
+    font-size: 13px;
+    color: var(--ink-soft);
+    margin: -6px 0 14px;
+  }
+
   .serial-par-lista{
     display: flex;
     flex-direction: column;
@@ -2613,6 +2700,30 @@
       <div class="modal-actions">
         <button type="button" class="btn secondary" id="btn-cancelar-seriales">Cancelar</button>
         <button type="button" class="btn" id="btn-guardar-seriales">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: reemplazar equipo (solo pedidos que vienen de una reparación) -->
+  <div class="modal-backdrop" id="modal-reemplazo-equipo">
+    <div class="modal">
+      <h3 id="reemplazo-equipo-titulo">Reemplazar equipo</h3>
+      <p class="reemplazo-equipo-original-texto" id="reemplazo-equipo-original-texto"></p>
+      <div class="form-group">
+        <label>Equipo de reemplazo</label>
+        <div class="buscador-equipo">
+          <input type="text" class="buscador-input" id="reemplazo-equipo-buscador-input" placeholder="Escribe para buscar el equipo nuevo..." autocomplete="off">
+          <input type="hidden" id="reemplazo-equipo-select">
+          <div class="buscador-resultados"></div>
+        </div>
+      </div>
+      <div class="form-group" id="reemplazo-equipo-serial-wrap" style="display:none; margin-bottom:0;">
+        <label for="reemplazo-equipo-serial">🔢 Número de serial del equipo nuevo</label>
+        <input type="text" id="reemplazo-equipo-serial" placeholder="Número de serial">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" id="btn-cancelar-reemplazo-equipo">Cancelar</button>
+        <button type="button" class="btn" id="btn-confirmar-reemplazo-equipo">Confirmar reemplazo</button>
       </div>
     </div>
   </div>
