@@ -552,6 +552,7 @@
   .ficha-header-tags{
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
   }
 
@@ -1956,8 +1957,19 @@
           <button type="button" class="btn" id="btn-nueva-reparacion">+ Nueva reparación</button>
         </div>
 
-        <div class="form-group" style="max-width:340px;">
-          <input type="text" id="buscador-reparaciones" placeholder="Buscar por compañía, equipo, serial o número...">
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">
+          <div class="form-group" style="max-width:340px; margin-bottom:0; flex:1;">
+            <input type="text" id="buscador-reparaciones" placeholder="Buscar por compañía, equipo, serial o número...">
+          </div>
+          <div class="filtro-estado-pedidos" id="filtro-estado-reparaciones">
+            <button type="button" class="chip-filtro-estado" data-estado="en_proceso">En proceso</button>
+            <button type="button" class="chip-filtro-estado" data-estado="completado">Completado</button>
+            <button type="button" class="chip-filtro-estado" data-estado="devolucion">Devolución</button>
+            <button type="button" class="chip-filtro-estado" data-estado="todos">Todos</button>
+          </div>
+          <div class="filtro-estado-pedidos" id="filtro-tiene-pedido-reparaciones">
+            <button type="button" class="chip-filtro-estado" id="chip-tiene-pedido-reparaciones">🧾 Con pedido</button>
+          </div>
         </div>
 
         <div class="reparaciones-cards" id="reparaciones-cards">

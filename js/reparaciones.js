@@ -36,6 +36,12 @@
 //             de salida — ver más abajo "Enlace con Pedidos". Vale siempre
 //             lo mismo que el propio ID de la reparación, porque el pedido
 //             se crea con ese mismo ID),
+//   devuelta (true cuando el equipo se devolvió al cliente en vez de seguir
+//             el flujo normal de pedido — se marca a mano con el botón
+//             "Marcar como devuelto" en la ficha. No borra ni cambia nada
+//             de lo ya cargado, solo agrega esta marca. Una reparación
+//             devuelta no puede tener ni generar pedido: si ya tenía uno
+//             vinculado, se elimina al marcarla),
 //   equipo: null, o uno de:
 //     { tipoLinea: 'individual', tipoId, equipoId, serial? }
 //     { tipoLinea: 'motoreductor', motorEquipoId, motorSerial?,
@@ -247,6 +253,8 @@
   let reparacionesCache = []; // también expuesto en window.reparacionesCache
   let borradorId = null;
   let filtroTexto = '';
+  let filtroEstadoReparaciones = 'en_proceso'; // predeterminado, igual que en Pedidos
+  let filtroTienePedido = false; // chip adicional "Con pedido", independiente del de estado
 
   // ---------- Helpers ----------
 
@@ -384,6 +392,8 @@
     renderFichaEquipos(reparacion);
     resetFichaSubtabs();
     btnEditarDesdeFicha.dataset.id = reparacion.id;
+    btnEditarDesdeFicha.disabled = !!reparacion.devuelta;
+    btnEditarDesdeFicha.title = reparacion.devuelta ? 'Reparación devuelta: la ficha queda de solo lectura' : '';
     modalFicha.classList.add('open');
   }
 
@@ -948,8 +958,17 @@
       return;
     }
     const tagCompletado = reparacionEstaCompletada(reparacion) ? '<span class="tag-pedido-completado">COMPLETADO</span>' : '';
+
+    // Una reparación devuelta ya no puede tener ni generar pedido — no se
+    // ofrece "Crear pedido" ni "Ver pedido" acá, solo la etiqueta.
+    if (reparacion.devuelta) {
+      headerAcciones.innerHTML = '<span class="tag-pedido-devolucion">DEVOLUCIÓN</span>';
+      return;
+    }
+
+    const btnDevolucion = '<button type="button" class="btn-pill-header" id="btn-marcar-devuelto-reparacion">↩️ Marcar como devuelto</button>';
     if (reparacion.pedidoId) {
-      headerAcciones.innerHTML = tagCompletado + `<button type="button" class="btn-pill-header" id="btn-ver-pedido-desde-reparacion">🧾 Ver pedido ↗</button>`;
+      headerAcciones.innerHTML = tagCompletado + `<button type="button" class="btn-pill-header" id="btn-ver-pedido-desde-reparacion">🧾 Ver pedido ↗</button>` + btnDevolucion;
       document.getElementById('btn-ver-pedido-desde-reparacion').addEventListener('click', () => {
         if (!window.abrirFichaPedido) {
           alert('No se pudo abrir el pedido: la pestaña de Pedidos no está cargada en esta página.');
@@ -959,8 +978,48 @@
         window.abrirFichaPedido(reparacion.pedidoId);
       });
     } else {
-      headerAcciones.innerHTML = `<button type="button" class="btn-pill-header" id="btn-crear-pedido-desde-reparacion">🧾 Crear pedido</button>`;
+      headerAcciones.innerHTML = `<button type="button" class="btn-pill-header" id="btn-crear-pedido-desde-reparacion">🧾 Crear pedido</button>` + btnDevolucion;
       document.getElementById('btn-crear-pedido-desde-reparacion').addEventListener('click', () => crearPedidoDesdeReparacion(reparacion));
+    }
+    document.getElementById('btn-marcar-devuelto-reparacion').addEventListener('click', () => marcarComoDevuelto(reparacion));
+  }
+
+  // Marca la reparación como devuelta al cliente: se conservan todos sus
+  // datos (diagnóstico, evidencia, equipo, etc.) tal cual están, solo se
+  // agrega la marca "devuelta". Por ahora una reparación devuelta no puede
+  // tener pedido — si ya tenía uno vinculado, se elimina (respetando la
+  // misma regla de "no borrar si ya hay algo despachado" que usa Eliminar).
+  async function marcarComoDevuelto(reparacion) {
+    if (reparacion.pedidoId && window.pedidoTieneAlgoDespachado) {
+      const pedidoVinculado = (window.pedidosCache || []).find(p => p.id === reparacion.pedidoId);
+      if (pedidoVinculado && window.pedidoTieneAlgoDespachado(pedidoVinculado)) {
+        alert('No se puede marcar como devuelta: el pedido vinculado ya tiene equipos despachados en un envío.');
+        return;
+      }
+    }
+
+    const mensaje = reparacion.pedidoId
+      ? '¿Marcar esta reparación como devuelta al cliente? Se conservan todos sus datos. Ya no podrá generar un pedido — el pedido vinculado (mismo N°) se eliminará.'
+      : '¿Marcar esta reparación como devuelta al cliente? Se conservan todos sus datos, pero ya no podrá generar un pedido.';
+    const ok = confirm(mensaje);
+    if (!ok) return;
+
+    try {
+      const datos = { devuelta: true };
+      if (reparacion.pedidoId) {
+        const resultado = window.eliminarPedidoDesdeReparacion
+          ? await window.eliminarPedidoDesdeReparacion(reparacion.pedidoId)
+          : await db.collection('pedidos').doc(reparacion.pedidoId).delete().then(() => ({ ok: true }));
+        if (!resultado.ok) {
+          alert('No se pudo eliminar el pedido vinculado. La reparación no se marcó como devuelta.');
+          return;
+        }
+        datos.pedidoId = firebase.firestore.FieldValue.delete();
+      }
+      await db.collection(COLECCION).doc(reparacion.id).update(datos);
+    } catch (err) {
+      console.error('Error marcando la reparación como devuelta:', err);
+      alert('No se pudo marcar la reparación como devuelta. Revisa la consola.');
     }
   }
 
@@ -1087,6 +1146,10 @@
   }
 
   async function crearPedidoDesdeReparacion(reparacion) {
+    if (reparacion.devuelta) {
+      alert('Esta reparación está marcada como devuelta al cliente: no puede generar un pedido.');
+      return;
+    }
     if (!reparacion.companiaId) {
       alert('Antes de crear el pedido, elige la compañía en "Datos generales".');
       cerrarFicha();
@@ -1307,6 +1370,30 @@
     renderLista();
   });
 
+  // ---------- Filtro de estado (En proceso / Completado / Devolución / Todos) ----------
+  // "Devolución" queda con la etiqueta lista pero sin lógica propia todavía
+  // — por ahora no filtra nada especial (se comporta como "Todos") hasta
+  // que se defina la dinámica de devoluciones en Reparaciones.
+  const chipsFiltroEstadoReparaciones = document.querySelectorAll('#filtro-estado-reparaciones .chip-filtro-estado');
+  chipsFiltroEstadoReparaciones.forEach(chip => {
+    chip.classList.toggle('active', chip.dataset.estado === filtroEstadoReparaciones);
+    chip.addEventListener('click', () => {
+      filtroEstadoReparaciones = chip.dataset.estado;
+      chipsFiltroEstadoReparaciones.forEach(c => c.classList.toggle('active', c === chip));
+      renderLista();
+    });
+  });
+
+  // ---------- Filtro adicional "Con pedido" ----------
+  // Chip independiente del de estado: cuando está activo, solo muestra
+  // reparaciones que ya generaron un pedido (pedidoId presente).
+  const chipTienePedido = document.getElementById('chip-tiene-pedido-reparaciones');
+  chipTienePedido.addEventListener('click', () => {
+    filtroTienePedido = !filtroTienePedido;
+    chipTienePedido.classList.toggle('active', filtroTienePedido);
+    renderLista();
+  });
+
   // Icono del tipo de un equipo del catálogo (config de Tipos de equipo).
   function iconoTipoDe(equipo) {
     if (!equipo) return '';
@@ -1361,7 +1448,7 @@
     return `${iconoTipoDe(eq)}${nombreTxt}${serial}`;
   }
 
-  function reparacionCoincide(reparacion) {
+  function reparacionCoincideTexto(reparacion) {
     if (!filtroTexto) return true;
     const compania = buscarCompania(reparacion.companiaId);
     if (compania && normalizar(compania.nombre).includes(filtroTexto)) return true;
@@ -1369,6 +1456,21 @@
     if (normalizar(formatearNumero(reparacion.numero)).includes(filtroTexto)) return true;
     if (textoEquipoBusqueda(reparacion).includes(filtroTexto)) return true;
     return false;
+  }
+
+  // Chip de estado (En proceso / Completado / Devolución / Todos). Igual que
+  // en Pedidos: "en proceso" es todo lo que no está completado ni devuelto.
+  function reparacionCoincideEstado(reparacion) {
+    if (filtroEstadoReparaciones === 'completado') return reparacionEstaCompletada(reparacion);
+    if (filtroEstadoReparaciones === 'devolucion') return !!reparacion.devuelta;
+    if (filtroEstadoReparaciones === 'en_proceso') return !reparacionEstaCompletada(reparacion) && !reparacion.devuelta;
+    return true; // todos
+  }
+
+  function reparacionCoincide(reparacion) {
+    if (filtroTienePedido && !reparacion.pedidoId) return false;
+    if (!reparacionCoincideEstado(reparacion)) return false;
+    return reparacionCoincideTexto(reparacion);
   }
 
   // ---------- Render de la lista (tarjetas) ----------
@@ -1384,7 +1486,7 @@
       listaContenedor.innerHTML = '';
       tablaEmpty.style.display = 'block';
       tablaEmpty.textContent = reparacionesCache.length
-        ? 'Ninguna reparación coincide con la búsqueda.'
+        ? 'Ninguna reparación coincide con la búsqueda y los filtros activos.'
         : 'Todavía no hay reparaciones registradas.';
       return;
     }
@@ -1412,6 +1514,7 @@
             <span class="reparacion-card-numero">${formatearNumero(reparacion.numero)}</span>
             ${reparacion.pedidoId ? '<span class="reparacion-card-tiene-pedido">🧾 Tiene pedido</span>' : ''}
             ${completada ? '<span class="tag-pedido-completado">COMPLETADO</span>' : ''}
+            ${reparacion.devuelta ? '<span class="tag-pedido-devolucion">DEVOLUCIÓN</span>' : ''}
             <div class="reparacion-card-actions">
               <button type="button" class="btn-eliminar" data-id="${reparacion.id}" title="Eliminar">🗑️</button>
             </div>
@@ -1464,6 +1567,8 @@
             actualizarHeaderAcciones(reparacionAbierta);
             renderFichaDatos(reparacionAbierta);
             renderFichaEquipos(reparacionAbierta);
+            btnEditarDesdeFicha.disabled = !!reparacionAbierta.devuelta;
+            btnEditarDesdeFicha.title = reparacionAbierta.devuelta ? 'Reparación devuelta: la ficha queda de solo lectura' : '';
           }
         }
         document.dispatchEvent(new CustomEvent('reparaciones:cambio', { detail: { reparaciones: reparacionesCache } }));
