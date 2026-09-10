@@ -952,15 +952,6 @@
     }
   }
 
-  // Menor número entero libre, pero mirando los N° ya usados en Pedidos
-  // (otra colección, expuesta por pedidos.js en window.pedidosCache).
-  function siguienteNumeroPedidoDisponible() {
-    const usados = new Set((window.pedidosCache || []).map(p => p.numero));
-    let n = 1;
-    while (usados.has(n)) n++;
-    return n;
-  }
-
   // Traduce el equipo cargado en esta reparación al formato que espera el
   // arreglo `equipos` de un pedido (un solo ítem, cantidad 1). Si el equipo
   // tenía serial capturado al ingresar, se precarga también.
@@ -1092,7 +1083,11 @@
     if (btn) { btn.disabled = true; btn.textContent = 'Creando...'; }
 
     try {
-      const numero = siguienteNumeroPedidoDisponible();
+      // El N° del pedido es SIEMPRE el mismo que el de esta reparación (ej.
+      // reparación R03 -> pedido también se muestra como R03), no un N°
+      // aparte tomado de Pedidos — así queda claro de un vistazo que es el
+      // mismo caso en las dos pestañas. Ver textoNumeroPedido() en pedidos.js.
+      const numero = reparacion.numero;
       const datosPedido = {
         numero,
         companiaId: reparacion.companiaId,
@@ -1115,7 +1110,7 @@
       if (llego && window.abrirFichaPedido) {
         window.abrirFichaPedido(reparacion.id);
       } else {
-        alert(`Pedido creado (N°${numero}). Ábrelo desde la pestaña Pedidos.`);
+        alert(`Pedido creado (${formatearNumero(numero)}). Ábrelo desde la pestaña Pedidos.`);
       }
     } catch (err) {
       console.error('Error creando el pedido desde la reparación:', err);
@@ -1232,9 +1227,40 @@
   // ---------- Eliminar ----------
 
   async function eliminarReparacion(reparacion) {
-    const ok = confirm(`¿Eliminar la reparación ${formatearNumero(reparacion.numero)}? Esta acción no se puede deshacer. El número quedará libre para una reparación nueva.`);
+    // Si esta reparación ya tiene un pedido vinculado (mismo ID en ambas
+    // colecciones), se elimina también ese pedido — no puede quedar un
+    // pedido "huérfano" apuntando a una reparación que ya no existe.
+    // Se respeta la misma regla que "Eliminar" tiene en Pedidos: si el
+    // pedido vinculado ya tiene algo despachado en un envío, no se puede
+    // borrar nada (ver window.pedidoTieneAlgoDespachado, expuesto por
+    // pedidos.js).
+    if (reparacion.pedidoId && window.pedidoTieneAlgoDespachado) {
+      const pedidoVinculado = (window.pedidosCache || []).find(p => p.id === reparacion.pedidoId);
+      if (pedidoVinculado && window.pedidoTieneAlgoDespachado(pedidoVinculado)) {
+        alert('No se puede eliminar: el pedido vinculado a esta reparación ya tiene equipos despachados en un envío.');
+        return;
+      }
+    }
+
+    const mensaje = reparacion.pedidoId
+      ? `¿Eliminar la reparación ${formatearNumero(reparacion.numero)}? También se eliminará el pedido vinculado (mismo N°). Esta acción no se puede deshacer. El número quedará libre para una reparación nueva.`
+      : `¿Eliminar la reparación ${formatearNumero(reparacion.numero)}? Esta acción no se puede deshacer. El número quedará libre para una reparación nueva.`;
+    const ok = confirm(mensaje);
     if (!ok) return;
     try {
+      if (reparacion.pedidoId) {
+        // Se borra primero el pedido vinculado (mismo ID) — usando la
+        // función expuesta por pedidos.js, que ya sabe respetar la regla de
+        // "no eliminar si algo quedó despachado en un envío" — y solo si
+        // eso sale bien se borra la reparación.
+        const resultado = window.eliminarPedidoDesdeReparacion
+          ? await window.eliminarPedidoDesdeReparacion(reparacion.pedidoId)
+          : await db.collection('pedidos').doc(reparacion.pedidoId).delete().then(() => ({ ok: true }));
+        if (!resultado.ok) {
+          alert('No se pudo eliminar el pedido vinculado. La reparación no se eliminó.');
+          return;
+        }
+      }
       await db.collection(COLECCION).doc(reparacion.id).delete();
     } catch (err) {
       console.error('Error eliminando reparación:', err);

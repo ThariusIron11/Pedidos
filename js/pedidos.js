@@ -100,10 +100,25 @@
   }
 
   function siguienteNumeroDisponible() {
-    const usados = new Set(pedidosCache.map(p => p.numero));
+    // Los pedidos que vienen de una reparación no cuentan para esta bolsa:
+    // su "numero" es una copia del N° de esa reparación (otra colección,
+    // otra numeración — ver textoNumeroPedido), no un N° propio de Pedidos.
+    const usados = new Set(pedidosCache.filter(p => !p.reparacionId).map(p => p.numero));
     let n = 1;
     while (usados.has(n)) n++;
     return n;
+  }
+
+  // Texto del N° tal como se muestra en toda la pestaña. Si el pedido viene
+  // de una reparación (mismo ID en las dos colecciones), se muestra con el
+  // mismo formato que esa reparación ("R01") en vez del "N" habitual, porque
+  // su "numero" es una copia exacta del N° de esa reparación (ver
+  // crearPedidoDesdeReparacion en reparaciones.js) — así el mismo caso se ve
+  // igual en ambas pestañas.
+  function textoNumeroPedido(pedido) {
+    return pedido.reparacionId
+      ? ('R' + String(pedido.numero).padStart(2, '0'))
+      : ('N' + pedido.numero);
   }
 
   // ---------- Sub-pestañas del modal (Datos / Equipos) ----------
@@ -632,12 +647,12 @@
 
   function abrirModalEditar(pedido) {
     if (borradorId === pedido.id) {
-      modalTitulo.textContent = `Editar pedido N° ${pedido.numero}`;
+      modalTitulo.textContent = `Editar pedido ${textoNumeroPedido(pedido)}`;
       modal.classList.add('open');
       return;
     }
     cargarFormularioDesdePedido(pedido);
-    modalTitulo.textContent = `Editar pedido N° ${pedido.numero}`;
+    modalTitulo.textContent = `Editar pedido ${textoNumeroPedido(pedido)}`;
     borradorId = pedido.id;
     modal.classList.add('open');
   }
@@ -701,7 +716,7 @@
 
       if (!yaEstabaCompletado && quedaraCompletado) {
         const confirmar = confirm(
-          `Con estos cambios, todos los equipos que quedan en el pedido N° ${pedidoOriginal?.numero ?? ''} ya están despachados.\n\n` +
+          `Con estos cambios, todos los equipos que quedan en el pedido ${pedidoOriginal ? textoNumeroPedido(pedidoOriginal) : ''} ya están despachados.\n\n` +
           `¿Desea completar este pedido?\n\n` +
           `Aceptar = el pedido queda marcado como COMPLETADO.\n` +
           `Cancelar = no se guarda ningún cambio.`
@@ -751,10 +766,10 @@
 
   async function eliminarPedido(pedido) {
     if (pedidoTieneAlgoDespachado(pedido)) {
-      alert(`El pedido N° ${pedido.numero} ya tiene equipos despachados en un envío y no se puede eliminar.`);
+      alert(`El pedido ${textoNumeroPedido(pedido)} ya tiene equipos despachados en un envío y no se puede eliminar.`);
       return;
     }
-    const ok = confirm(`¿Eliminar el pedido N° ${pedido.numero}? Esta acción no se puede deshacer. El número quedará libre para un pedido nuevo.`);
+    const ok = confirm(`¿Eliminar el pedido ${textoNumeroPedido(pedido)}? Esta acción no se puede deshacer. El número quedará libre para un pedido nuevo.`);
     if (!ok) return;
     try {
       await db.collection(COLECCION).doc(pedido.id).delete();
@@ -811,13 +826,14 @@
     }
 
     // Si este pedido se generó a partir de una reparación (mismo ID en las
-    // dos colecciones), se muestra de dónde viene con un enlace directo a
-    // esa ficha.
+    // dos colecciones), se muestra de dónde viene. El enlace a esa ficha ya
+    // no va acá — se movió al lado del título (ver abrirFicha), como botón
+    // "Ver ficha de reparación".
     let origenHtml = '';
     if (pedido.reparacionId) {
       const reparacion = (window.reparacionesCache || []).find(r => r.id === pedido.reparacionId);
       const numeroTexto = reparacion ? ('R' + String(reparacion.numero).padStart(2, '0')) : 'reparación de origen';
-      origenHtml = campoFicha('Viene de', `🔧 ${escapeHtml(numeroTexto)} <button type="button" class="btn-link-inline" data-abrir-reparacion="${pedido.reparacionId}">Ver ficha ↗</button>`);
+      origenHtml = campoFicha('Viene de', `🔧 ${escapeHtml(numeroTexto)}`);
     }
 
     fichaSeccionCliente.innerHTML = `
@@ -976,6 +992,23 @@
   function pedidoTieneAlgoDespachado(pedido) {
     return (pedido.equipos || []).some(item => conteoCompletadoItem(item).hecho > 0);
   }
+  window.pedidoTieneAlgoDespachado = pedidoTieneAlgoDespachado;
+
+  // Permite que reparaciones.js elimine el pedido vinculado al eliminar su
+  // reparación de origen (mismo ID en las dos colecciones). Respeta la misma
+  // regla que "Eliminar" tiene acá: si el pedido ya tiene algo despachado en
+  // un envío, no se borra nada. Devuelve { ok: true } o { ok: false }.
+  window.eliminarPedidoDesdeReparacion = async function (pedidoId) {
+    const pedido = pedidosCache.find(p => p.id === pedidoId);
+    if (pedido && pedidoTieneAlgoDespachado(pedido)) return { ok: false, motivo: 'despachado' };
+    try {
+      await db.collection(COLECCION).doc(pedidoId).delete();
+      return { ok: true };
+    } catch (err) {
+      console.error('Error eliminando pedido vinculado desde reparación:', err);
+      return { ok: false, motivo: 'error' };
+    }
+  };
 
   // ---------- Ficha de Devolución (vista reducida: solo lo devuelto) ----------
   // Se abre desde la tabla cuando el filtro activo es "Devolución": en vez de
@@ -1032,7 +1065,7 @@
   function abrirFichaDevolucion(pedido) {
     const compania = buscarCompania(pedido.companiaId);
     const nombreCompania = compania ? compania.nombre : 'Compañía no encontrada';
-    fichaDevolucionNumero.textContent = `N${pedido.numero} - ${nombreCompania}`;
+    fichaDevolucionNumero.textContent = `${textoNumeroPedido(pedido)} - ${nombreCompania}`;
 
     const itemsConDevolucion = (pedido.equipos || []).filter(item => devueltasCountItem(item) > 0);
     fichaDevolucionContenido.innerHTML = itemsConDevolucion.length
@@ -1237,10 +1270,22 @@
     const compania = buscarCompania(pedido.companiaId);
     const nombreCompania = compania ? compania.nombre : 'Compañía no encontrada';
 
-    fichaHeaderNumero.textContent = `N${pedido.numero} - ${nombreCompania}`;
+    fichaHeaderNumero.textContent = `${textoNumeroPedido(pedido)} - ${nombreCompania}`;
     fichaHeaderTags.innerHTML = `<span class="${tipoInfo.clase}">${tipoInfo.texto}</span>` +
       (pedidoEstaCompletado(pedido) ? '<span class="tag-pedido-completado">COMPLETADO</span>' : '') +
-      (pedidoTieneDevolucion(pedido) ? '<span class="tag-pedido-devolucion">DEVOLUCIÓN</span>' : '');
+      (pedidoTieneDevolucion(pedido) ? '<span class="tag-pedido-devolucion">DEVOLUCIÓN</span>' : '') +
+      (pedido.reparacionId ? '<button type="button" class="btn-pill-header" id="btn-ver-ficha-reparacion-header">🔧 Ver ficha de reparación ↗</button>' : '');
+
+    if (pedido.reparacionId) {
+      document.getElementById('btn-ver-ficha-reparacion-header').addEventListener('click', () => {
+        if (!window.abrirFichaReparacion) {
+          alert('No se pudo abrir la reparación: la pestaña de Reparaciones no está cargada en esta página.');
+          return;
+        }
+        cerrarFicha();
+        window.abrirFichaReparacion(pedido.reparacionId);
+      });
+    }
 
     renderSeccionCliente(pedido);
     renderSeccionEquipos(pedido);
@@ -1297,20 +1342,6 @@
     origenEdicion = 'ficha';
     cerrarFicha({ mantenerVolver: true });
     if (pedido) abrirModalEditar(pedido);
-  });
-
-  // Enlace "Viene de" dentro de la sección Cliente: abre la ficha de la
-  // reparación que dio origen a este pedido (ver reparaciones.js).
-  fichaSeccionCliente.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-abrir-reparacion]');
-    if (!btn) return;
-    const idReparacion = btn.dataset.abrirReparacion;
-    if (!window.abrirFichaReparacion) {
-      alert('No se pudo abrir la reparación: la pestaña de Reparaciones no está cargada en esta página.');
-      return;
-    }
-    cerrarFicha();
-    window.abrirFichaReparacion(idReparacion);
   });
 
   // ---------- Sub-modal: números de serial de un equipo del pedido ----------
@@ -1437,7 +1468,7 @@
     const nombreCompania = compania ? compania.nombre : 'Compañía no encontrada';
     const yaDespachado = (uso.item.unidadesCompletadas || []).includes(uso.unidad);
     const campoTexto = uso.campo === 'motor' ? ' (Motor)' : uso.campo === 'reductor' ? ' (Reductor)' : '';
-    return `N${uso.pedido.numero} - ${nombreCompania}${campoTexto} — ${yaDespachado ? 'Despachado' : 'En progreso'}`;
+    return `${textoNumeroPedido(uso.pedido)} - ${nombreCompania}${campoTexto} — ${yaDespachado ? 'Despachado' : 'En progreso'}`;
   }
 
   function conectarValidacionSerialesDuplicados() {
@@ -1755,7 +1786,7 @@
       const pedido = pedidosCache.find(p => p.id === id);
       if (!pedido) return 'Pedido no encontrado';
       const compania = buscarCompania(pedido.companiaId);
-      return `N${pedido.numero}${compania ? ' - ' + compania.nombre : ''}`;
+      return `${textoNumeroPedido(pedido)}${compania ? ' - ' + compania.nombre : ''}`;
     });
     if (nombres.length <= maxNombres) return nombres.join(', ');
     return `${nombres.slice(0, maxNombres).join(', ')} y ${nombres.length - maxNombres} más`;
@@ -1819,7 +1850,7 @@
       const p = pedidosCache.find(x => x.id === pInfo.pedidoId);
       if (!p) { nombres.push('Pedido no encontrado'); return; }
       const compania = buscarCompania(p.companiaId);
-      nombres.push(`N${p.numero} - ${escapeHtml(compania ? compania.nombre : 'Compañía no encontrada')}`);
+      nombres.push(`${textoNumeroPedido(p)} - ${escapeHtml(compania ? compania.nombre : 'Compañía no encontrada')}`);
     });
     return nombres;
   }
@@ -2235,7 +2266,7 @@
 
   function pedidoCoincideConBusquedaTexto(pedido, texto) {
     if (!texto) return true;
-    if (normalizar(String(pedido.numero)).includes(texto)) return true;
+    if (normalizar(textoNumeroPedido(pedido)).includes(texto)) return true;
     const compania = buscarCompania(pedido.companiaId);
     if (compania && normalizar(compania.nombre).includes(texto)) return true;
     if (pedido.contacto && normalizar(pedido.contacto).includes(texto)) return true;
@@ -2259,7 +2290,7 @@
     const compania = buscarCompania(pedido.companiaId);
     const nombreCompania = compania ? compania.nombre : 'Compañía no encontrada';
     const contacto = pedido.contacto ? ` · ${pedido.contacto}` : '';
-    return `N° ${pedido.numero} — ${nombreCompania}${contacto}`;
+    return `${textoNumeroPedido(pedido)} — ${nombreCompania}${contacto}`;
   }
 
   function irAPedidoDesdeSugerencia(pedido) {
@@ -2300,8 +2331,8 @@
         e.preventDefault();
         const pedido = pedidosCache.find(p => p.id === el.dataset.id);
         if (!pedido) return;
-        buscadorPedidos.value = String(pedido.numero);
-        filtroTextoPedidos = normalizar(String(pedido.numero));
+        buscadorPedidos.value = textoNumeroPedido(pedido);
+        filtroTextoPedidos = normalizar(textoNumeroPedido(pedido));
         ocultarResultados(resultadosBuscadorPedidos);
         renderTabla();
         irAPedidoDesdeSugerencia(pedido);
@@ -2335,7 +2366,7 @@
     resultadosBuscadorSerial.innerHTML = limitados.map((c, i) => `
       <div class="buscador-item" data-idx="${i}">
         ${escapeHtml(c.serial)}
-        <span class="buscador-item-sub">N° ${c.pedido.numero} · ${escapeHtml(c.nombreItem)}</span>
+        <span class="buscador-item-sub">${textoNumeroPedido(c.pedido)} · ${escapeHtml(c.nombreItem)}</span>
       </div>
     `).join('');
     resultadosBuscadorSerial.classList.add('open');
@@ -2427,7 +2458,7 @@
         <div class="pedido-card ${clasesEstado}" data-id="${pedido.id}">
           <div class="pedido-card-header">
             <span class="pedido-card-icono-tipo">${iconoTipo}</span>
-            <span class="pedido-card-numero">N${pedido.numero}</span>
+            <span class="pedido-card-numero">${textoNumeroPedido(pedido)}</span>
             <span class="pedido-card-compania">${nombreCompania}</span>
             <span class="${tipoInfo.clase}">${tipoInfo.texto}</span>
             ${completado ? '<span class="tag-pedido-completado">COMPLETADO</span>' : ''}
