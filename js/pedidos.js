@@ -759,7 +759,12 @@
       if (id && origenEdicion === 'ficha') {
         // Volvemos a abrir la ficha del mismo pedido con los datos recién guardados
         // (sin esperar al próximo snapshot, para que se sienta instantáneo).
-        abrirFicha({ id, numero: numeroFinal, ...datos });
+        // Se parte del pedido original en caché (no solo de los campos del
+        // formulario) para no perder campos que el form no edita, como
+        // reparacionId — si no, el botón "Ver ficha de reparación" y el
+        // bloqueo de campos ligados a la reparación desaparecen hasta refrescar.
+        const pedidoOriginalParaFicha = pedidosCache.find(p => p.id === id);
+        abrirFicha({ ...pedidoOriginalParaFicha, id, numero: numeroFinal, ...datos });
       }
       origenEdicion = null;
     } catch (err) {
@@ -2169,6 +2174,33 @@
   });
   document.addEventListener('empresas-envio:cambio', () => {
     if (pedidoIdEnFicha) renderEnviosVinculados();
+  });
+
+  // Devuelve el nombre del subtab activo de la ficha, para poder refrescarla
+  // sin que el usuario "salte" de vuelta al primer subtab.
+  function subtabFichaActiva() {
+    const activo = Array.from(fichaSubtabButtons).find(b => b.classList.contains('active'));
+    return activo ? activo.dataset.subtab : null;
+  }
+
+  // Reemplazar/deshacer un equipo, guardar seriales, etc. actualizan
+  // Firestore directamente (sin volver a llamar abrirFicha), así que sin
+  // esto la ficha se queda mostrando datos viejos hasta cerrarla y
+  // reabrirla. Al llegar el snapshot con los datos frescos, si esa ficha
+  // sigue abierta, se refresca conservando el subtab en el que estaba.
+  document.addEventListener('pedidos:cambio', () => {
+    if (!pedidoIdEnFicha) return;
+    const pedidoActual = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (pedidoActual) abrirFicha(pedidoActual, subtabFichaActiva());
+  });
+
+  // Igual, pero para cuando lo que cambia es la reparación de origen (ej. se
+  // edita su número o se elimina el vínculo) — la ficha de Pedidos muestra
+  // ese dato en la sección "Cliente" ("Viene de R0X").
+  document.addEventListener('reparaciones:cambio', () => {
+    if (!pedidoIdEnFicha) return;
+    const pedidoActual = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (pedidoActual?.reparacionId) renderSeccionCliente(pedidoActual);
   });
 
   // ---------- Modal: agregar el pedido actual a un envío ----------

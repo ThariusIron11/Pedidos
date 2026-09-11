@@ -97,6 +97,18 @@
     fichaSubtabPanels.forEach(p => p.classList.toggle('active', p.id === 'subtab-ficha-reparacion-datos'));
   }
 
+  function activarFichaSubtab(nombre) {
+    fichaSubtabButtons.forEach(b => b.classList.toggle('active', b.dataset.subtab === nombre));
+    fichaSubtabPanels.forEach(p => p.classList.toggle('active', p.id === 'subtab-' + nombre));
+  }
+
+  // Nombre del subtab activo de la ficha ahora mismo, para poder refrescarla
+  // sin que el usuario "salte" de vuelta al primer subtab.
+  function subtabFichaActiva() {
+    const activo = Array.from(fichaSubtabButtons).find(b => b.classList.contains('active'));
+    return activo ? activo.dataset.subtab : null;
+  }
+
   const inputId = document.getElementById('reparacion-id');
   const inputNumero = document.getElementById('reparacion-numero');
   const selectCompania = document.getElementById('reparacion-compania');
@@ -432,12 +444,12 @@
       : sanearHtmlObservaciones(observaciones);
   }
 
-  function abrirFicha(reparacion) {
+  function abrirFicha(reparacion, subtabInicial) {
     fichaHeaderNumero.textContent = fichaTextoHeader(reparacion);
     actualizarHeaderAcciones(reparacion);
     renderFichaDatos(reparacion);
     renderFichaEquipos(reparacion);
-    resetFichaSubtabs();
+    if (subtabInicial) activarFichaSubtab(subtabInicial); else resetFichaSubtabs();
     btnEditarDesdeFicha.dataset.id = reparacion.id;
     btnEditarDesdeFicha.disabled = !!reparacion.devuelta;
     btnEditarDesdeFicha.title = reparacion.devuelta ? 'Reparación devuelta: la ficha queda de solo lectura' : '';
@@ -1361,12 +1373,16 @@
           observacionesIniciales
         };
         await db.collection(COLECCION).doc(id).update(datosActualizados);
-        datosGuardados = { id, numero: Number(inputNumero.value), ...datosActualizados };
+        // Se parte del documento original en caché (no solo de los campos del
+        // formulario) para no perder al reabrir la ficha campos que el form
+        // no edita, como pedidoId — si no, el botón "Ver ficha de pedido" y
+        // demás lógica ligada al pedido vinculado desaparecen hasta refrescar.
+        const original = reparacionesCache.find(r => r.id === id);
+        datosGuardados = { ...original, id, numero: Number(inputNumero.value), ...datosActualizados };
 
         // Si esta reparación ya tiene un pedido vinculado, se le empujan los
         // mismos cambios de compañía, contacto y equipo (ver comentario en
         // sincronizarPedidoDesdeReparacion).
-        const original = reparacionesCache.find(r => r.id === id);
         if (original?.pedidoId) {
           await sincronizarPedidoDesdeReparacion(original.pedidoId, companiaId, datosActualizados.contacto, resuelto.equipo);
         }
@@ -1674,6 +1690,17 @@
         renderFichaEquipos(reparacionAbierta); // el reemplazo de equipo vive en el pedido, no acá
       }
     }
+  });
+
+  // Acciones como marcar devuelta actualizan Firestore directamente (sin
+  // volver a llamar abrirFicha), así que sin esto la ficha se queda
+  // mostrando datos viejos hasta cerrarla y reabrirla. Al llegar el
+  // snapshot con los datos frescos, si esa ficha sigue abierta, se refresca
+  // conservando el subtab en el que estaba.
+  document.addEventListener('reparaciones:cambio', () => {
+    if (!modalFicha.classList.contains('open')) return;
+    const reparacionActual = reparacionesCache.find(r => r.id === btnEditarDesdeFicha.dataset.id);
+    if (reparacionActual) abrirFicha(reparacionActual, subtabFichaActiva());
   });
 
   document.addEventListener('tab:activada', (e) => {
