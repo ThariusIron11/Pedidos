@@ -2799,7 +2799,9 @@
     );
   }
 
-  iniciarSuscripcion();
+  // Igual que en clientes.js: se necesita desde el arranque (reparaciones.js
+  // lee window.pedidosCache), pero solo después de que haya sesión iniciada.
+  document.addEventListener('auth:listo', () => iniciarSuscripcion());
 
   document.addEventListener('tab:activada', (e) => {
     if (e.detail.tab !== 'pedidos') return;

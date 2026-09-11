@@ -353,7 +353,10 @@
     );
   }
 
-  iniciarSuscripcion();
+  // Se necesita en cuanto arranca la app (otros módulos leen
+  // window.clientesCache desde el principio), pero solo después de que
+  // haya sesión iniciada — antes de eso, Firestore rechazaría la lectura.
+  document.addEventListener('auth:listo', () => iniciarSuscripcion());
 
   document.addEventListener('tab:activada', (e) => {
     if (e.detail.tab !== 'clientes') return;
