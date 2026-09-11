@@ -1097,6 +1097,7 @@
         ordenCompra: '',
         llevaBrazo: false,
         llevaEje: false,
+        llevaFlanche: false,
         unidadesPreparadas: []
       };
       if (equipo.motorSerial) item.serialesMotor = [equipo.motorSerial];
@@ -1111,6 +1112,7 @@
       ordenCompra: '',
       llevaBrazo: false,
       llevaEje: false,
+      llevaFlanche: false,
       unidadesPreparadas: []
     };
     if (equipo.serial) item.seriales = [equipo.serial];

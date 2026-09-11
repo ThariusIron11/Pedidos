@@ -398,6 +398,10 @@
           <input type="checkbox" class="equipo-pedido-eje" ${item?.llevaEje ? 'checked' : ''}>
           🔩 Lleva eje sólido
         </label>
+        <label class="extra-check chk-flanche" style="display:none;">
+          <input type="checkbox" class="equipo-pedido-flanche" ${item?.llevaFlanche ? 'checked' : ''}>
+          🔘 Lleva flanche de salida
+        </label>
         <label class="extra-check chk-preparado">
           <input type="checkbox" class="equipo-pedido-preparado" ${(item?.unidadesPreparadas || []).length >= (item?.cantidad || 1) ? 'checked' : ''}>
           ✅ Preparado
@@ -470,12 +474,16 @@
         : buscarEquipoCatalogo(selectIndividual.value);
       const chkBrazo = row.querySelector('.chk-brazo');
       const chkEje = row.querySelector('.chk-eje');
+      const chkFlanche = row.querySelector('.chk-flanche');
       const mostrarBrazo = !!equipoRelevante?.puedeLlevarBrazo;
       const mostrarEje = !!equipoRelevante?.puedeLlevarEjeSolido;
+      const mostrarFlanche = !!equipoRelevante?.puedeLlevarFlancheSalida;
       chkBrazo.style.display = mostrarBrazo ? 'flex' : 'none';
       chkEje.style.display = mostrarEje ? 'flex' : 'none';
+      chkFlanche.style.display = mostrarFlanche ? 'flex' : 'none';
       if (!mostrarBrazo) chkBrazo.querySelector('input').checked = false;
       if (!mostrarEje) chkEje.querySelector('input').checked = false;
+      if (!mostrarFlanche) chkFlanche.querySelector('input').checked = false;
     }
 
     chkEsMotoreductor.addEventListener('change', actualizarModo);
@@ -518,6 +526,7 @@
     filas.forEach(fila => {
       const llevaBrazo = fila.querySelector('.equipo-pedido-brazo').checked;
       const llevaEje = fila.querySelector('.equipo-pedido-eje').checked;
+      const llevaFlanche = fila.querySelector('.equipo-pedido-flanche').checked;
       const marcarTodasPreparadas = fila.querySelector('.equipo-pedido-preparado').checked;
       const esMotoreductor = fila.querySelector('.equipo-pedido-es-motoreductor').checked;
 
@@ -532,14 +541,14 @@
         // unidades de una vez; en uno que ya existía, se preserva más abajo
         // lo que ya se gestionó por unidad desde la Ficha.
         const unidadesPreparadas = marcarTodasPreparadas ? Array.from({ length: cantidad }, (_, i) => i) : [];
-        item = { tipoLinea: 'motoreductor', motorEquipoId, reductorEquipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, unidadesPreparadas };
+        item = { tipoLinea: 'motoreductor', motorEquipoId, reductorEquipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, llevaFlanche, unidadesPreparadas };
       } else {
         const equipoId = fila.querySelector('.equipo-pedido-select').value;
         if (!equipoId) return; // ignora filas sin equipo elegido
         const cantidad = parseInt(fila.querySelector('.equipo-pedido-cantidad').value, 10) || 1;
         const ordenCompra = fila.querySelector('.equipo-pedido-oc').value.trim();
         const unidadesPreparadas = marcarTodasPreparadas ? Array.from({ length: cantidad }, (_, i) => i) : [];
-        item = { tipoLinea: 'individual', equipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, unidadesPreparadas };
+        item = { tipoLinea: 'individual', equipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, llevaFlanche, unidadesPreparadas };
       }
 
       // CRÍTICO: este formulario no tiene campos para los números de serial ni
@@ -1314,7 +1323,8 @@
 
     const extrasNombre = [
       item.llevaBrazo ? '+ Brazo de reacción' : '',
-      item.llevaEje ? '+ Eje sólido' : ''
+      item.llevaEje ? '+ Eje sólido' : '',
+      item.llevaFlanche ? '+ Flanche de salida' : ''
     ].filter(Boolean).map(t => ` ${escapeHtml(t)}`).join('');
 
     const nombreEquipo = equipo
@@ -1370,7 +1380,8 @@
 
     const extrasReductor = [
       item.llevaBrazo ? '+ Brazo de reacción' : '',
-      item.llevaEje ? '+ Eje sólido' : ''
+      item.llevaEje ? '+ Eje sólido' : '',
+      item.llevaFlanche ? '+ Flanche de salida' : ''
     ].filter(Boolean).map(t => ` ${escapeHtml(t)}`).join('');
 
     const nombreMotor = motor

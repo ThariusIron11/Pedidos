@@ -35,6 +35,7 @@
   const grupoBrazoEje = document.getElementById('grupo-brazo-eje');
   const inputLlevaBrazo = document.getElementById('equipo-lleva-brazo');
   const inputLlevaEje = document.getElementById('equipo-lleva-eje');
+  const inputLlevaFlanche = document.getElementById('equipo-lleva-flanche');
 
   const grupoAcopleCompuesto = document.getElementById('grupo-acople-compuesto');
   const inputEsCompuesto = document.getElementById('equipo-es-compuesto');
@@ -124,6 +125,7 @@
     if (!aplica) {
       inputLlevaBrazo.checked = false;
       inputLlevaEje.checked = false;
+      inputLlevaFlanche.checked = false;
     }
   }
 
@@ -317,6 +319,7 @@
     inputUsaSerial.checked = !!equipo?.usaSerial;
     inputLlevaBrazo.checked = !!equipo?.puedeLlevarBrazo;
     inputLlevaEje.checked = !!equipo?.puedeLlevarEjeSolido;
+    inputLlevaFlanche.checked = !!equipo?.puedeLlevarFlancheSalida;
     actualizarVisibilidadBrazoEje();
 
     inputEsCompuesto.checked = !!equipo?.esCompuesto;
@@ -396,6 +399,7 @@
       usaSerial: inputUsaSerial.checked,
       puedeLlevarBrazo: inputLlevaBrazo.checked,
       puedeLlevarEjeSolido: inputLlevaEje.checked,
+      puedeLlevarFlancheSalida: inputLlevaFlanche.checked,
       esCompuesto: inputEsCompuesto.checked,
       piezasCompuesto: inputEsCompuesto.checked ? leerPiezasCompuestoDelFormulario() : []
     };
