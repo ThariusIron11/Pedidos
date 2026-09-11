@@ -28,6 +28,7 @@
   const inputBusqueda = document.getElementById('buscador-envios');
   const resultadosBusqueda = document.getElementById('resultados-buscador-envios');
   const btnFiltroFletePendiente = document.getElementById('filtro-flete-pendiente');
+  const btnOrdenFecha = document.getElementById('btn-orden-fecha-envios');
 
   const modalFicha = document.getElementById('modal-ficha-envio');
   const fichaTitulo = document.getElementById('ficha-envio-titulo');
@@ -45,6 +46,7 @@
   let filtroEstadoActivo = 'armado'; // '' = todos | 'armado' | 'despachado' — por defecto se abre viendo solo los armados
   let filtroEmpresaActivo = '';  // '' = todos | 'interno' | id de empresa de envío
   let filtroFletePendienteActivo = false; // true = solo empresas que dan recibo y todavía no se confirma el flete
+  let ordenFechaDireccion = 'desc'; // 'desc' = más recientes primero (mayor a menor) | 'asc' = más antiguos primero
 
   function escapeHtml(str) {
     return String(str ?? '')
@@ -383,6 +385,13 @@
     renderTabla();
   });
 
+  // ---------- Orden por fecha de envío ----------
+  btnOrdenFecha.addEventListener('click', () => {
+    ordenFechaDireccion = ordenFechaDireccion === 'desc' ? 'asc' : 'desc';
+    btnOrdenFecha.textContent = ordenFechaDireccion === 'desc' ? '📅 Recientes primero ↓' : '📅 Antiguos primero ↑';
+    renderTabla();
+  });
+
   // ---------- Render de la lista principal (tarjetas) ----------
 
   function renderTabla() {
@@ -403,7 +412,13 @@
     }
     tablaEmpty.style.display = 'none';
 
-    const ordenados = [...lista].sort((a, b) => (a.estado === b.estado ? 0 : a.estado === 'armado' ? -1 : 1));
+    const ordenados = [...lista].sort((a, b) => {
+      if (a.estado !== b.estado) return a.estado === 'armado' ? -1 : 1;
+      const fa = a.fechaEnvio || '';
+      const fb = b.fechaEnvio || '';
+      if (fa === fb) return 0;
+      return ordenFechaDireccion === 'desc' ? (fa < fb ? 1 : -1) : (fa < fb ? -1 : 1);
+    });
 
     listaContenedor.innerHTML = ordenados.map(envio => {
       const estadoHtml = envio.estado === 'despachado'
