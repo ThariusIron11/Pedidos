@@ -1931,6 +1931,90 @@
   #modal-ficha-envio .input-retirar-cantidad{ font-size: 14px; }
   #modal-ficha-envio .empty-equipos-pedido{ font-size: 14px; }
 
+  /* ---------- Historial: piezas en fabricación por subsidiaria ---------- */
+  .grupo-subsidiaria{
+    background: #fff;
+    border: 1px solid #e2e4e9;
+    border-radius: 10px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .grupo-subsidiaria-titulo{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: #faf6f0;
+    border-bottom: 1px solid #e2e4e9;
+    font-weight: 700;
+    font-size: 14.5px;
+  }
+  .grupo-subsidiaria-titulo .icono{ font-size: 15px; }
+  .grupo-subsidiaria-titulo .contador{
+    margin-left: auto;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    background: #eceef1;
+    padding: 2px 9px;
+    border-radius: 999px;
+  }
+  .pieza-row{
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px;
+    border-bottom: 1px dashed #ececef;
+    cursor: pointer;
+  }
+  .pieza-row:last-child{ border-bottom: none; }
+  .pieza-row:hover{ background: #fafafa; }
+  .pieza-info{ flex: 1; }
+  .pieza-descripcion{ font-weight: 600; font-size: 13.5px; margin-bottom: 3px; }
+  .pieza-fecha{ font-size: 12px; color: var(--ink-soft); }
+  .pieza-fecha .dias{
+    display: inline-block;
+    margin-left: 6px;
+    font-weight: 600;
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: #f1f2f4;
+    color: var(--ink-soft);
+  }
+  .pieza-fecha .dias.atrasado{ background: #f6dede; color: #b91c1c; }
+  .btn-recoger{
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    background: #dcefe2;
+    color: #2f8f5b;
+    border: 1px solid #bfe2cb;
+    border-radius: 6px;
+    padding: 7px 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-recoger:hover{ background: #cdeeda; }
+  .tag-subsidiaria{
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    color: #6b3fa0;
+    background: #ece1f7;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .modal-resumen-fabricacion{
+    background: #faf6f0;
+    border: 1px solid #e9e2d6;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 13px;
+    margin-bottom: 14px;
+  }
+  .modal-resumen-fabricacion .r-subsidiaria{ font-weight: 700; color: #6b3fa0; }
+
   @media (max-width: 760px){
     .ficha-campos{ grid-template-columns: 1fr; }
     body{ flex-direction: column; }
@@ -2137,9 +2221,41 @@
       </section>
 
       <section class="panel" id="panel-historial" data-title="Historial">
-        <div class="placeholder">
-          <strong>Pestaña Historial</strong>
-          Todavía no tiene contenido. La lógica va en js/historial.js.
+        <div class="panel-header">
+          <h2>Historial de fabricación</h2>
+          <button type="button" class="btn" id="btn-nueva-pieza-fabricacion">+ Nueva pieza en fabricación</button>
+        </div>
+
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">
+          <div class="filtro-estado-pedidos" id="filtro-estado-fabricacion">
+            <button type="button" class="chip-filtro-estado" data-estado="pendiente">En fabricación</button>
+            <button type="button" class="chip-filtro-estado" data-estado="completado">Completados</button>
+          </div>
+        </div>
+
+        <div id="seccion-fabricacion-pendientes">
+          <div id="fabricacion-pendientes"></div>
+          <div class="empty-state" id="fabricacion-pendientes-empty" style="display:none;">
+            Todavía no hay piezas en fabricación.
+          </div>
+        </div>
+
+        <div id="seccion-fabricacion-completados" style="display:none;">
+          <table class="data-table" id="tabla-fabricacion-completados">
+            <thead>
+              <tr>
+                <th>Subsidiaria</th>
+                <th>Qué se mandó a hacer</th>
+                <th>Fecha inicio</th>
+                <th>Fecha recogido</th>
+                <th>Qué se realizó</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-fabricacion-completados-body"></tbody>
+          </table>
+          <div class="empty-state" id="fabricacion-completados-empty" style="display:none;">
+            Todavía no hay piezas completadas.
+          </div>
         </div>
       </section>
 
@@ -2251,6 +2367,69 @@
     </div>
   </div>
 
+  <!-- Modal: nueva/editar pieza en fabricación (usado por historial.js) -->
+  <div class="modal-backdrop" id="modal-fabricacion">
+    <div class="modal">
+      <h3 id="modal-fabricacion-titulo">Nueva pieza en fabricación</h3>
+      <form id="form-fabricacion">
+        <input type="hidden" id="fabricacion-id">
+
+        <div class="form-group">
+          <label for="fabricacion-subsidiaria">Subsidiaria (Edisatech)</label>
+          <select id="fabricacion-subsidiaria" required></select>
+        </div>
+
+        <div class="form-group">
+          <label for="fabricacion-descripcion">¿Qué se mandó a hacer?</label>
+          <textarea id="fabricacion-descripcion" rows="2" placeholder="Ej: Estator motor 15HP — rebobinado" required></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="fabricacion-fecha-inicio">Fecha de inicio</label>
+          <input type="date" id="fabricacion-fecha-inicio" required>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="btn-cancelar-fabricacion">Cancelar</button>
+          <button type="submit" class="btn">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: marcar pieza como recogida (usado por historial.js) -->
+  <div class="modal-backdrop" id="modal-fabricacion-recoger">
+    <div class="modal">
+      <h3>Marcar como recogido</h3>
+      <form id="form-fabricacion-recoger">
+        <input type="hidden" id="fabricacion-recoger-id">
+
+        <div class="modal-resumen-fabricacion">
+          <span class="r-subsidiaria" id="fabricacion-recoger-resumen-subsidiaria"></span><br>
+          <span id="fabricacion-recoger-resumen-descripcion"></span>
+        </div>
+
+        <div class="form-group">
+          <label for="fabricacion-fecha-recogido">Fecha de recogida</label>
+          <input type="date" id="fabricacion-fecha-recogido" required>
+        </div>
+
+        <div class="form-group">
+          <label for="fabricacion-que-se-realizo">¿Qué se realizó?</label>
+          <textarea id="fabricacion-que-se-realizo" rows="3" placeholder="Ej: Rebobinado completo, se cambió aislamiento." required></textarea>
+        </div>
+
+        <p style="font-size:12px; color:var(--ink-soft); margin-top:-4px;">
+          ⚠️ Una vez confirmado, la ficha pasa a "Completados" y ya no se puede editar.
+        </p>
+
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="btn-cancelar-fabricacion-recoger">Cancelar</button>
+          <button type="submit" class="btn">Confirmar recogida</button>
+        </div>
+      </form>
+    </div>
+  </div>
   <!-- Modal: nueva/editar reparación (usado por reparaciones.js) -->
   <div class="modal-backdrop" id="modal-reparacion">
     <div class="modal modal-ficha">
