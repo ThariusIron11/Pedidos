@@ -553,17 +553,26 @@
 
           // El ícono de cada equipo es el que se configuró en Config para
           // su tipo (mismo catálogo/ícono que se ve en la pestaña Equipos).
+          // Los extras (brazo/eje/flanche) van siempre sobre el reductor —
+          // igual que se decide en pedidos.js — porque son piezas propias de
+          // él, no del motor.
+          const extras = [
+            item.llevaBrazo ? '+ Brazo de reacción' : '',
+            item.llevaEje ? '+ Eje sólido' : '',
+            item.llevaFlanche ? '+ Flanche de salida' : ''
+          ].filter(Boolean).map(t => ` ${t}`).join('');
+
           let nombre;
           if (item.tipoLinea === 'motoreductor') {
             const equipoMotor = buscarEquipoCatalogo(item.motorEquipoId);
             const equipoReductor = buscarEquipoCatalogo(item.reductorEquipoId);
             const iconoMotor = buscarTipoEquipo(equipoMotor?.tipoId)?.icono || '';
             const iconoReductor = buscarTipoEquipo(equipoReductor?.tipoId)?.icono || '';
-            nombre = `${iconoMotor ? iconoMotor + ' ' : ''}${equipoMotor?.nombre || '?'} + ${iconoReductor ? iconoReductor + ' ' : ''}${equipoReductor?.nombre || '?'}`;
+            nombre = `${iconoMotor ? iconoMotor + ' ' : ''}${equipoMotor?.nombre || '?'} + ${iconoReductor ? iconoReductor + ' ' : ''}${equipoReductor?.nombre || '?'}${extras}`;
           } else {
             const equipo = buscarEquipoCatalogo(item.equipoId);
             const icono = buscarTipoEquipo(equipo?.tipoId)?.icono || '';
-            nombre = `${icono ? icono + ' ' : ''}${equipo?.nombre || 'Equipo no encontrado'}`;
+            nombre = `${icono ? icono + ' ' : ''}${equipo?.nombre || 'Equipo no encontrado'}${extras}`;
           }
 
           // Equipo CON serial: se sabe exactamente cuál unidad es cuál, así que
