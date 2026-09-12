@@ -28,6 +28,7 @@
   const inputBusqueda = document.getElementById('buscador-envios');
   const resultadosBusqueda = document.getElementById('resultados-buscador-envios');
   const btnFiltroFletePendiente = document.getElementById('filtro-flete-pendiente');
+  const btnFiltroSinCotizacion = document.getElementById('filtro-sin-cotizacion');
   const btnOrdenFecha = document.getElementById('btn-orden-fecha-envios');
 
   const modalFicha = document.getElementById('modal-ficha-envio');
@@ -46,6 +47,7 @@
   let filtroEstadoActivo = 'armado'; // '' = todos | 'armado' | 'despachado' — por defecto se abre viendo solo los armados
   let filtroEmpresaActivo = '';  // '' = todos | 'interno' | id de empresa de envío
   let filtroFletePendienteActivo = false; // true = solo empresas que dan recibo y todavía no se confirma el flete
+  let filtroSinCotizacionActivo = false; // true = solo envíos (no internos) sin ningún valor de flete/cotización guardado
   let ordenFechaDireccion = 'desc'; // 'desc' = más recientes primero (mayor a menor) | 'asc' = más antiguos primero
 
   function escapeHtml(str) {
@@ -385,6 +387,12 @@
     renderTabla();
   });
 
+  btnFiltroSinCotizacion.addEventListener('click', () => {
+    filtroSinCotizacionActivo = !filtroSinCotizacionActivo;
+    btnFiltroSinCotizacion.classList.toggle('active', filtroSinCotizacionActivo);
+    renderTabla();
+  });
+
   // ---------- Orden por fecha de envío ----------
   btnOrdenFecha.addEventListener('click', () => {
     ordenFechaDireccion = ordenFechaDireccion === 'desc' ? 'asc' : 'desc';
@@ -401,6 +409,10 @@
       if (filtroEmpresaActivo === 'interno' && !envio.esInterno) return false;
       if (filtroEmpresaActivo && filtroEmpresaActivo !== 'interno' && (envio.esInterno || envio.empresaEnvioId !== filtroEmpresaActivo)) return false;
       if (filtroFletePendienteActivo && !(empresaDaRecibo(envio) && !envio.fleteConfirmado)) return false;
+      // "Sin cotización" = todavía no se ha guardado NINGÚN valor de flete
+      // (ni siquiera un estimado) — no aplica a envíos internos, que no
+      // tienen sección de Cotización.
+      if (filtroSinCotizacionActivo && (envio.esInterno || envio.costoFlete != null)) return false;
       if (!coincideBusqueda(envio, termino)) return false;
       return true;
     });

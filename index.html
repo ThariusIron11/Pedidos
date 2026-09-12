@@ -1496,6 +1496,64 @@
   .pedido-card-actions button:disabled{ opacity: 0.4; cursor: not-allowed; }
   .pedido-card-actions button:disabled:hover{ color: var(--ink-soft); border-color: #d4d7dc; background: transparent; }
 
+  /* ---------- "Ver equipos" expandible en la tarjeta de la lista ---------- */
+  .pedido-card-resumen-row{ display: flex; align-items: center; gap: 8px; }
+  .pedido-card-resumen-row .pedido-card-resumen{ flex: 1; margin: 0; }
+  .btn-expandir-equipos{
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    background: transparent;
+    border: 1px solid #d4d7dc;
+    color: var(--ink-soft);
+    border-radius: 999px;
+    padding: 4px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .btn-expandir-equipos:hover{ border-color: #b8bcc4; color: var(--ink); }
+  .btn-expandir-equipos .flecha{ display: inline-block; transition: transform 0.15s ease; }
+  .pedido-card.expandido .btn-expandir-equipos .flecha{ transform: rotate(180deg); }
+  .pedido-card-equipos-expandible{
+    display: none;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed #e2e4e9;
+  }
+  .pedido-card.expandido .pedido-card-equipos-expandible{ display: block; }
+  .equipo-expandible-fila{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 13px;
+    flex-wrap: wrap;
+  }
+  .equipo-expandible-fila .nombre{ flex: 1; color: var(--ink); min-width: 140px; }
+  .equipo-expandible-fila .nombre .extra{ color: var(--ink-soft); font-size: 12px; }
+  .equipo-expandible-fila .cantidad{
+    font-size: 11.5px;
+    font-weight: 700;
+    background: #eef1f5;
+    color: var(--ink-soft);
+    padding: 2px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .equipo-expandible-fila .preparado-chip{
+    font-size: 11.5px;
+    font-weight: 700;
+    background: #eef1f5;
+    color: var(--ink-soft);
+    padding: 2px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .equipo-expandible-fila .preparado-chip.listo{ background: #dcefe2; color: #2f8f5b; }
+
   /* ---------- Filtros de la lista de envíos ---------- */
   .envios-filtros{
     display: flex;
@@ -2219,6 +2277,8 @@
           </div>
 
           <button type="button" class="chip-filtro-estado" id="filtro-flete-pendiente" title="Envíos con transportadora que factura después, cuyo flete todavía no se ha confirmado">⏳ Facturas por confirmar</button>
+
+          <button type="button" class="chip-filtro-estado" id="filtro-sin-cotizacion" title="Envíos a los que todavía no se les ha agregado ningún valor de flete/cotización">💰 Sin cotización</button>
 
           <button type="button" class="chip-filtro-estado" id="btn-orden-fecha-envios" title="Cambiar el orden por fecha de envío">📅 Recientes primero ↓</button>
         </div>

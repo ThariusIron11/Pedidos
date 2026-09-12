@@ -2687,6 +2687,59 @@
     });
   });
 
+  // ---------- Expandible "Ver equipos" en la tarjeta de la lista ----------
+  // Resumen compacto por ítem: nombre + extras (brazo/eje/flanche) + cuántas
+  // unidades hay y cuántas de esas ya están preparadas. Mismo dato que ya se
+  // ve en la Ficha completa, pero en una sola línea y sin sus botones de
+  // acción (reemplazar, marcar serial, etc.) — esto es solo para consultar.
+  function htmlExtrasItem(item) {
+    return [
+      item.llevaBrazo ? '+ Brazo de reacción' : '',
+      item.llevaEje ? '+ Eje sólido' : '',
+      item.llevaFlanche ? '+ Flanche de salida' : ''
+    ].filter(Boolean).map(t => ` <span class="extra">${escapeHtml(t)}</span>`).join('');
+  }
+
+  function nombreConIcono(equipo, faltanteTexto) {
+    if (!equipo) return `<span style="color:var(--danger);">${faltanteTexto}</span>`;
+    const icono = buscarTipoEquipo(equipo.tipoId)?.icono || '';
+    const variante = equipo.variante ? ` <span class="tag-variante">${escapeHtml(equipo.variante)}</span>` : '';
+    return `${icono ? icono + ' ' : ''}${escapeHtml(equipo.nombre)}${variante}`;
+  }
+
+  function renderFilaExpandibleItem(item) {
+    let nombre;
+    if (item.tipoLinea === 'motoreductor') {
+      const motor = buscarEquipoCatalogo(item.motorEquipoId);
+      const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      // Brazo/eje/flanche son piezas del reductor, así que el extra va pegado a su nombre.
+      nombre = `${nombreConIcono(motor, 'Motor no encontrado')} + ${nombreConIcono(reductor, 'Reductor no encontrado')}${htmlExtrasItem(item)}`;
+    } else {
+      const equipo = buscarEquipoCatalogo(item.equipoId);
+      nombre = `${nombreConIcono(equipo, 'Equipo no encontrado')}${htmlExtrasItem(item)}`;
+    }
+
+    const totalPreparable = (item.cantidad || 0) - devueltasCountItem(item);
+    const preparadas = cantidadPreparadaItem(item);
+    const preparadoTexto = totalPreparable > 0
+      ? `<span class="preparado-chip ${preparadas >= totalPreparable ? 'listo' : ''}">${preparadas} de ${totalPreparable} preparadas</span>`
+      : '';
+
+    return `
+      <div class="equipo-expandible-fila">
+        <span class="nombre">${nombre}</span>
+        <span class="cantidad">Cant. ${item.cantidad || 1}</span>
+        ${preparadoTexto}
+      </div>
+    `;
+  }
+
+  function htmlEquiposExpandible(pedido) {
+    const items = pedido.equipos || [];
+    if (!items.length) return '<div class="equipo-expandible-fila"><span class="nombre" style="color:var(--ink-soft);">Sin equipos.</span></div>';
+    return items.map(renderFilaExpandibleItem).join('');
+  }
+
   function renderTabla() {
     if (!pedidosCache.length) {
       listaContenedor.innerHTML = '';
@@ -2756,7 +2809,15 @@
               ${pedidoTieneAlgoDespachado(pedido) ? '' : `<button type="button" class="btn-eliminar danger" data-id="${pedido.id}" title="Eliminar">🗑️</button>`}
             </div>
           </div>
-          <div class="pedido-card-resumen">Encargado: ${contactoTexto} · ${cantidadEquipos} ${cantidadEquipos === 1 ? 'equipo' : 'equipos'}</div>
+          <div class="pedido-card-resumen-row">
+            <div class="pedido-card-resumen">Encargado: ${contactoTexto} · ${cantidadEquipos} ${cantidadEquipos === 1 ? 'equipo' : 'equipos'}</div>
+            <button type="button" class="btn-expandir-equipos" data-id="${pedido.id}">
+              <span class="flecha">▾</span> Ver equipos
+            </button>
+          </div>
+          <div class="pedido-card-equipos-expandible">
+            ${htmlEquiposExpandible(pedido)}
+          </div>
         </div>
       `;
     }).join('');
@@ -2771,6 +2832,12 @@
         if (!pedido) return;
         if (filtroEstadoPedidos === 'devolucion') abrirFichaDevolucion(pedido);
         else abrirFicha(pedido);
+      });
+    });
+
+    listaContenedor.querySelectorAll('.btn-expandir-equipos').forEach(btn => {
+      btn.addEventListener('click', () => {
+        btn.closest('.pedido-card').classList.toggle('expandido');
       });
     });
 
