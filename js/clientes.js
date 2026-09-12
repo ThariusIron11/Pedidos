@@ -70,6 +70,28 @@
       .normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // quita tildes
   }
 
+  // Para comparar NIT no importa si alguien lo escribió con puntos, guiones
+  // o espacios ("900.123.456-1" vs "9001234561-1" vs "900123456 1") — se
+  // compara solo lo alfanumérico.
+  function normalizarNit(str) {
+    return String(str ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  // Busca si ya existe otra compañía (distinta de idActual, para permitir
+  // editar la misma sin que se detecte a sí misma) con el mismo nombre o el
+  // mismo NIT. Se compara contra clientesCache, que ya está sincronizado en
+  // tiempo real, así que no hace falta una consulta aparte a Firestore.
+  function buscarClienteDuplicado(datos, idActual) {
+    const nombreNorm = normalizar(datos.nombre);
+    const nitNorm = normalizarNit(datos.nit);
+    return clientesCache.find(c => {
+      if (c.id === idActual) return false;
+      if (normalizar(c.nombre) === nombreNorm) return true;
+      if (nitNorm && normalizarNit(c.nit) === nitNorm) return true;
+      return false;
+    });
+  }
+
   // ---------- Lista dinámica de contactos de pedidos ----------
 
   function nuevaFilaContactoPedido(nombre) {
@@ -206,6 +228,19 @@
     }
 
     const id = inputId.value;
+
+    const duplicado = buscarClienteDuplicado(datos, id);
+    if (duplicado) {
+      const porNit = normalizarNit(datos.nit) && normalizarNit(duplicado.nit) === normalizarNit(datos.nit);
+      alert(
+        porNit
+          ? `Ya existe una compañía con ese NIT: "${duplicado.nombre}".`
+          : `Ya existe una compañía con ese nombre: "${duplicado.nombre}".`
+      );
+      inputNombre.focus();
+      return;
+    }
+
     const btnGuardar = form.querySelector('button[type="submit"]');
     btnGuardar.disabled = true;
     btnGuardar.textContent = 'Guardando...';
