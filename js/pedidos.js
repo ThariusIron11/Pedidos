@@ -264,6 +264,17 @@
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   }
 
+  // Cadena se vende/cuenta por metros, no por unidades enteras — así que su
+  // cantidad en el pedido acepta decimales. El resto de tipos sigue siendo
+  // entero (no tendría sentido pedir "2.5 motores").
+  const TIPOS_CON_CANTIDAD_DECIMAL = ['cadena'];
+
+  function esTipoCantidadDecimal(equipo) {
+    if (!equipo) return false;
+    const tipo = buscarTipoEquipo(equipo.tipoId);
+    return !!tipo && TIPOS_CON_CANTIDAD_DECIMAL.includes(normalizar(tipo.nombre));
+  }
+
   function nombreMostrableEquipo(eq) {
     return eq.nombre + (eq.variante ? ` (${eq.variante})` : '');
   }
@@ -486,6 +497,22 @@
       if (!mostrarFlanche) chkFlanche.querySelector('input').checked = false;
     }
 
+    // Cadena se cuenta por metros, así que su cantidad admite decimales
+    // (2.5, 10.75, etc.) — solo aplica al modo individual, un motoreductor
+    // nunca es una cadena.
+    const inputCantidadIndividual = row.querySelector('.equipo-pedido-cantidad');
+    function actualizarCantidadSegunTipoEquipo() {
+      const equipo = buscarEquipoCatalogo(selectIndividual.value);
+      const decimal = esTipoCantidadDecimal(equipo);
+      inputCantidadIndividual.step = decimal ? '0.01' : '1';
+      inputCantidadIndividual.placeholder = decimal ? 'Metros' : 'Cant.';
+      // Si ya hay un mínimo forzado por despacho parcial (ver más arriba),
+      // no se toca — ese mínimo manda por encima de esto.
+      if (!yaDespachadoAlgo) {
+        inputCantidadIndividual.min = decimal ? '0.01' : '1';
+      }
+    }
+
     chkEsMotoreductor.addEventListener('change', actualizarModo);
     actualizarModo(); // aplica el modo inicial y calcula brazo/eje visibles
 
@@ -499,7 +526,7 @@
     const buscadorIndividualAPI = inicializarBuscadorEquipo(contenedorEquipoIndividual, {
       obtenerTipoId: () => selectTipoFiltro.value || null,
       seleccionInicialId: !esMotoreductor ? item?.equipoId : null,
-      onChange: actualizarExtrasVisibles
+      onChange: () => { actualizarExtrasVisibles(); actualizarCantidadSegunTipoEquipo(); }
     });
     selectTipoFiltro.addEventListener('change', () => buscadorIndividualAPI.refrescar());
 
@@ -513,6 +540,7 @@
       onChange: actualizarExtrasVisibles
     });
     actualizarExtrasVisibles(); // por si ya venía un reductor precargado (editar pedido)
+    actualizarCantidadSegunTipoEquipo(); // ídem, por si ya venía una cadena precargada
 
     equiposPedidoList.appendChild(row);
   }
@@ -545,9 +573,13 @@
       } else {
         const equipoId = fila.querySelector('.equipo-pedido-select').value;
         if (!equipoId) return; // ignora filas sin equipo elegido
-        const cantidad = parseInt(fila.querySelector('.equipo-pedido-cantidad').value, 10) || 1;
+        const equipoSeleccionado = buscarEquipoCatalogo(equipoId);
+        const cantidadTexto = fila.querySelector('.equipo-pedido-cantidad').value;
+        const cantidad = esTipoCantidadDecimal(equipoSeleccionado)
+          ? (parseFloat(cantidadTexto) || 1)
+          : (parseInt(cantidadTexto, 10) || 1);
         const ordenCompra = fila.querySelector('.equipo-pedido-oc').value.trim();
-        const unidadesPreparadas = marcarTodasPreparadas ? Array.from({ length: cantidad }, (_, i) => i) : [];
+        const unidadesPreparadas = marcarTodasPreparadas ? Array.from({ length: Math.ceil(cantidad) }, (_, i) => i) : [];
         item = { tipoLinea: 'individual', equipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, llevaFlanche, unidadesPreparadas };
       }
 
