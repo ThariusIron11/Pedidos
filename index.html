@@ -2415,6 +2415,7 @@
                 <th>Fecha inicio</th>
                 <th>Fecha recogido</th>
                 <th>Qué se realizó</th>
+                <th>Costo</th>
               </tr>
             </thead>
             <tbody id="tabla-fabricacion-completados-body"></tbody>
@@ -2555,6 +2556,11 @@
           <input type="date" id="fabricacion-fecha-inicio" required>
         </div>
 
+        <div class="form-group">
+          <label for="fabricacion-costo">Costo de fabricación (si ya se sabe)</label>
+          <input type="number" id="fabricacion-costo" min="0" step="0.01" placeholder="Ej: 250000">
+        </div>
+
         <div class="modal-actions">
           <button type="button" class="btn secondary" id="btn-cancelar-fabricacion">Cancelar</button>
           <button type="submit" class="btn">Guardar</button>
@@ -2585,13 +2591,43 @@
           <textarea id="fabricacion-que-se-realizo" rows="3" placeholder="Ej: Rebobinado completo, se cambió aislamiento." required></textarea>
         </div>
 
+        <div class="form-group">
+          <label for="fabricacion-recoger-costo">Costo de fabricación (si todavía no se había registrado)</label>
+          <input type="number" id="fabricacion-recoger-costo" min="0" step="0.01" placeholder="Ej: 250000">
+        </div>
+
         <p style="font-size:12px; color:var(--ink-soft); margin-top:-4px;">
-          ⚠️ Una vez confirmado, la ficha pasa a "Completados" y ya no se puede editar.
+          ⚠️ Una vez confirmado, la ficha pasa a "Completados" y ya no se puede editar (el costo sí se puede seguir ajustando después).
         </p>
 
         <div class="modal-actions">
           <button type="button" class="btn secondary" id="btn-cancelar-fabricacion-recoger">Cancelar</button>
           <button type="submit" class="btn">Confirmar recogida</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: editar el costo de una pieza YA completada (usado por historial.js) -->
+  <div class="modal-backdrop" id="modal-fabricacion-costo">
+    <div class="modal">
+      <h3>Costo de fabricación</h3>
+      <form id="form-fabricacion-costo">
+        <input type="hidden" id="fabricacion-costo-id">
+
+        <div class="modal-resumen-fabricacion">
+          <span class="r-subsidiaria" id="fabricacion-costo-resumen-subsidiaria"></span><br>
+          <span id="fabricacion-costo-resumen-descripcion"></span>
+        </div>
+
+        <div class="form-group">
+          <label for="fabricacion-costo-valor">Costo</label>
+          <input type="number" id="fabricacion-costo-valor" min="0" step="0.01" placeholder="Ej: 250000">
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="btn-cancelar-fabricacion-costo">Cancelar</button>
+          <button type="submit" class="btn">Guardar</button>
         </div>
       </form>
     </div>

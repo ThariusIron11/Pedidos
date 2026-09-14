@@ -39,6 +39,7 @@
   const selectSubsidiaria = document.getElementById('fabricacion-subsidiaria');
   const inputDescripcion = document.getElementById('fabricacion-descripcion');
   const inputFechaInicio = document.getElementById('fabricacion-fecha-inicio');
+  const inputCosto = document.getElementById('fabricacion-costo');
 
   // ---------- Modal: marcar como recogido ----------
   const modalRecoger = document.getElementById('modal-fabricacion-recoger');
@@ -48,6 +49,15 @@
   const recogerResumenDescripcion = document.getElementById('fabricacion-recoger-resumen-descripcion');
   const inputFechaRecogido = document.getElementById('fabricacion-fecha-recogido');
   const inputQueSeRealizo = document.getElementById('fabricacion-que-se-realizo');
+  const inputCostoRecoger = document.getElementById('fabricacion-recoger-costo');
+
+  // ---------- Modal: editar el costo de una pieza ya completada ----------
+  const modalCosto = document.getElementById('modal-fabricacion-costo');
+  const formCosto = document.getElementById('form-fabricacion-costo');
+  const inputCostoId = document.getElementById('fabricacion-costo-id');
+  const costoResumenSubsidiaria = document.getElementById('fabricacion-costo-resumen-subsidiaria');
+  const costoResumenDescripcion = document.getElementById('fabricacion-costo-resumen-descripcion');
+  const inputCostoValor = document.getElementById('fabricacion-costo-valor');
 
   let historialCache = []; // [{id, ...datos}]
   let filtroEstado = 'pendiente'; // 'pendiente' | 'completado'
@@ -77,6 +87,13 @@
     const [anio, mes, dia] = fechaISO.split('-');
     const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
     return `${parseInt(dia, 10)} ${meses[parseInt(mes, 10) - 1]} ${anio}`;
+  }
+
+  function formatearCosto(valor) {
+    if (valor === null || valor === undefined || valor === '') return null;
+    const numero = Number(valor);
+    if (Number.isNaN(numero)) return null;
+    return '$ ' + Math.round(numero).toLocaleString('es-CO');
   }
 
   // Días corridos desde fechaInicio hasta hoy (para que se note lo que
@@ -123,6 +140,7 @@
     selectSubsidiaria.value = pieza?.subsidiariaId || '';
     inputDescripcion.value = pieza?.descripcion || '';
     inputFechaInicio.value = pieza?.fechaInicio || fechaHoyISO();
+    inputCosto.value = pieza?.costo ?? '';
   }
 
   // ---------- Abrir / cerrar modal nueva/editar ----------
@@ -179,7 +197,8 @@
     const datos = {
       subsidiariaId: selectSubsidiaria.value,
       descripcion: inputDescripcion.value.trim(),
-      fechaInicio: inputFechaInicio.value || fechaHoyISO()
+      fechaInicio: inputFechaInicio.value || fechaHoyISO(),
+      costo: inputCosto.value === '' ? null : Number(inputCosto.value)
     };
 
     if (!datos.subsidiariaId) {
@@ -228,6 +247,7 @@
     recogerResumenDescripcion.textContent = pieza.descripcion;
     inputFechaRecogido.value = fechaHoyISO();
     inputQueSeRealizo.value = '';
+    inputCostoRecoger.value = pieza.costo ?? '';
     modalRecoger.classList.add('open');
     inputQueSeRealizo.focus();
   }
@@ -236,6 +256,50 @@
     modalRecoger.classList.remove('open');
     formRecoger.reset();
   }
+
+  // ---------- Editar el costo de una pieza YA completada ----------
+  // Es la única cosa que se puede seguir ajustando después de recogida —
+  // todo lo demás (subsidiaria, descripción, qué se realizó, etc.) queda
+  // fijo para siempre, como corresponde a un registro histórico.
+
+  function abrirModalCosto(pieza) {
+    inputCostoId.value = pieza.id;
+    costoResumenSubsidiaria.textContent = nombreSubsidiaria(pieza.subsidiariaId) || 'Subsidiaria no encontrada';
+    costoResumenDescripcion.textContent = pieza.descripcion;
+    inputCostoValor.value = pieza.costo ?? '';
+    modalCosto.classList.add('open');
+    inputCostoValor.focus();
+  }
+
+  function cerrarModalCosto() {
+    modalCosto.classList.remove('open');
+    formCosto.reset();
+  }
+
+  document.getElementById('btn-cancelar-fabricacion-costo').addEventListener('click', cerrarModalCosto);
+  modalCosto.addEventListener('click', (e) => {
+    if (e.target === modalCosto) cerrarModalCosto();
+  });
+
+  formCosto.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = inputCostoId.value;
+    const btnGuardarCosto = formCosto.querySelector('button[type="submit"]');
+    btnGuardarCosto.disabled = true;
+    btnGuardarCosto.textContent = 'Guardando...';
+    try {
+      await db.collection(COLECCION).doc(id).update({
+        costo: inputCostoValor.value === '' ? null : Number(inputCostoValor.value)
+      });
+      cerrarModalCosto();
+    } catch (err) {
+      console.error('Error guardando el costo:', err);
+      alert('No se pudo guardar. Revisa la consola.');
+    } finally {
+      btnGuardarCosto.disabled = false;
+      btnGuardarCosto.textContent = 'Guardar';
+    }
+  });
 
   document.getElementById('btn-cancelar-fabricacion-recoger').addEventListener('click', cerrarModalRecoger);
   modalRecoger.addEventListener('click', (e) => {
@@ -263,7 +327,8 @@
       await db.collection(COLECCION).doc(id).update({
         recogido: true,
         fechaRecogido: inputFechaRecogido.value || fechaHoyISO(),
-        queSeRealizo
+        queSeRealizo,
+        costo: inputCostoRecoger.value === '' ? null : Number(inputCostoRecoger.value)
       });
       cerrarModalRecoger();
     } catch (err) {
@@ -327,13 +392,16 @@
         const diasHtml = dias !== null
           ? `<span class="dias ${claseDias}">${dias} día${dias === 1 ? '' : 's'}</span>`
           : '';
+        const costoTexto = formatearCosto(pieza.costo);
+        const costoHtml = costoTexto ? ` · ${costoTexto}` : '';
         return `
           <div class="pieza-row" data-id="${pieza.id}">
             <div class="pieza-info">
               <div class="pieza-descripcion">${escapeHtml(pieza.descripcion)}</div>
-              <div class="pieza-fecha">Enviado: ${formatearFecha(pieza.fechaInicio)} ${diasHtml}</div>
+              <div class="pieza-fecha">Enviado: ${formatearFecha(pieza.fechaInicio)} ${diasHtml}${costoHtml}</div>
             </div>
             <button type="button" class="btn-recoger" data-id="${pieza.id}">✔ Marcar recogido</button>
+            <button type="button" class="btn-icon-inline btn-eliminar-pieza" data-id="${pieza.id}" title="Eliminar">🗑️</button>
           </div>
         `;
       }).join('');
@@ -365,6 +433,21 @@
         if (pieza) abrirModalRecoger(pieza);
       });
     });
+    contenedorPendientes.querySelectorAll('.btn-eliminar-pieza').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const pieza = historialCache.find(h => h.id === btn.dataset.id);
+        if (!pieza) return;
+        const ok = confirm(`¿Eliminar "${pieza.descripcion}"? Esta acción no se puede deshacer.`);
+        if (!ok) return;
+        try {
+          await db.collection(COLECCION).doc(pieza.id).delete();
+        } catch (err) {
+          console.error('Error eliminando la pieza:', err);
+          alert('No se pudo eliminar. Revisa la consola.');
+        }
+      });
+    });
   }
 
   // ---------- Render: "Completados" — tabla plana, de solo lectura ----------
@@ -386,6 +469,7 @@
       const nombreHtml = nombre
         ? `<span class="tag-subsidiaria">${escapeHtml(nombre)}</span>`
         : '<span style="color:var(--danger);">Subsidiaria no encontrada</span>';
+      const costoTexto = formatearCosto(pieza.costo) || '<span style="color:var(--ink-soft);">Sin registrar</span>';
       return `
         <tr>
           <td>${nombreHtml}</td>
@@ -393,9 +477,22 @@
           <td>${formatearFecha(pieza.fechaInicio)}</td>
           <td>${formatearFecha(pieza.fechaRecogido)}</td>
           <td>${escapeHtml(pieza.queSeRealizo || '—')}</td>
+          <td>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span>${costoTexto}</span>
+              <button type="button" class="btn-icon-inline btn-editar-costo" data-id="${pieza.id}" title="Editar costo">✏️</button>
+            </div>
+          </td>
         </tr>
       `;
     }).join('');
+
+    tablaCompletadosBody.querySelectorAll('.btn-editar-costo').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const pieza = historialCache.find(h => h.id === btn.dataset.id);
+        if (pieza) abrirModalCosto(pieza);
+      });
+    });
   }
 
   function renderTodo() {
