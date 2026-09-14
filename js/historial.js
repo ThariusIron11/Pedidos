@@ -96,6 +96,26 @@
     return '$ ' + Math.round(numero).toLocaleString('es-CO');
   }
 
+  // Toma cualquier texto (ya formateado con puntos de miles o no) y devuelve
+  // el número entero que representa, o null si quedó vacío. Se descartan
+  // todos los caracteres no numéricos (incluido el punto), porque en
+  // formato colombiano el punto es separador de miles, no decimal.
+  function parsearCosto(texto) {
+    const soloDigitos = String(texto ?? '').replace(/\D/g, '');
+    return soloDigitos ? parseInt(soloDigitos, 10) : null;
+  }
+
+  // Autoformatea un input de costo mientras se escribe: "250000" -> "250.000".
+  function activarAutoformatoCosto(input) {
+    input.addEventListener('input', () => {
+      const numero = parsearCosto(input.value);
+      input.value = numero != null ? numero.toLocaleString('es-CO') : '';
+    });
+  }
+  activarAutoformatoCosto(inputCosto);
+  activarAutoformatoCosto(inputCostoRecoger);
+  activarAutoformatoCosto(inputCostoValor);
+
   // Días corridos desde fechaInicio hasta hoy (para que se note lo que
   // lleva más tiempo esperando en cada subsidiaria).
   function diasTranscurridos(fechaISO) {
@@ -140,7 +160,7 @@
     selectSubsidiaria.value = pieza?.subsidiariaId || '';
     inputDescripcion.value = pieza?.descripcion || '';
     inputFechaInicio.value = pieza?.fechaInicio || fechaHoyISO();
-    inputCosto.value = pieza?.costo ?? '';
+    inputCosto.value = pieza?.costo != null ? Number(pieza.costo).toLocaleString('es-CO') : '';
   }
 
   // ---------- Abrir / cerrar modal nueva/editar ----------
@@ -198,7 +218,7 @@
       subsidiariaId: selectSubsidiaria.value,
       descripcion: inputDescripcion.value.trim(),
       fechaInicio: inputFechaInicio.value || fechaHoyISO(),
-      costo: inputCosto.value === '' ? null : Number(inputCosto.value)
+      costo: parsearCosto(inputCosto.value)
     };
 
     if (!datos.subsidiariaId) {
@@ -247,7 +267,7 @@
     recogerResumenDescripcion.textContent = pieza.descripcion;
     inputFechaRecogido.value = fechaHoyISO();
     inputQueSeRealizo.value = '';
-    inputCostoRecoger.value = pieza.costo ?? '';
+    inputCostoRecoger.value = pieza.costo != null ? Number(pieza.costo).toLocaleString('es-CO') : '';
     modalRecoger.classList.add('open');
     inputQueSeRealizo.focus();
   }
@@ -266,7 +286,7 @@
     inputCostoId.value = pieza.id;
     costoResumenSubsidiaria.textContent = nombreSubsidiaria(pieza.subsidiariaId) || 'Subsidiaria no encontrada';
     costoResumenDescripcion.textContent = pieza.descripcion;
-    inputCostoValor.value = pieza.costo ?? '';
+    inputCostoValor.value = pieza.costo != null ? Number(pieza.costo).toLocaleString('es-CO') : '';
     modalCosto.classList.add('open');
     inputCostoValor.focus();
   }
@@ -289,7 +309,7 @@
     btnGuardarCosto.textContent = 'Guardando...';
     try {
       await db.collection(COLECCION).doc(id).update({
-        costo: inputCostoValor.value === '' ? null : Number(inputCostoValor.value)
+        costo: parsearCosto(inputCostoValor.value)
       });
       cerrarModalCosto();
     } catch (err) {
@@ -328,7 +348,7 @@
         recogido: true,
         fechaRecogido: inputFechaRecogido.value || fechaHoyISO(),
         queSeRealizo,
-        costo: inputCostoRecoger.value === '' ? null : Number(inputCostoRecoger.value)
+        costo: parsearCosto(inputCostoRecoger.value)
       });
       cerrarModalRecoger();
     } catch (err) {

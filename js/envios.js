@@ -656,6 +656,7 @@
         <div style="display:flex; align-items:center; gap:8px;">
           <span style="font-weight:600; color:var(--ink-soft);">$</span>
           <input type="text" id="ficha-envio-flete" inputmode="numeric" value="${flete != null ? Number(flete).toLocaleString('es-CO') : ''}" placeholder="Ej: 350.000" style="flex:1;" ${daRecibo && fleteConfirmado ? 'disabled' : ''}>
+          ${daRecibo && fleteConfirmado ? '' : '<button type="button" class="btn secondary" id="btn-guardar-flete" style="white-space:nowrap;">💾 Guardar</button>'}
         </div>
         <div class="hint-peso-calculado" id="ficha-envio-flete-hint" style="display:none;">Guardado ✓</div>
       </div>
@@ -730,29 +731,40 @@
       const btnCorregirFlete = document.getElementById('btn-corregir-flete');
 
       if (inputFlete && !inputFlete.disabled) {
+        const btnGuardarFlete = document.getElementById('btn-guardar-flete');
+
         // Reformatea con separador de miles mientras se escribe (más legible
         // que ver puros dígitos corridos), y habilita/deshabilita "Confirmar
-        // recibo" según si ya quedó algún valor.
+        // recibo" según si ya quedó algún valor. Esto es solo visual — no
+        // guarda nada todavía, eso pasa únicamente al pulsar "Guardar".
         inputFlete.addEventListener('input', () => {
           const num = parsearCOP(inputFlete.value);
           inputFlete.value = num != null ? num.toLocaleString('es-CO') : '';
           if (btnConfirmarFlete) btnConfirmarFlete.disabled = num == null;
         });
 
-        inputFlete.addEventListener('change', async () => {
-          const valor = parsearCOP(inputFlete.value);
-          try {
-            await db.collection(COLECCION).doc(envio.id).update({ costoFlete: valor });
-            envio.costoFlete = valor; // refleja el cambio en caché local de inmediato
-            if (hintFlete) {
-              hintFlete.style.display = 'block';
-              setTimeout(() => { hintFlete.style.display = 'none'; }, 1500);
+        if (btnGuardarFlete) {
+          btnGuardarFlete.addEventListener('click', async () => {
+            const valor = parsearCOP(inputFlete.value);
+            btnGuardarFlete.disabled = true;
+            const textoOriginal = btnGuardarFlete.textContent;
+            btnGuardarFlete.textContent = 'Guardando...';
+            try {
+              await db.collection(COLECCION).doc(envio.id).update({ costoFlete: valor });
+              envio.costoFlete = valor; // refleja el cambio en caché local de inmediato
+              if (hintFlete) {
+                hintFlete.style.display = 'block';
+                setTimeout(() => { hintFlete.style.display = 'none'; }, 1500);
+              }
+            } catch (err) {
+              console.error('Error guardando el valor del flete:', err);
+              alert('No se pudo guardar el valor del flete. Revisa la consola.');
+            } finally {
+              btnGuardarFlete.disabled = false;
+              btnGuardarFlete.textContent = textoOriginal;
             }
-          } catch (err) {
-            console.error('Error guardando el valor del flete:', err);
-            alert('No se pudo guardar el valor del flete. Revisa la consola.');
-          }
-        });
+          });
+        }
       }
 
       if (btnConfirmarFlete) {
