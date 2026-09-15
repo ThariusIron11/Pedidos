@@ -42,6 +42,11 @@
   const equiposPedidoList = document.getElementById('equipos-pedido-list');
   const radiosTipoPedido = form.querySelectorAll('input[name="tipo-pedido"]');
   const btnAddEquipoPedido = document.getElementById('btn-add-equipo-pedido');
+  const inputEvidenciaPedido = document.getElementById('pedido-evidencia');
+  const evidenciaPedidoInputWrap = document.getElementById('pedido-evidencia-input-wrap');
+  const btnEditarEvidenciaPedido = document.getElementById('btn-editar-evidencia-pedido');
+  const previewEvidenciaPedido = document.getElementById('pedido-evidencia-preview');
+  const linkEvidenciaPedido = document.getElementById('pedido-evidencia-link');
 
   // Compañía, contacto y equipo de un pedido que viene de una reparación
   // (mismo ID, ver "Enlace con Pedidos" en reparaciones.js) no se editan
@@ -98,6 +103,10 @@
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
+  }
+
+  function escapeAttr(str) {
+    return String(str ?? '').replace(/"/g, '&quot;');
   }
 
   function buscarCompania(id) {
@@ -619,6 +628,46 @@
 
   // ---------- Cargar / limpiar formulario ----------
 
+  // ---------- Evidencia fotográfica: link a carpeta compartida ----------
+  // Mismo patrón que en Reparaciones: una vez guardado se ve como link, y
+  // el lápiz abre/cierra el campo de texto para agregarlo o cambiarlo.
+
+  function mostrarEdicionEvidenciaPedido() {
+    evidenciaPedidoInputWrap.style.display = 'block';
+    btnEditarEvidenciaPedido.textContent = '💾';
+    btnEditarEvidenciaPedido.title = 'Guardar este link y cerrar el campo';
+    inputEvidenciaPedido.focus();
+    inputEvidenciaPedido.select();
+  }
+
+  function ocultarEdicionEvidenciaPedido() {
+    evidenciaPedidoInputWrap.style.display = 'none';
+    btnEditarEvidenciaPedido.textContent = '✏️';
+    btnEditarEvidenciaPedido.title = 'Agregar o editar el link';
+    actualizarPreviewEvidenciaPedido();
+  }
+
+  function actualizarPreviewEvidenciaPedido() {
+    const url = inputEvidenciaPedido.value.trim();
+    if (url) {
+      linkEvidenciaPedido.href = escapeAttr(url);
+      previewEvidenciaPedido.style.display = 'block';
+    } else {
+      previewEvidenciaPedido.style.display = 'none';
+    }
+  }
+
+  inputEvidenciaPedido.addEventListener('input', actualizarPreviewEvidenciaPedido);
+
+  btnEditarEvidenciaPedido.addEventListener('click', () => {
+    const estaAbierto = evidenciaPedidoInputWrap.style.display !== 'none';
+    if (estaAbierto) {
+      ocultarEdicionEvidenciaPedido();
+    } else {
+      mostrarEdicionEvidenciaPedido();
+    }
+  });
+
   function cargarFormularioDesdePedido(pedido) {
     form.reset();
     equiposPedidoList.innerHTML = '';
@@ -668,6 +717,9 @@
 
     const tipoActual = pedido?.tipo || 'normal';
     radiosTipoPedido.forEach(r => { r.checked = (r.value === tipoActual); });
+
+    inputEvidenciaPedido.value = pedido?.evidenciaFotografica || '';
+    ocultarEdicionEvidenciaPedido();
   }
 
   btnVerReparacionDesdePedido.addEventListener('click', () => {
@@ -717,6 +769,8 @@
     resetSubtabs();
     grupoSubsidiaria.style.display = 'none';
     grupoSubsidiariaContacto.style.display = 'none';
+    ocultarEdicionEvidenciaPedido();
+    previewEvidenciaPedido.style.display = 'none';
     borradorId = null;
     modal.classList.remove('open');
   }
@@ -749,7 +803,8 @@
       equipos: leerEquiposDelFormulario(),
       envioSubsidiaria: checkboxEnvioSubsidiaria.checked,
       subsidiariaId: checkboxEnvioSubsidiaria.checked ? (selectSubsidiaria.value || null) : null,
-      subsidiariaContacto: checkboxEnvioSubsidiaria.checked ? (selectSubsidiariaContacto.value || null) : null
+      subsidiariaContacto: checkboxEnvioSubsidiaria.checked ? (selectSubsidiariaContacto.value || null) : null,
+      evidenciaFotografica: inputEvidenciaPedido.value.trim()
     };
 
     const id = inputId.value;
@@ -794,6 +849,8 @@
       resetSubtabs();
       grupoSubsidiaria.style.display = 'none';
       grupoSubsidiariaContacto.style.display = 'none';
+      ocultarEdicionEvidenciaPedido();
+      previewEvidenciaPedido.style.display = 'none';
       borradorId = null;
       modal.classList.remove('open');
 
@@ -891,6 +948,10 @@
       origenHtml = campoFicha('Viene de', `🔧 ${escapeHtml(numeroTexto)}`);
     }
 
+    const evidenciaHtml = pedido.evidenciaFotografica
+      ? `<a href="${escapeAttr(pedido.evidenciaFotografica)}" target="_blank" rel="noopener noreferrer">📷 Ver evidencia ↗</a>`
+      : '— (sin evidencia)';
+
     fichaSeccionCliente.innerHTML = `
       <h4>Cliente</h4>
       <div class="ficha-campos">
@@ -901,6 +962,7 @@
         ${campoFicha('Dirección de remisión', direccionRemision)}
         ${campoFicha('¿Contraentrega?', contraentrega)}
         ${origenHtml}
+        ${campoFicha('Evidencia fotográfica', evidenciaHtml)}
       </div>
     `;
   }
