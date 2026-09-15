@@ -40,6 +40,9 @@
   const btnDespacharEnvio = document.getElementById('btn-despachar-envio');
   const btnCancelarEnvio = document.getElementById('btn-cancelar-envio');
   const btnGuardarEnvio = document.getElementById('btn-guardar-envio');
+  const btnDescargarRemesa = document.getElementById('btn-descargar-remesa');
+  const btnCompartirRemesaWhatsapp = document.getElementById('btn-compartir-remesa-whatsapp');
+  const remesaExportHost = document.getElementById('remesa-export-host');
 
   window.enviosCache = [];
   let envioIdEnFicha = null;
@@ -929,6 +932,8 @@
     btnCancelarEnvio.style.display = despachado ? 'none' : 'inline-block';
     btnGuardarEnvio.style.display = (!despachado || !remesaBloqueada) ? 'inline-block' : 'none';
     btnDespacharEnvio.style.display = despachado ? 'none' : 'inline-block';
+    btnDescargarRemesa.style.display = envio.esInterno ? 'none' : 'inline-block';
+    btnCompartirRemesaWhatsapp.style.display = envio.esInterno ? 'none' : 'inline-block';
     modalFicha.classList.add('open');
   }
 
@@ -1167,6 +1172,246 @@
     } catch (err) {
       console.error('Error cancelando envío:', err);
       alert('No se pudo cancelar el envío. Revisa la consola.');
+    }
+  });
+
+  // ---------- Remesa exportable como imagen ----------
+
+  // Mismo nombre + extras (brazo/eje/flanche) que se usa en la ficha, pero
+  // aparte porque aquí no hace falta ninguno de los botones de retirar.
+  function nombreItemParaRemesa(item) {
+    const extras = [
+      item.llevaBrazo ? '+ Brazo de reacción' : '',
+      item.llevaEje ? '+ Eje sólido' : '',
+      item.llevaFlanche ? '+ Flanche de salida' : ''
+    ].filter(Boolean).map(t => ` ${t}`).join('');
+
+    if (item.tipoLinea === 'motoreductor') {
+      const equipoMotor = buscarEquipoCatalogo(item.motorEquipoId);
+      const equipoReductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      const iconoMotor = buscarTipoEquipo(equipoMotor?.tipoId)?.icono || '';
+      const iconoReductor = buscarTipoEquipo(equipoReductor?.tipoId)?.icono || '';
+      return `${iconoMotor ? iconoMotor + ' ' : ''}${equipoMotor?.nombre || '?'} + ${iconoReductor ? iconoReductor + ' ' : ''}${equipoReductor?.nombre || '?'}${extras}`;
+    }
+    const equipo = buscarEquipoCatalogo(item.equipoId);
+    const icono = buscarTipoEquipo(equipo?.tipoId)?.icono || '';
+    return `${icono ? icono + ' ' : ''}${equipo?.nombre || 'Equipo no encontrado'}${extras}`;
+  }
+
+  // Arma la ficha completa como HTML — un bloque "Destino" por cada pedido
+  // distinto en el envío (varios pedidos = varios destinos, todo dentro de
+  // la misma imagen), con sus equipos sumados si venían en más de una
+  // remisión.
+  function construirHtmlRemesa(envio) {
+    const empresa = (window.empresasEnvioCache || []).find(e => e.id === envio.empresaEnvioId);
+    const nombreEmpresa = empresa ? empresa.nombre : 'Transportadora';
+    const nombreEmpresaNorm = normalizar(nombreEmpresa);
+    const claseTransportadora = nombreEmpresaNorm === 'tcc' ? 'transportadora-tcc'
+      : nombreEmpresaNorm === 'paquetex' ? 'transportadora-paquetex' : '';
+
+    const grupoPorPedido = new Map();
+    const grupos = [];
+    (envio.pedidos || []).forEach(pInfo => {
+      let grupo = grupoPorPedido.get(pInfo.pedidoId);
+      if (!grupo) {
+        grupo = { pedidoId: pInfo.pedidoId, entradas: [] };
+        grupoPorPedido.set(pInfo.pedidoId, grupo);
+        grupos.push(grupo);
+      }
+      grupo.entradas.push(pInfo);
+    });
+
+    const destinosHtml = grupos.map(grupo => {
+      const pedido = buscarPedido(grupo.pedidoId);
+      const compania = pedido ? buscarCompania(pedido.companiaId) : null;
+
+      // Si el pedido está marcado para enviarse a una subsidiaria, el
+      // paquete llega físicamente allá — no a la dirección del cliente —
+      // así que esa es la dirección/encargado que debe salir en la remesa.
+      // El cliente original se deja como referencia entre paréntesis, para
+      // no perder de vista de qué pedido viene.
+      let nombreDestino, direccionDestino, encargadoDestino;
+      if (pedido?.envioSubsidiaria) {
+        const subsidiaria = (window.clientesCache || []).find(c => c.id === pedido.subsidiariaId);
+        nombreDestino = subsidiaria
+          ? `${subsidiaria.nombre}${compania ? ` (pedido de ${compania.nombre})` : ''}`
+          : 'Subsidiaria no encontrada';
+        direccionDestino = subsidiaria ? (subsidiaria.direccionRemision || subsidiaria.direccion || 'Sin dirección registrada') : '—';
+        encargadoDestino = pedido.subsidiariaContacto || '';
+      } else {
+        nombreDestino = compania ? compania.nombre : 'Cliente no encontrado';
+        direccionDestino = compania ? (compania.direccionRemision || compania.direccion || 'Sin dirección registrada') : '—';
+        encargadoDestino = pedido?.contacto || '';
+      }
+      const encargadoHtml = encargadoDestino ? `<div class="direccion">Recibe: ${escapeHtml(encargadoDestino)}</div>` : '';
+
+      // Suma cantidades del mismo ítem si venía repartido en más de una
+      // remisión dentro de este envío.
+      const cantidadPorItem = new Map();
+      grupo.entradas.forEach(pInfo => {
+        (pInfo.items || []).forEach(it => {
+          const cantidad = (it.unidades && it.unidades.length) ? it.unidades.length : (it.cantidad || 0);
+          cantidadPorItem.set(it.itemIndex, (cantidadPorItem.get(it.itemIndex) || 0) + cantidad);
+        });
+      });
+
+      const itemsHtml = Array.from(cantidadPorItem.entries()).map(([itemIndex, cantidad]) => {
+        const item = pedido?.equipos?.[itemIndex];
+        const nombre = item ? nombreItemParaRemesa(item) : '⚠️ Ítem no encontrado';
+        return `<div class="remesa-item-fila"><span class="nombre">${nombre}</span><span class="cantidad">${cantidad}</span></div>`;
+      }).join('');
+
+      return `
+        <div class="remesa-destino">
+          <div class="titulo">Destino</div>
+          <div class="cliente">${escapeHtml(nombreDestino)}</div>
+          <div class="direccion">${escapeHtml(direccionDestino)}</div>
+          ${encargadoHtml}
+          ${itemsHtml}
+        </div>
+      `;
+    }).join('');
+
+    const numeroRemesa = envio.remesa ? escapeHtml(envio.remesa) : 'Sin asignar';
+    const fecha = formatearFechaCorta(envio.fechaEnvio || fechaHoyISO());
+
+    return `
+      <div class="remesa-card">
+        <div class="remesa-header ${claseTransportadora}">
+          <span class="marca">EDISATECH</span>
+          <span class="transportadora">🚚 ${escapeHtml(nombreEmpresa)}</span>
+        </div>
+        <div class="remesa-body">
+          <div class="remesa-numero">
+            <div class="label">N° de remesa</div>
+            <div class="valor">${numeroRemesa}</div>
+          </div>
+          ${destinosHtml}
+        </div>
+        <div class="remesa-footer">
+          <span>${escapeHtml(textoPedidosIncluidos(envio))}</span>
+          <span>Enviado: ${fecha}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  // Genera el canvas de la remesa (usado tanto por "Descargar" como por
+  // "Compartir por WhatsApp") a partir del HTML armado en el host oculto.
+  async function generarCanvasRemesa(envio) {
+    remesaExportHost.innerHTML = construirHtmlRemesa(envio);
+    // Un frame de margen para que el navegador termine de aplicar el CSS
+    // antes de que html2canvas "fotografíe" el nodo.
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    const nodo = remesaExportHost.querySelector('.remesa-card');
+    const canvas = await html2canvas(nodo, { scale: 2, backgroundColor: '#ffffff' });
+    remesaExportHost.innerHTML = '';
+    return canvas;
+  }
+
+  function nombreArchivoRemesa(envio) {
+    return `remesa-${(envio.remesa || envio.id).toString().replace(/[^a-zA-Z0-9-_]/g, '')}.png`;
+  }
+
+  // "Se envía a {destino} por medio de {transportadora}. A cuenta de
+  // nosotros/ellos" — una línea por cada pedido distinto en el envío
+  // (varios destinos = varias líneas, una por una). "A cuenta de" se decide
+  // por el campo "Contraentrega" del CLIENTE (no de la subsidiaria — la
+  // subsidiaria es solo el lugar físico de entrega, quien paga sigue siendo
+  // el cliente real).
+  function construirMensajeWhatsapp(envio) {
+    const empresa = (window.empresasEnvioCache || []).find(e => e.id === envio.empresaEnvioId);
+    const nombreEmpresa = empresa ? empresa.nombre : 'la transportadora';
+
+    const vistos = new Set();
+    const pedidosUnicos = [];
+    (envio.pedidos || []).forEach(pInfo => {
+      if (vistos.has(pInfo.pedidoId)) return;
+      vistos.add(pInfo.pedidoId);
+      pedidosUnicos.push(pInfo.pedidoId);
+    });
+
+    const lineas = pedidosUnicos.map(pedidoId => {
+      const pedido = buscarPedido(pedidoId);
+      const compania = pedido ? buscarCompania(pedido.companiaId) : null;
+
+      let destinoTexto;
+      if (pedido?.envioSubsidiaria) {
+        const subsidiaria = (window.clientesCache || []).find(c => c.id === pedido.subsidiariaId);
+        const nombreSub = subsidiaria ? subsidiaria.nombre : 'Subsidiaria no encontrada';
+        destinoTexto = compania ? `${nombreSub} (${compania.nombre})` : nombreSub;
+      } else {
+        destinoTexto = compania ? compania.nombre : 'Cliente no encontrado';
+      }
+
+      const cuenta = compania?.contraentrega ? 'ellos' : 'nosotros';
+      return `Se envía a ${destinoTexto} por medio de ${nombreEmpresa}. A cuenta de ${cuenta}.`;
+    });
+
+    return lineas.join('\n') || `Envío por medio de ${nombreEmpresa}.`;
+  }
+
+  btnDescargarRemesa.addEventListener('click', async () => {
+    const envio = window.enviosCache.find(en => en.id === envioIdEnFicha);
+    if (!envio) return;
+
+    const textoOriginal = btnDescargarRemesa.textContent;
+    btnDescargarRemesa.disabled = true;
+    btnDescargarRemesa.textContent = 'Generando...';
+    try {
+      const canvas = await generarCanvasRemesa(envio);
+      const enlace = document.createElement('a');
+      enlace.download = nombreArchivoRemesa(envio);
+      enlace.href = canvas.toDataURL('image/png');
+      enlace.click();
+    } catch (err) {
+      console.error('Error generando la imagen de la remesa:', err);
+      alert('No se pudo generar la imagen. Revisa la consola.');
+    } finally {
+      btnDescargarRemesa.disabled = false;
+      btnDescargarRemesa.textContent = textoOriginal;
+    }
+  });
+
+  btnCompartirRemesaWhatsapp.addEventListener('click', async () => {
+    const envio = window.enviosCache.find(en => en.id === envioIdEnFicha);
+    if (!envio) return;
+
+    const textoOriginal = btnCompartirRemesaWhatsapp.textContent;
+    btnCompartirRemesaWhatsapp.disabled = true;
+    btnCompartirRemesaWhatsapp.textContent = 'Preparando...';
+    try {
+      const mensaje = construirMensajeWhatsapp(envio);
+      const canvas = await generarCanvasRemesa(envio);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      const archivo = new File([blob], nombreArchivoRemesa(envio), { type: 'image/png' });
+
+      // En el celular (Android/iOS con Chrome o Safari recientes),
+      // navigator.share con "files" manda la imagen y el texto juntos,
+      // directo al selector nativo de WhatsApp — no hace falta que la
+      // persona adjunte nada a mano.
+      if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+        await navigator.share({ files: [archivo], text: mensaje });
+        return;
+      }
+
+      // En escritorio (o si el navegador no soporta compartir archivos):
+      // no existe forma de adjuntar una imagen a un link de WhatsApp, así
+      // que se descarga la imagen y se abre WhatsApp Web con el texto ya
+      // listo — solo falta arrastrar la imagen descargada al chat.
+      const enlaceDescarga = document.createElement('a');
+      enlaceDescarga.download = archivo.name;
+      enlaceDescarga.href = URL.createObjectURL(blob);
+      enlaceDescarga.click();
+      window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank');
+    } catch (err) {
+      if (err.name !== 'AbortError') { // el usuario cerró el selector de compartir — no es un error real
+        console.error('Error compartiendo la remesa por WhatsApp:', err);
+        alert('No se pudo preparar el mensaje. Revisa la consola.');
+      }
+    } finally {
+      btnCompartirRemesaWhatsapp.disabled = false;
+      btnCompartirRemesaWhatsapp.textContent = textoOriginal;
     }
   });
 
