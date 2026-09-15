@@ -700,6 +700,10 @@
     radiosTipoPedido.forEach(r => { r.disabled = pedidoBloqueadoPorReparacion; });
     btnAddEquipoPedido.style.display = pedidoBloqueadoPorReparacion ? 'none' : '';
     notaReparacionEquipos.style.display = pedidoBloqueadoPorReparacion ? 'block' : 'none';
+    btnEditarEvidenciaPedido.disabled = pedidoBloqueadoPorReparacion;
+    btnEditarEvidenciaPedido.title = pedidoBloqueadoPorReparacion
+      ? 'Se sincroniza sola desde la reparación de origen'
+      : 'Agregar o editar el link';
     if (pedidoBloqueadoPorReparacion) {
       const reparacion = (window.reparacionesCache || []).find(r => r.id === pedido.reparacionId);
       notaReparacionNumero.textContent = reparacion ? ('R' + String(reparacion.numero).padStart(2, '0')) : 'de origen';

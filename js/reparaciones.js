@@ -1141,7 +1141,7 @@
   // trae la reparación); si desde Pedidos se subió la cantidad a más de 1,
   // las unidades adicionales y el resto del ítem (orden de compra, brazo/eje,
   // unidades preparadas) se dejan tal cual estaban.
-  async function sincronizarPedidoDesdeReparacion(reparacionId, companiaId, contacto, equipo) {
+  async function sincronizarPedidoDesdeReparacion(reparacionId, companiaId, contacto, equipo, evidenciaFotografica) {
     const refPedido = db.collection('pedidos').doc(reparacionId);
     const snap = await refPedido.get();
     if (!snap.exists) return;
@@ -1149,7 +1149,8 @@
     const pedido = snap.data();
     const datos = {
       companiaId,
-      contacto: contactoParaPedido(companiaId, contacto)
+      contacto: contactoParaPedido(companiaId, contacto),
+      evidenciaFotografica: evidenciaFotografica || ''
     };
 
     const itemEquipo = equipoReparacionAItemPedido(equipo);
@@ -1289,6 +1290,7 @@
         subsidiariaId: null,
         subsidiariaContacto: null,
         reparacionId: reparacion.id,
+        evidenciaFotografica: reparacion.evidenciaFotografica || '',
         creadoEn: firebase.firestore.FieldValue.serverTimestamp()
       };
 
@@ -1386,7 +1388,7 @@
         // mismos cambios de compañía, contacto y equipo (ver comentario en
         // sincronizarPedidoDesdeReparacion).
         if (original?.pedidoId) {
-          await sincronizarPedidoDesdeReparacion(original.pedidoId, companiaId, datosActualizados.contacto, resuelto.equipo);
+          await sincronizarPedidoDesdeReparacion(original.pedidoId, companiaId, datosActualizados.contacto, resuelto.equipo, datosActualizados.evidenciaFotografica);
         }
       } else {
         const numero = siguienteNumeroDisponible(); // recalculado justo antes de guardar

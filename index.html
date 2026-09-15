@@ -1314,6 +1314,8 @@
     color: var(--ink-soft);
   }
   .btn-icon-inline:hover{ color: var(--copper); border-color: var(--copper); background: rgba(0,0,0,0.03); }
+  .btn-icon-inline:disabled{ opacity: 0.4; cursor: not-allowed; }
+  .btn-icon-inline:disabled:hover{ color: var(--ink-soft); border-color: #d4d7dc; background: transparent; }
 
   /* ---------- Tarjetas de la lista de reparaciones ---------- */
   .reparaciones-cards{
@@ -2961,7 +2963,7 @@
 
         <div class="subtab-panel active" id="subtab-datos">
           <div class="nota-vinculo-reparacion" id="pedido-nota-reparacion" style="display:none;">
-            🔧 La compañía y el contacto de este pedido vienen de la reparación <strong id="pedido-nota-reparacion-numero"></strong> — se actualizan solos al editarla allá.
+            🔧 La compañía, el contacto y la evidencia fotográfica de este pedido vienen de la reparación <strong id="pedido-nota-reparacion-numero"></strong> — se actualizan solos al editarla allá.
             <button type="button" class="btn-link-inline" id="btn-ver-reparacion-desde-pedido">Ver ficha ↗</button>
           </div>
 
