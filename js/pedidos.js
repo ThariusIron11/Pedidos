@@ -278,6 +278,12 @@
   // entero (no tendría sentido pedir "2.5 motores").
   const TIPOS_CON_CANTIDAD_DECIMAL = ['cadena'];
 
+  // Redondea a 2 decimales para evitar la basura de coma flotante de JS
+  // (10 - 9.7 = 0.30000000000000004), que rompe la validación del input.
+  function redondear2(n) {
+    return Math.round((parseFloat(n) || 0) * 100) / 100;
+  }
+
   function esTipoCantidadDecimal(equipo) {
     if (!equipo) return false;
     const tipo = buscarTipoEquipo(equipo.tipoId);
@@ -2447,7 +2453,17 @@
       }
 
       const reservado = cantidadReservadaEnEnvios(pedido.id, index);
-      const disponible = Math.max(0, total - reservado);
+      // Se redondea a 2 decimales para que 2.5 - 0.3 no quede en
+      // 2.1999999999999997 y el input lo rechace por no cuadrar con el step.
+      const disponible = redondear2(Math.max(0, total - reservado));
+
+      // Cadena va por metros: aquí también debe aceptar decimales, si no el
+      // navegador bloquea el envío diciendo que el valor no es válido/entero
+      // (con step="1" un valor como 2.5 nunca pasa la validación).
+      const esDecimal = item.tipoLinea !== 'motoreductor'
+        && esTipoCantidadDecimal(buscarEquipoCatalogo(item.equipoId));
+      const paso = esDecimal ? '0.01' : '1';
+
       return `
         <div class="equipo-envio-row ${disponible <= 0 ? 'sin-disponible' : ''}" data-index="${index}">
           <input type="checkbox" class="equipo-envio-check" ${disponible <= 0 ? 'disabled' : ''}>
@@ -2455,7 +2471,7 @@
             ${escapeHtml(nombreItemPedido(item))}
             <span class="disponible-nota">Disponible: ${disponible} de ${total}</span>
           </label>
-          <input type="number" class="equipo-envio-cantidad" min="1" max="${disponible}" value="${disponible}" ${disponible <= 0 ? 'disabled' : ''}>
+          <input type="number" class="equipo-envio-cantidad" min="${paso}" step="${paso}" max="${disponible}" value="${disponible}" ${disponible <= 0 ? 'disabled' : ''}>
         </div>
       `;
     }).join('');
@@ -2509,7 +2525,13 @@
     filas.forEach(fila => {
       const chk = fila.querySelector('.equipo-envio-check');
       if (!chk.checked) return;
-      const cantidad = parseInt(fila.querySelector('.equipo-envio-cantidad').value, 10) || 0;
+      // El step del input ya dice si ese ítem se maneja por metros (0.01) o
+      // por unidades enteras (1) — se respeta al leerlo, si no parseInt
+      // truncaría "2.5" a 2 al guardar.
+      const inputCantidad = fila.querySelector('.equipo-envio-cantidad');
+      const cantidad = inputCantidad.step === '0.01'
+        ? redondear2(parseFloat(inputCantidad.value) || 0)
+        : (parseInt(inputCantidad.value, 10) || 0);
       if (cantidad <= 0) return;
       items.push({ itemIndex: parseInt(fila.dataset.index, 10), cantidad });
     });
