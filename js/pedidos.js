@@ -2285,6 +2285,16 @@
     if (pedidoIdEnFicha) renderEnviosVinculados();
   });
 
+  // Si se agrega/edita un tipo de equipo en Config mientras el formulario
+  // del pedido ya está abierto, sin esto los selects de "tipo" de las filas
+  // ya creadas se quedan con la lista vieja hasta recargar la página.
+  document.addEventListener('tipos-equipo:cambio', () => {
+    equiposPedidoList.querySelectorAll('.equipo-pedido-tipo-filtro').forEach(select => {
+      const valorActual = select.value;
+      select.innerHTML = opcionesTiposFiltroHtml(valorActual);
+    });
+  });
+
   // Devuelve el nombre del subtab activo de la ficha, para poder refrescarla
   // sin que el usuario "salte" de vuelta al primer subtab.
   function subtabFichaActiva() {

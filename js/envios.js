@@ -69,6 +69,16 @@
       .replace(/[\u0300-\u036f]/g, '');
   }
 
+  // Cadena se cuenta por metros, no por unidades enteras — mismo criterio
+  // que en pedidos.js, para que "retirar cantidad" acepte decimales ahí
+  // también.
+  const TIPOS_CON_CANTIDAD_DECIMAL = ['cadena'];
+  function esTipoCantidadDecimal(equipo) {
+    if (!equipo) return false;
+    const tipo = buscarTipoEquipo(equipo.tipoId);
+    return !!tipo && TIPOS_CON_CANTIDAD_DECIMAL.includes(normalizar(tipo.nombre));
+  }
+
   // Fecha de hoy en formato YYYY-MM-DD (hora local, no UTC) para usar como
   // valor por defecto y como valor de un <input type="date">.
   function fechaHoyISO() {
@@ -601,9 +611,12 @@
 
           // Equipo SIN serial: las unidades son indistinguibles entre sí, así
           // que se retira por cantidad (puede ser parcial, no solo todo o nada).
+          // Cadena se cuenta por metros, así que su cantidad admite decimales.
+          const equipoParaDecimal = item.tipoLinea === 'individual' ? buscarEquipoCatalogo(item.equipoId) : null;
+          const esDecimal = esTipoCantidadDecimal(equipoParaDecimal);
           const controlCantidad = despachado ? '' : `
                 <span class="retirar-cantidad-control">
-                  <input type="number" class="input-retirar-cantidad" min="1" max="${it.cantidad}" value="${it.cantidad}" title="Cantidad a retirar">
+                  <input type="number" class="input-retirar-cantidad" min="${esDecimal ? '0.01' : '1'}" step="${esDecimal ? '0.01' : '1'}" max="${it.cantidad}" value="${it.cantidad}" title="Cantidad a retirar">
                   <button type="button" class="btn-retirar-cantidad" data-idx-remision="${idxRemision}" data-idx-item="${idxItem}" title="Retirar esta cantidad de la remisión">✕</button>
                 </span>`;
           return `<div class="item-linea"><span>${nombre}</span><span style="display:flex; align-items:center; gap:6px;">cant. ${it.cantidad}${controlCantidad}</span></div>`;
@@ -900,9 +913,11 @@
       fichaContenido.querySelectorAll('.btn-retirar-cantidad').forEach(btn => {
         btn.addEventListener('click', () => {
           const input = btn.closest('.retirar-cantidad-control')?.querySelector('.input-retirar-cantidad');
-          const max = input ? parseInt(input.max, 10) : 0;
-          let cantidad = input ? parseInt(input.value, 10) : NaN;
-          if (!Number.isFinite(cantidad) || cantidad < 1) cantidad = 1;
+          const esDecimal = input?.step === '0.01';
+          const max = input ? parseFloat(input.max) : 0;
+          const minimo = esDecimal ? 0.01 : 1;
+          let cantidad = input ? (esDecimal ? parseFloat(input.value) : parseInt(input.value, 10)) : NaN;
+          if (!Number.isFinite(cantidad) || cantidad < minimo) cantidad = minimo;
           if (max && cantidad > max) cantidad = max;
           retirarCantidadDeItem(parseInt(btn.dataset.idxRemision, 10), parseInt(btn.dataset.idxItem, 10), cantidad);
         });
@@ -1035,7 +1050,7 @@
   // concreto). Si la cantidad a retirar cubre todo lo que llevaba, el ítem
   // se retira por completo; si la remisión se queda sin ítems, se retira ella.
   async function retirarCantidadDeItem(idxRemision, idxItem, cantidadARetirar) {
-    if (!cantidadARetirar || cantidadARetirar < 1) return;
+    if (!cantidadARetirar || cantidadARetirar <= 0) return;
     const plural = cantidadARetirar > 1;
     const ok = confirm(`¿Retirar ${cantidadARetirar} unidad${plural ? 'es' : ''} de este equipo? Volverá${plural ? 'n' : ''} a quedar disponible${plural ? 's' : ''} para otro envío.`);
     if (!ok) return;
