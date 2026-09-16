@@ -1598,6 +1598,23 @@
 
   // Marca/desmarca UNA unidad concreta como preparada (index de la unidad
   // dentro del ítem, no del ítem en sí). Aplica igual con o sin serial.
+  // Si el usuario ya había escrito algún serial pero no le había dado clic
+  // a "Guardar seriales", varias acciones (marcar preparado, registrar una
+  // devolución) necesitan refrescar este mismo modal para reflejar el
+  // cambio — sin esto, ese refresco reconstruye los campos desde lo que ya
+  // está guardado en Firestore y borra lo que se había escrito.
+  function refrescarModalSerialesConservandoSinGuardar(indexItem) {
+    const sinGuardar = new Map();
+    serialesCampos.querySelectorAll('.serial-input-campo').forEach(inp => {
+      sinGuardar.set(`${inp.dataset.campo}-${inp.dataset.unidad}`, inp.value);
+    });
+    abrirModalSeriales(indexItem);
+    serialesCampos.querySelectorAll('.serial-input-campo').forEach(inp => {
+      const clave = `${inp.dataset.campo}-${inp.dataset.unidad}`;
+      if (sinGuardar.has(clave) && !inp.disabled) inp.value = sinGuardar.get(clave);
+    });
+  }
+
   async function toggleUnidadPreparada(indexItem, unidad, marcado) {
     const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
     if (!pedido) return;
@@ -1612,7 +1629,7 @@
     try {
       await db.collection(COLECCION).doc(pedido.id).update({ equipos: equiposActualizados });
       renderSeccionEquipos({ ...pedido, equipos: equiposActualizados });
-      if (indexEquipoEnSeriales === indexItem) abrirModalSeriales(indexItem); // refresca el modal abierto
+      if (indexEquipoEnSeriales === indexItem) refrescarModalSerialesConservandoSinGuardar(indexItem); // refresca el modal abierto
     } catch (err) {
       console.error('Error actualizando estado preparado:', err);
       alert('No se pudo actualizar. Revisa la consola.');
@@ -1888,7 +1905,7 @@
 
     try {
       await db.collection(COLECCION).doc(pedidoId).update({ equipos: equiposActualizados });
-      abrirModalSeriales(indexItem); // refresca el modal mostrando la unidad como devuelta
+      refrescarModalSerialesConservandoSinGuardar(indexItem); // refresca el modal mostrando la unidad como devuelta
       renderSeccionEquipos({ ...pedido, equipos: equiposActualizados }); // refresca la tarjeta detrás
     } catch (err) {
       console.error('Error registrando devolución:', err);
@@ -1926,7 +1943,7 @@
 
     try {
       await db.collection(COLECCION).doc(pedidoId).update({ equipos: equiposActualizados });
-      abrirModalSeriales(indexItem);
+      refrescarModalSerialesConservandoSinGuardar(indexItem);
       renderSeccionEquipos({ ...pedido, equipos: equiposActualizados });
     } catch (err) {
       console.error('Error registrando devolución:', err);

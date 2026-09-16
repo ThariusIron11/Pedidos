@@ -2201,6 +2201,100 @@
     color: var(--ink-soft);
   }
 
+  /* ---------- Simulaciones de envío ---------- */
+  .simulaciones-cards{ display: flex; flex-direction: column; gap: 10px; }
+  .simulacion-card{
+    background: var(--paper-card);
+    border: 1px solid #e2e4e9;
+    border-radius: 10px;
+    padding: 14px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .simulacion-card:hover{ border-color: #b8bcc4; box-shadow: 0 1px 4px rgba(28,33,40,0.06); }
+  .simulacion-card .nombre{ font-weight: 700; font-size: 14px; flex: 1; }
+  .simulacion-card .resumen{ font-size: 12.5px; color: var(--ink-soft); }
+  .simulacion-card .peso-pill{
+    font-size: 12.5px; font-weight: 700; background: #eef1f5; color: var(--ink-soft);
+    padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  .simulacion-card .peso-pill.advertencia{ background: #fdf0d5; color: #a5690c; }
+
+  .simulacion-nombre-input{
+    width: 100%;
+    font-family: inherit;
+    font-size: 17px;
+    font-weight: 700;
+    border: none;
+    background: transparent;
+    color: #fff;
+    padding: 4px 0;
+  }
+  .simulacion-nombre-input::placeholder{ color: rgba(255,255,255,0.6); }
+  .simulacion-nombre-input:focus{ outline: none; border-bottom: 2px solid #fff; }
+
+  .simulacion-peso-resumen{
+    text-align: center;
+    padding: 14px;
+    background: #f7f8f9;
+    border: 1px dashed #d4d7dc;
+    border-radius: 8px;
+    margin-bottom: 10px;
+  }
+  .simulacion-peso-total .label{ font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: var(--ink-soft); text-transform: uppercase; }
+  .simulacion-peso-total .valor{ font-size: 26px; font-weight: 800; color: var(--ink); margin-top: 2px; }
+
+  .simulacion-advertencia{
+    background: #fdf0d5;
+    border: 1px solid #f0d9a0;
+    color: #7a5b12;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12.5px;
+    margin-bottom: 14px;
+  }
+  .simulacion-advertencia strong{ display: block; margin-bottom: 4px; }
+
+  .simulacion-items{ margin-bottom: 14px; }
+  .simulacion-item-fila{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 0;
+    border-bottom: 1px dashed #ececef;
+    font-size: 13.5px;
+  }
+  .simulacion-item-fila:last-child{ border-bottom: none; }
+  .simulacion-item-fila .nombre{ flex: 1; color: var(--ink); }
+  .simulacion-item-fila .nombre .sin-peso{ color: #a5690c; font-size: 12px; font-weight: 600; }
+  .simulacion-item-fila .cantidad{ color: var(--ink-soft); white-space: nowrap; }
+  .simulacion-item-fila .peso{ font-weight: 700; color: var(--ink-soft); white-space: nowrap; min-width: 70px; text-align: right; }
+  .simulacion-item-fila .btn-quitar-item-simulacion{
+    background: transparent; border: none; color: var(--ink-soft); cursor: pointer; font-size: 14px; padding: 2px 4px;
+  }
+  .simulacion-item-fila .btn-quitar-item-simulacion:hover{ color: var(--copper); }
+
+  .simulacion-agregar-bloque{ display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+
+  .simulacion-panel-agregar{
+    background: #faf6f0;
+    border: 1px solid #e9e2d6;
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+  .simulacion-pedido-item-row{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    font-size: 13px;
+  }
+  .simulacion-pedido-item-row .nombre{ flex: 1; }
+  .simulacion-pedido-item-row input{ width: 80px; }
+
   @media (max-width: 760px){
     .ficha-campos{ grid-template-columns: 1fr; }
     body{ flex-direction: column; }
@@ -2322,38 +2416,61 @@
           <h2>Envíos</h2>
         </div>
 
-        <div class="envios-filtros">
-          <div class="form-group" style="max-width:320px; margin-bottom:0; flex:1; position:relative;">
-            <input type="text" id="buscador-envios" placeholder="Buscar por pedido, remesa, cliente o remisión..." autocomplete="off">
-            <div class="buscador-resultados" id="resultados-buscador-envios"></div>
-          </div>
-
-          <div class="filtro-estado-pedidos" id="filtro-estado-envios">
-            <button type="button" class="chip-filtro-estado" data-estado="">Todos</button>
-            <button type="button" class="chip-filtro-estado active" data-estado="armado">Armado</button>
-            <button type="button" class="chip-filtro-estado" data-estado="despachado">Despachado</button>
-          </div>
-
-          <div class="form-group" style="max-width:220px; margin-bottom:0;">
-            <select id="filtro-empresa-envios">
-              <option value="">Quién se encarga: todos</option>
-              <option value="interno">🏠 Interno</option>
-              <!-- opciones de empresas generadas por envios.js -->
-            </select>
-          </div>
-
-          <button type="button" class="chip-filtro-estado" id="filtro-flete-pendiente" title="Envíos con transportadora que factura después, cuyo flete todavía no se ha confirmado">⏳ Facturas por confirmar</button>
-
-          <button type="button" class="chip-filtro-estado" id="filtro-sin-cotizacion" title="Envíos a los que todavía no se les ha agregado ningún valor de flete/cotización">💰 Sin cotización</button>
-
-          <button type="button" class="chip-filtro-estado" id="btn-orden-fecha-envios" title="Cambiar el orden por fecha de envío">📅 Recientes primero ↓</button>
+        <div class="subtabs" id="envios-panel-subtabs">
+          <button type="button" class="subtab-btn active" data-subtab="envios-lista">📦 Envíos</button>
+          <button type="button" class="subtab-btn" data-subtab="simulaciones-lista">🧮 Simulaciones</button>
         </div>
 
-        <div class="envios-cards" id="envios-cards">
-          <!-- tarjetas generadas por envios.js -->
+        <div class="subtab-panel active" id="subtab-envios-lista">
+          <div class="envios-filtros">
+            <div class="form-group" style="max-width:320px; margin-bottom:0; flex:1; position:relative;">
+              <input type="text" id="buscador-envios" placeholder="Buscar por pedido, remesa, cliente o remisión..." autocomplete="off">
+              <div class="buscador-resultados" id="resultados-buscador-envios"></div>
+            </div>
+
+            <div class="filtro-estado-pedidos" id="filtro-estado-envios">
+              <button type="button" class="chip-filtro-estado" data-estado="">Todos</button>
+              <button type="button" class="chip-filtro-estado active" data-estado="armado">Armado</button>
+              <button type="button" class="chip-filtro-estado" data-estado="despachado">Despachado</button>
+            </div>
+
+            <div class="form-group" style="max-width:220px; margin-bottom:0;">
+              <select id="filtro-empresa-envios">
+                <option value="">Quién se encarga: todos</option>
+                <option value="interno">🏠 Interno</option>
+                <!-- opciones de empresas generadas por envios.js -->
+              </select>
+            </div>
+
+            <button type="button" class="chip-filtro-estado" id="filtro-flete-pendiente" title="Envíos con transportadora que factura después, cuyo flete todavía no se ha confirmado">⏳ Facturas por confirmar</button>
+
+            <button type="button" class="chip-filtro-estado" id="filtro-sin-cotizacion" title="Envíos a los que todavía no se les ha agregado ningún valor de flete/cotización">💰 Sin cotización</button>
+
+            <button type="button" class="chip-filtro-estado" id="btn-orden-fecha-envios" title="Cambiar el orden por fecha de envío">📅 Recientes primero ↓</button>
+          </div>
+
+          <div class="envios-cards" id="envios-cards">
+            <!-- tarjetas generadas por envios.js -->
+          </div>
+          <div class="empty-state" id="envios-empty" style="display:none;">
+            Todavía no hay envíos registrados. Se crean desde la ficha de un pedido, pestaña "Envío / Despacho".
+          </div>
         </div>
-        <div class="empty-state" id="envios-empty" style="display:none;">
-          Todavía no hay envíos registrados. Se crean desde la ficha de un pedido, pestaña "Envío / Despacho".
+
+        <div class="subtab-panel" id="subtab-simulaciones-lista">
+          <div class="panel-header">
+            <h3 style="margin:0; font-size:14px;">Simulaciones de envío</h3>
+            <button type="button" class="btn" id="btn-nueva-simulacion">+ Nueva simulación</button>
+          </div>
+          <div class="empty-state" style="margin-bottom:14px;">
+            Para calcular el peso antes de armar un envío real — no reserva ni descuenta nada de los pedidos.
+          </div>
+          <div class="simulaciones-cards" id="simulaciones-cards">
+            <!-- tarjetas generadas por envios.js -->
+          </div>
+          <div class="empty-state" id="simulaciones-empty" style="display:none;">
+            Todavía no hay simulaciones guardadas.
+          </div>
         </div>
       </section>
 
@@ -3220,6 +3337,77 @@
           <button type="button" class="btn secondary" id="btn-guardar-envio">Guardar cambios</button>
           <button type="button" class="btn" id="btn-despachar-envio">Marcar como despachado</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: FICHA de simulación de envío (usado por envios.js) -->
+  <div class="modal-backdrop" id="modal-ficha-simulacion">
+    <div class="modal modal-ficha" style="max-width:720px;">
+      <div class="ficha-header">
+        <div style="flex:1;">
+          <input type="text" id="simulacion-nombre-input" placeholder="Nombre de la simulación" class="simulacion-nombre-input">
+        </div>
+      </div>
+      <div class="ficha-envio-contenido-wrap">
+
+        <div class="simulacion-peso-resumen">
+          <div class="simulacion-peso-total">
+            <div class="label">Peso total estimado</div>
+            <div class="valor" id="simulacion-peso-valor">0 kg</div>
+          </div>
+        </div>
+        <div id="simulacion-advertencia-peso" class="simulacion-advertencia" style="display:none;"></div>
+
+        <div class="simulacion-items" id="simulacion-items-lista"></div>
+        <div class="empty-state" id="simulacion-items-empty" style="display:none;">
+          Todavía no has agregado equipos a esta simulación.
+        </div>
+
+        <div class="simulacion-agregar-bloque">
+          <button type="button" class="btn secondary" id="btn-simulacion-agregar-pedido">+ Agregar desde un pedido</button>
+          <button type="button" class="btn secondary" id="btn-simulacion-agregar-suelto">+ Agregar equipo suelto</button>
+        </div>
+
+        <!-- Panel: agregar equipos de un pedido existente -->
+        <div id="simulacion-panel-agregar-pedido" class="simulacion-panel-agregar" style="display:none;">
+          <div class="form-group">
+            <label>Pedido</label>
+            <select id="simulacion-select-pedido">
+              <option value="">Selecciona un pedido...</option>
+            </select>
+          </div>
+          <div id="simulacion-pedido-items-checklist"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn secondary" id="btn-cancelar-simulacion-agregar-pedido">Cancelar</button>
+            <button type="button" class="btn" id="btn-confirmar-simulacion-agregar-pedido">Agregar seleccionados</button>
+          </div>
+        </div>
+
+        <!-- Panel: agregar un equipo suelto del catálogo -->
+        <div id="simulacion-panel-agregar-suelto" class="simulacion-panel-agregar" style="display:none;">
+          <div class="form-group">
+            <label>Tipo</label>
+            <select id="simulacion-suelto-tipo-filtro"></select>
+          </div>
+          <div class="form-group">
+            <label>Equipo</label>
+            <select id="simulacion-suelto-equipo"></select>
+          </div>
+          <div class="form-group">
+            <label>Cantidad</label>
+            <input type="number" id="simulacion-suelto-cantidad" min="1" step="1" value="1">
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn secondary" id="btn-cancelar-simulacion-agregar-suelto">Cancelar</button>
+            <button type="button" class="btn" id="btn-confirmar-simulacion-agregar-suelto">Agregar</button>
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-actions" style="justify-content:space-between;">
+        <button type="button" class="btn secondary danger-text" id="btn-eliminar-simulacion">Eliminar simulación</button>
+        <button type="button" class="btn secondary" id="btn-cerrar-ficha-simulacion">Cerrar</button>
       </div>
     </div>
   </div>

@@ -44,6 +44,40 @@
   const btnCompartirRemesaWhatsapp = document.getElementById('btn-compartir-remesa-whatsapp');
   const remesaExportHost = document.getElementById('remesa-export-host');
 
+  // ---------- Simulaciones de envío ----------
+  const COLECCION_SIMULACIONES = 'simulaciones';
+  const panelSubtabButtons = document.querySelectorAll('#envios-panel-subtabs .subtab-btn');
+  const simulacionesContenedor = document.getElementById('simulaciones-cards');
+  const simulacionesEmpty = document.getElementById('simulaciones-empty');
+  const btnNuevaSimulacion = document.getElementById('btn-nueva-simulacion');
+
+  const modalFichaSimulacion = document.getElementById('modal-ficha-simulacion');
+  const inputNombreSimulacion = document.getElementById('simulacion-nombre-input');
+  const pesoValorSimulacion = document.getElementById('simulacion-peso-valor');
+  const advertenciaPesoSimulacion = document.getElementById('simulacion-advertencia-peso');
+  const itemsListaSimulacion = document.getElementById('simulacion-items-lista');
+  const itemsEmptySimulacion = document.getElementById('simulacion-items-empty');
+  const btnCerrarFichaSimulacion = document.getElementById('btn-cerrar-ficha-simulacion');
+  const btnEliminarSimulacion = document.getElementById('btn-eliminar-simulacion');
+
+  const btnAbrirAgregarPedido = document.getElementById('btn-simulacion-agregar-pedido');
+  const panelAgregarPedido = document.getElementById('simulacion-panel-agregar-pedido');
+  const selectPedidoSimulacion = document.getElementById('simulacion-select-pedido');
+  const checklistPedidoSimulacion = document.getElementById('simulacion-pedido-items-checklist');
+  const btnCancelarAgregarPedido = document.getElementById('btn-cancelar-simulacion-agregar-pedido');
+  const btnConfirmarAgregarPedido = document.getElementById('btn-confirmar-simulacion-agregar-pedido');
+
+  const btnAbrirAgregarSuelto = document.getElementById('btn-simulacion-agregar-suelto');
+  const panelAgregarSuelto = document.getElementById('simulacion-panel-agregar-suelto');
+  const selectTipoSuelto = document.getElementById('simulacion-suelto-tipo-filtro');
+  const selectEquipoSuelto = document.getElementById('simulacion-suelto-equipo');
+  const inputCantidadSuelto = document.getElementById('simulacion-suelto-cantidad');
+  const btnCancelarAgregarSuelto = document.getElementById('btn-cancelar-simulacion-agregar-suelto');
+  const btnConfirmarAgregarSuelto = document.getElementById('btn-confirmar-simulacion-agregar-suelto');
+
+  let simulacionesCache = [];
+  let simulacionIdEnFicha = null;
+
   window.enviosCache = [];
   let envioIdEnFicha = null;
   let volverAPedidoId = null; // si la ficha se abrió desde dentro de un pedido, aquí queda su id
@@ -58,6 +92,10 @@
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
+  }
+
+  function escapeAttr(str) {
+    return String(str ?? '').replace(/"/g, '&quot;');
   }
 
   // Quita tildes y pasa a minúsculas, para que la búsqueda no dependa de
@@ -1488,20 +1526,427 @@
     }
   });
 
-  // ---------- Suscripción en tiempo real ----------
-  // Arranca de inmediato (no solo al entrar a la pestaña), porque pedidos.js
-  // depende de este catálogo para saber a qué envíos ya está vinculado un pedido.
+  // ==================== Simulaciones de envío ====================
+  // Sirven para calcular el peso total ANTES de armar un envío real — no
+  // reservan ni descuentan nada de los pedidos, es solo una cuenta aparte.
+  //
+  // Cada simulación:
+  // {
+  //   nombre: string,
+  //   pedidosSeleccionados: [ { pedidoId, itemIndex, cantidad } ],
+  //   equiposSueltos: [ { equipoId, cantidad } ],
+  //   creadoEn: timestamp
+  // }
 
-  db.collection(COLECCION).onSnapshot(
-    (snapshot) => {
-      window.enviosCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      renderTabla();
-      difundirCambio();
-    },
-    (err) => {
-      console.error('Error escuchando envíos:', err);
+  // Un equipo "tiene peso" solo si TODO lo que compone su peso está
+  // registrado — para un compuesto, si falta el peso de alguna pieza, se
+  // considera incompleto (aunque pesoUnitarioEquipo sí sume lo que sí hay,
+  // para no romper el total).
+  function equipoTienePesoRegistrado(equipo) {
+    if (!equipo) return false;
+    if (equipo.esCompuesto && (equipo.piezasCompuesto || []).length) {
+      return equipo.piezasCompuesto.every(p => {
+        const pieza = buscarEquipoCatalogo(p.piezaId);
+        return pieza && pieza.peso !== undefined && pieza.peso !== null && pieza.peso !== '';
+      });
     }
-  );
+    return equipo.peso !== undefined && equipo.peso !== null && equipo.peso !== '';
+  }
+
+  function itemTienePesoCompleto(item) {
+    if (item.tipoLinea === 'motoreductor') {
+      const equipoMotor = buscarEquipoCatalogo(item.motorEquipoId);
+      const equipoReductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      return equipoTienePesoRegistrado(equipoMotor) && equipoTienePesoRegistrado(equipoReductor);
+    }
+    const equipo = buscarEquipoCatalogo(item.equipoId);
+    return equipoTienePesoRegistrado(equipo);
+  }
+
+  function pesoTotalSimulacion(sim) {
+    let total = 0;
+    (sim.pedidosSeleccionados || []).forEach(sel => {
+      const pedido = buscarPedido(sel.pedidoId);
+      if (pedido) total += pesoItem(pedido, sel);
+    });
+    (sim.equiposSueltos || []).forEach(suelto => {
+      const equipo = buscarEquipoCatalogo(suelto.equipoId);
+      total += pesoUnitarioEquipo(equipo) * (suelto.cantidad || 0);
+    });
+    return total;
+  }
+
+  // Nombres de los ítems a los que les falta peso, para el aviso.
+  function itemsSinPesoSimulacion(sim) {
+    const faltantes = [];
+    (sim.pedidosSeleccionados || []).forEach(sel => {
+      const pedido = buscarPedido(sel.pedidoId);
+      const item = pedido?.equipos?.[sel.itemIndex];
+      if (item && !itemTienePesoCompleto(item)) faltantes.push(nombreItemParaRemesa(item));
+    });
+    (sim.equiposSueltos || []).forEach(suelto => {
+      const equipo = buscarEquipoCatalogo(suelto.equipoId);
+      if (equipo && !equipoTienePesoRegistrado(equipo)) {
+        const icono = buscarTipoEquipo(equipo.tipoId)?.icono || '';
+        faltantes.push(`${icono ? icono + ' ' : ''}${escapeHtml(equipo.nombre)}`);
+      }
+    });
+    return faltantes;
+  }
+
+  function formatearPeso(kg) {
+    const redondeado = Math.round(kg * 100) / 100;
+    return `${redondeado.toLocaleString('es-CO')} kg`;
+  }
+
+  // ---------- Subtabs del panel (Envíos / Simulaciones) ----------
+
+  let suscritoSimulaciones = false;
+  panelSubtabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      panelSubtabButtons.forEach(b => b.classList.toggle('active', b === btn));
+      document.querySelectorAll('#panel-envios > .subtab-panel').forEach(p => {
+        p.classList.toggle('active', p.id === 'subtab-' + btn.dataset.subtab);
+      });
+      if (btn.dataset.subtab === 'simulaciones-lista') iniciarSuscripcionSimulaciones();
+    });
+  });
+
+  function iniciarSuscripcionSimulaciones() {
+    if (suscritoSimulaciones) return;
+    suscritoSimulaciones = true;
+    db.collection(COLECCION_SIMULACIONES).onSnapshot(
+      (snapshot) => {
+        simulacionesCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderListaSimulaciones();
+        if (simulacionIdEnFicha) {
+          const actual = simulacionesCache.find(s => s.id === simulacionIdEnFicha);
+          if (actual) renderContenidoFichaSimulacion(actual);
+        }
+      },
+      (err) => console.error('Error escuchando simulaciones:', err)
+    );
+  }
+
+  // ---------- Lista de simulaciones ----------
+
+  function renderListaSimulaciones() {
+    if (!simulacionesCache.length) {
+      simulacionesContenedor.innerHTML = '';
+      simulacionesEmpty.style.display = 'block';
+      return;
+    }
+    simulacionesEmpty.style.display = 'none';
+
+    simulacionesContenedor.innerHTML = simulacionesCache.map(sim => {
+      const totalItems = (sim.pedidosSeleccionados || []).length + (sim.equiposSueltos || []).length;
+      const peso = pesoTotalSimulacion(sim);
+      const faltantes = itemsSinPesoSimulacion(sim);
+      const pesoPillClase = faltantes.length ? 'peso-pill advertencia' : 'peso-pill';
+      const pesoPillTexto = faltantes.length ? `⚠️ ${formatearPeso(peso)}` : formatearPeso(peso);
+      return `
+        <div class="simulacion-card" data-id="${sim.id}">
+          <div class="nombre">${escapeHtml(sim.nombre || 'Sin nombre')}</div>
+          <div class="resumen">${totalItems} equipo${totalItems === 1 ? '' : 's'}</div>
+          <div class="${pesoPillClase}">${pesoPillTexto}</div>
+        </div>
+      `;
+    }).join('');
+
+    simulacionesContenedor.querySelectorAll('.simulacion-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const sim = simulacionesCache.find(s => s.id === card.dataset.id);
+        if (sim) abrirFichaSimulacion(sim);
+      });
+    });
+  }
+
+  btnNuevaSimulacion.addEventListener('click', async () => {
+    const nombre = prompt('Nombre para esta simulación (ej. "Camión lunes"):');
+    if (nombre === null) return; // canceló
+    const nombreFinal = nombre.trim() || 'Simulación sin nombre';
+    try {
+      const ref = await db.collection(COLECCION_SIMULACIONES).add({
+        nombre: nombreFinal,
+        pedidosSeleccionados: [],
+        equiposSueltos: [],
+        creadoEn: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      abrirFichaSimulacion({ id: ref.id, nombre: nombreFinal, pedidosSeleccionados: [], equiposSueltos: [] });
+    } catch (err) {
+      console.error('Error creando la simulación:', err);
+      alert('No se pudo crear la simulación. Revisa la consola.');
+    }
+  });
+
+  // ---------- Ficha de una simulación ----------
+
+  function abrirFichaSimulacion(sim) {
+    simulacionIdEnFicha = sim.id;
+    panelAgregarPedido.style.display = 'none';
+    panelAgregarSuelto.style.display = 'none';
+    renderContenidoFichaSimulacion(sim);
+    modalFichaSimulacion.classList.add('open');
+  }
+
+  function cerrarFichaSimulacion() {
+    modalFichaSimulacion.classList.remove('open');
+    simulacionIdEnFicha = null;
+  }
+  btnCerrarFichaSimulacion.addEventListener('click', cerrarFichaSimulacion);
+  modalFichaSimulacion.addEventListener('click', (e) => {
+    if (e.target === modalFichaSimulacion) cerrarFichaSimulacion();
+  });
+
+  function renderContenidoFichaSimulacion(sim) {
+    inputNombreSimulacion.value = sim.nombre || '';
+
+    const peso = pesoTotalSimulacion(sim);
+    pesoValorSimulacion.textContent = formatearPeso(peso);
+
+    const faltantes = itemsSinPesoSimulacion(sim);
+    if (faltantes.length) {
+      advertenciaPesoSimulacion.style.display = 'block';
+      advertenciaPesoSimulacion.innerHTML = `
+        <strong>⚠️ ${faltantes.length} equipo${faltantes.length === 1 ? '' : 's'} sin peso registrado — el total de arriba no los incluye:</strong>
+        ${faltantes.join(', ')}
+      `;
+    } else {
+      advertenciaPesoSimulacion.style.display = 'none';
+    }
+
+    const filas = [];
+    (sim.pedidosSeleccionados || []).forEach((sel, idx) => {
+      const pedido = buscarPedido(sel.pedidoId);
+      const item = pedido?.equipos?.[sel.itemIndex];
+      const compania = pedido ? buscarCompania(pedido.companiaId) : null;
+      const nombre = item ? nombreItemParaRemesa(item) : '⚠️ Ítem no encontrado (el pedido pudo haber cambiado)';
+      const pesoFila = pedido ? pesoItem(pedido, sel) : 0;
+      const sinPeso = item && !itemTienePesoCompleto(item);
+      const origen = pedido ? `N${pedido.numero} - ${escapeHtml(compania ? compania.nombre : '?')}` : '';
+      filas.push({
+        html: `
+          <div class="simulacion-item-fila">
+            <span class="nombre">${nombre}${sinPeso ? ' <span class="sin-peso">(sin peso)</span>' : ''}<br><span style="font-size:11.5px; color:var(--ink-soft);">${origen}</span></span>
+            <span class="cantidad">× ${sel.cantidad}</span>
+            <span class="peso">${formatearPeso(pesoFila)}</span>
+            <button type="button" class="btn-quitar-item-simulacion" data-tipo="pedido" data-idx="${idx}" title="Quitar">✕</button>
+          </div>
+        `
+      });
+    });
+    (sim.equiposSueltos || []).forEach((suelto, idx) => {
+      const equipo = buscarEquipoCatalogo(suelto.equipoId);
+      const icono = equipo ? (buscarTipoEquipo(equipo.tipoId)?.icono || '') : '';
+      const nombre = equipo ? `${icono ? icono + ' ' : ''}${escapeHtml(equipo.nombre)}` : '⚠️ Equipo no encontrado';
+      const pesoFila = equipo ? pesoUnitarioEquipo(equipo) * (suelto.cantidad || 0) : 0;
+      const sinPeso = equipo && !equipoTienePesoRegistrado(equipo);
+      filas.push({
+        html: `
+          <div class="simulacion-item-fila">
+            <span class="nombre">${nombre}${sinPeso ? ' <span class="sin-peso">(sin peso)</span>' : ''}<br><span style="font-size:11.5px; color:var(--ink-soft);">Equipo suelto</span></span>
+            <span class="cantidad">× ${suelto.cantidad}</span>
+            <span class="peso">${formatearPeso(pesoFila)}</span>
+            <button type="button" class="btn-quitar-item-simulacion" data-tipo="suelto" data-idx="${idx}" title="Quitar">✕</button>
+          </div>
+        `
+      });
+    });
+
+    if (!filas.length) {
+      itemsListaSimulacion.innerHTML = '';
+      itemsEmptySimulacion.style.display = 'block';
+    } else {
+      itemsEmptySimulacion.style.display = 'none';
+      itemsListaSimulacion.innerHTML = filas.map(f => f.html).join('');
+    }
+
+    itemsListaSimulacion.querySelectorAll('.btn-quitar-item-simulacion').forEach(btn => {
+      btn.addEventListener('click', () => quitarItemSimulacion(btn.dataset.tipo, parseInt(btn.dataset.idx, 10)));
+    });
+  }
+
+  async function actualizarSimulacion(campos) {
+    if (!simulacionIdEnFicha) return;
+    try {
+      await db.collection(COLECCION_SIMULACIONES).doc(simulacionIdEnFicha).update(campos);
+    } catch (err) {
+      console.error('Error guardando la simulación:', err);
+      alert('No se pudo guardar. Revisa la consola.');
+    }
+  }
+
+  async function quitarItemSimulacion(tipo, idx) {
+    const sim = simulacionesCache.find(s => s.id === simulacionIdEnFicha);
+    if (!sim) return;
+    if (tipo === 'pedido') {
+      const lista = (sim.pedidosSeleccionados || []).filter((_, i) => i !== idx);
+      await actualizarSimulacion({ pedidosSeleccionados: lista });
+    } else {
+      const lista = (sim.equiposSueltos || []).filter((_, i) => i !== idx);
+      await actualizarSimulacion({ equiposSueltos: lista });
+    }
+  }
+
+  inputNombreSimulacion.addEventListener('change', () => {
+    actualizarSimulacion({ nombre: inputNombreSimulacion.value.trim() || 'Simulación sin nombre' });
+  });
+
+  btnEliminarSimulacion.addEventListener('click', async () => {
+    if (!simulacionIdEnFicha) return;
+    const ok = confirm('¿Eliminar esta simulación? Esta acción no se puede deshacer.');
+    if (!ok) return;
+    try {
+      await db.collection(COLECCION_SIMULACIONES).doc(simulacionIdEnFicha).delete();
+      cerrarFichaSimulacion();
+    } catch (err) {
+      console.error('Error eliminando la simulación:', err);
+      alert('No se pudo eliminar. Revisa la consola.');
+    }
+  });
+
+  // ---------- Panel: agregar equipos de un pedido existente ----------
+
+  btnAbrirAgregarPedido.addEventListener('click', () => {
+    panelAgregarSuelto.style.display = 'none';
+    const abierto = panelAgregarPedido.style.display !== 'none';
+    if (abierto) { panelAgregarPedido.style.display = 'none'; return; }
+
+    const pedidosOrdenados = [...(window.pedidosCache || [])].sort((a, b) => (b.numero || 0) - (a.numero || 0));
+    selectPedidoSimulacion.innerHTML = '<option value="">Selecciona un pedido...</option>' +
+      pedidosOrdenados.map(p => {
+        const compania = buscarCompania(p.companiaId);
+        return `<option value="${p.id}">N${p.numero} - ${escapeHtml(compania ? compania.nombre : 'Compañía no encontrada')}</option>`;
+      }).join('');
+    checklistPedidoSimulacion.innerHTML = '';
+    panelAgregarPedido.style.display = 'block';
+  });
+
+  btnCancelarAgregarPedido.addEventListener('click', () => { panelAgregarPedido.style.display = 'none'; });
+
+  selectPedidoSimulacion.addEventListener('change', () => {
+    const pedido = buscarPedido(selectPedidoSimulacion.value);
+    if (!pedido) { checklistPedidoSimulacion.innerHTML = ''; return; }
+
+    checklistPedidoSimulacion.innerHTML = (pedido.equipos || []).map((item, idx) => {
+      const nombre = nombreItemParaRemesa(item);
+      const equipoParaDecimal = item.tipoLinea === 'individual' ? buscarEquipoCatalogo(item.equipoId) : null;
+      const esDecimal = esTipoCantidadDecimal(equipoParaDecimal);
+      return `
+        <div class="simulacion-pedido-item-row">
+          <span class="nombre">${nombre}</span>
+          <input type="number" class="input-simulacion-item-cantidad" data-idx="${idx}"
+            min="0" step="${esDecimal ? '0.01' : '1'}" max="${item.cantidad}" value="0" title="Cantidad a incluir (0 = no incluir)">
+        </div>
+      `;
+    }).join('') || '<div style="font-size:13px; color:var(--ink-soft);">Este pedido no tiene equipos.</div>';
+  });
+
+  btnConfirmarAgregarPedido.addEventListener('click', async () => {
+    const pedidoId = selectPedidoSimulacion.value;
+    if (!pedidoId) { alert('Elige un pedido primero.'); return; }
+
+    const sim = simulacionesCache.find(s => s.id === simulacionIdEnFicha);
+    if (!sim) return;
+
+    const nuevasSelecciones = [];
+    checklistPedidoSimulacion.querySelectorAll('.input-simulacion-item-cantidad').forEach(input => {
+      const cantidad = parseFloat(input.value);
+      if (cantidad > 0) nuevasSelecciones.push({ itemIndex: parseInt(input.dataset.idx, 10), cantidad });
+    });
+    if (!nuevasSelecciones.length) { alert('Pon una cantidad mayor a 0 en al menos un equipo.'); return; }
+
+    // Si un ítem de este mismo pedido ya estaba agregado, se reemplaza su
+    // cantidad (no se duplica); los demás pedidos/ítems se dejan igual.
+    const otrosSinEstePedido = (sim.pedidosSeleccionados || []).filter(sel => sel.pedidoId !== pedidoId);
+    const deEstePedido = (sim.pedidosSeleccionados || []).filter(sel => sel.pedidoId === pedidoId);
+    nuevasSelecciones.forEach(nueva => {
+      const yaExiste = deEstePedido.find(sel => sel.itemIndex === nueva.itemIndex);
+      if (yaExiste) yaExiste.cantidad = nueva.cantidad;
+      else deEstePedido.push({ pedidoId, ...nueva });
+    });
+
+    await actualizarSimulacion({ pedidosSeleccionados: [...otrosSinEstePedido, ...deEstePedido] });
+    panelAgregarPedido.style.display = 'none';
+  });
+
+  // ---------- Panel: agregar un equipo suelto del catálogo ----------
+
+  function poblarSelectEquipoSuelto() {
+    const tipoId = selectTipoSuelto.value || null;
+    const equipos = (window.equiposCache || []).filter(eq => !tipoId || eq.tipoId === tipoId);
+    selectEquipoSuelto.innerHTML = '<option value="">Selecciona un equipo...</option>' +
+      equipos.map(eq => {
+        const icono = buscarTipoEquipo(eq.tipoId)?.icono || '';
+        return `<option value="${eq.id}">${icono ? icono + ' ' : ''}${escapeHtml(eq.nombre)}</option>`;
+      }).join('');
+  }
+
+  function actualizarCantidadSueltoSegunEquipo() {
+    const equipo = buscarEquipoCatalogo(selectEquipoSuelto.value);
+    const decimal = esTipoCantidadDecimal(equipo);
+    inputCantidadSuelto.step = decimal ? '0.01' : '1';
+    inputCantidadSuelto.min = decimal ? '0.01' : '1';
+  }
+
+  btnAbrirAgregarSuelto.addEventListener('click', () => {
+    panelAgregarPedido.style.display = 'none';
+    const abierto = panelAgregarSuelto.style.display !== 'none';
+    if (abierto) { panelAgregarSuelto.style.display = 'none'; return; }
+
+    selectTipoSuelto.innerHTML = '<option value="">Todos los tipos</option>' +
+      (window.tiposEquipoCache || []).map(t => `<option value="${t.id}">${t.icono ? t.icono + ' ' : ''}${escapeHtml(t.nombre)}</option>`).join('');
+    poblarSelectEquipoSuelto();
+    inputCantidadSuelto.value = 1;
+    panelAgregarSuelto.style.display = 'block';
+  });
+
+  btnCancelarAgregarSuelto.addEventListener('click', () => { panelAgregarSuelto.style.display = 'none'; });
+  selectTipoSuelto.addEventListener('change', poblarSelectEquipoSuelto);
+  selectEquipoSuelto.addEventListener('change', actualizarCantidadSueltoSegunEquipo);
+
+  btnConfirmarAgregarSuelto.addEventListener('click', async () => {
+    const equipoId = selectEquipoSuelto.value;
+    if (!equipoId) { alert('Elige un equipo primero.'); return; }
+    const cantidad = parseFloat(inputCantidadSuelto.value);
+    if (!cantidad || cantidad <= 0) { alert('Pon una cantidad mayor a 0.'); return; }
+
+    const sim = simulacionesCache.find(s => s.id === simulacionIdEnFicha);
+    if (!sim) return;
+
+    // Si ya estaba agregado, se reemplaza la cantidad (no se duplica).
+    const lista = (sim.equiposSueltos || []).filter(s => s.equipoId !== equipoId);
+    lista.push({ equipoId, cantidad });
+
+    await actualizarSimulacion({ equiposSueltos: lista });
+    panelAgregarSuelto.style.display = 'none';
+  });
+
+  document.addEventListener('equipos-catalogo:cambio', () => { if (simulacionIdEnFicha) renderListaSimulaciones(); });
+  document.addEventListener('pedidos:cambio', () => {
+    if (simulacionIdEnFicha) {
+      const sim = simulacionesCache.find(s => s.id === simulacionIdEnFicha);
+      if (sim) renderContenidoFichaSimulacion(sim);
+    }
+    renderListaSimulaciones();
+  });
+
+  // ---------- Suscripción en tiempo real ----------
+  // Espera a que haya sesión iniciada — antes de eso, Firestore rechazaría
+  // la lectura, y si el intento falla aquí no se vuelve a reintentar solo.
+
+  document.addEventListener('auth:listo', () => {
+    db.collection(COLECCION).onSnapshot(
+      (snapshot) => {
+        window.enviosCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderTabla();
+        difundirCambio();
+      },
+      (err) => {
+        console.error('Error escuchando envíos:', err);
+      }
+    );
+  });
 
   document.addEventListener('clientes:cambio', renderTabla);
   document.addEventListener('equipos-catalogo:cambio', renderTabla);
