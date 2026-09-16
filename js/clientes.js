@@ -70,26 +70,45 @@
       .normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // quita tildes
   }
 
-  // Para comparar NIT no importa si alguien lo escribió con puntos, guiones
-  // o espacios ("900.123.456-1" vs "9001234561-1" vs "900123456 1") — se
-  // compara solo lo alfanumérico.
-  function normalizarNit(str) {
-    return String(str ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  // Palabras muy genéricas que no cuentan para decidir si dos nombres son
+  // "parecidos" (si no, cualquier par de "S.A.S" terminaría marcado).
+  const PALABRAS_IGNORADAS = new Set(['sa', 'ltda', 'sas', 'cia', 'compania', 'de', 'del', 'la', 'el', 'los', 'las', 'y']);
+
+  function palabrasClave(nombre) {
+    return normalizar(nombre)
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(p => p.length > 2 && !PALABRAS_IGNORADAS.has(p));
   }
 
-  // Busca si ya existe otra compañía (distinta de idActual, para permitir
-  // editar la misma sin que se detecte a sí misma) con el mismo nombre o el
-  // mismo NIT. Se compara contra clientesCache, que ya está sincronizado en
-  // tiempo real, así que no hace falta una consulta aparte a Firestore.
-  function buscarClienteDuplicado(datos, idActual) {
+  // "Contegral Cartago" y "Contegral Envigado" son empresas DISTINTAS (dos
+  // sedes) que comparten la palabra "Contegral" — eso las hace "parecidas"
+  // para efectos de un aviso informativo, pero no un duplicado real.
+  function nombresSimilares(a, b) {
+    const palabrasA = palabrasClave(a);
+    const palabrasB = palabrasClave(b);
+    return palabrasA.some(p => palabrasB.includes(p));
+  }
+
+  // Coincidencia EXACTA de nombre (ignorando mayúsculas/tildes) — esto sí es
+  // casi siempre un registro duplicado por error, así que bloquea guardar.
+  // El NIT ya NO se compara: una misma empresa puede tener varias sedes
+  // registradas por separado con el mismo NIT, y eso es válido.
+  function buscarClienteExacto(datos, idActual) {
     const nombreNorm = normalizar(datos.nombre);
-    const nitNorm = normalizarNit(datos.nit);
-    return clientesCache.find(c => {
-      if (c.id === idActual) return false;
-      if (normalizar(c.nombre) === nombreNorm) return true;
-      if (nitNorm && normalizarNit(c.nit) === nitNorm) return true;
-      return false;
-    });
+    return clientesCache.find(c => c.id !== idActual && normalizar(c.nombre) === nombreNorm);
+  }
+
+  // Nombres parecidos pero NO idénticos — esto es solo un aviso para que
+  // confirmes que en verdad es una empresa distinta (ej. otra sede), nunca
+  // bloquea el guardado.
+  function buscarClientesParecidos(datos, idActual) {
+    const nombreNorm = normalizar(datos.nombre);
+    return clientesCache.filter(c =>
+      c.id !== idActual &&
+      normalizar(c.nombre) !== nombreNorm &&
+      nombresSimilares(c.nombre, datos.nombre)
+    );
   }
 
   // ---------- Lista dinámica de contactos de pedidos ----------
@@ -229,16 +248,24 @@
 
     const id = inputId.value;
 
-    const duplicado = buscarClienteDuplicado(datos, id);
-    if (duplicado) {
-      const porNit = normalizarNit(datos.nit) && normalizarNit(duplicado.nit) === normalizarNit(datos.nit);
-      alert(
-        porNit
-          ? `Ya existe una compañía con ese NIT: "${duplicado.nombre}".`
-          : `Ya existe una compañía con ese nombre: "${duplicado.nombre}".`
-      );
+    const exacto = buscarClienteExacto(datos, id);
+    if (exacto) {
+      alert(`Ya existe una compañía con exactamente ese nombre: "${exacto.nombre}".`);
       inputNombre.focus();
       return;
+    }
+
+    const parecidos = buscarClientesParecidos(datos, id);
+    if (parecidos.length) {
+      const lista = parecidos.map(c => `• ${c.nombre}`).join('\n');
+      const continuar = confirm(
+        `Ya existen compañías con nombres parecidos:\n${lista}\n\n` +
+        `¿"${datos.nombre}" es una compañía distinta (ej. otra sede)? Aceptar para guardarla igual.`
+      );
+      if (!continuar) {
+        inputNombre.focus();
+        return;
+      }
     }
 
     const btnGuardar = form.querySelector('button[type="submit"]');
