@@ -343,7 +343,11 @@
     if (reparacion) {
       return `${formatearNumero(reparacion.numero)}${compania ? ' - ' + compania.nombre : ''}`;
     }
-    return compania ? `Nueva reparación - ${compania.nombre}` : 'Nueva reparación';
+    // Reparación nueva (todavía sin guardar): se muestra el número que le
+    // tocaría en este momento, para que se sepa de una vez qué ID va a
+    // quedar — puede cambiar si alguien más guarda una reparación primero.
+    const numeroQueOcupara = formatearNumero(siguienteNumeroDisponible());
+    return `${numeroQueOcupara} (nueva)${compania ? ' - ' + compania.nombre : ''}`;
   }
 
   // Igual que textoHeader, pero para la ficha (no depende del <select> del
@@ -531,27 +535,67 @@
     return n;
   }
 
-  // ---------- Select de compañía + autocompletar encargado ----------
+  // ---------- Buscador de compañía (texto + sugerencias) ----------
+  // selectCompania sigue siendo el input[hidden] que guarda el id elegido
+  // (así el resto del archivo, que ya lee/escribe selectCompania.value, no
+  // necesita tocarse) — inputCompaniaTexto es el campo visible donde se
+  // escribe y aparecen las sugerencias.
 
-  function poblarSelectCompanias() {
-    const actual = selectCompania.value;
-    const clientes = window.clientesCache || [];
-    selectCompania.innerHTML = '<option value="">Selecciona una compañía...</option>' +
-      clientes.map(c => `<option value="${c.id}">${escapeHtml(c.nombre)}</option>`).join('');
-    if (actual) selectCompania.value = actual;
-  }
+  const inputCompaniaTexto = document.getElementById('reparacion-compania-input');
+  const resultadosCompania = document.getElementById('reparacion-compania-resultados');
 
-  selectCompania.addEventListener('change', () => {
+  function alCambiarCompania() {
     const compania = buscarCompania(selectCompania.value);
     inputContacto.value = compania?.contactoReparaciones || '';
     headerNumero.textContent = textoHeader(inputId.value ? { numero: inputNumero.value } : null);
+  }
+
+  function mostrarResultadosCompania() {
+    const t = normalizar(inputCompaniaTexto.value);
+    const clientes = window.clientesCache || [];
+    const coincidencias = (t ? clientes.filter(c => normalizar(c.nombre).includes(t)) : clientes).slice(0, 8);
+    resultadosCompania.innerHTML = coincidencias.length
+      ? coincidencias.map(c => `<div class="buscador-item" data-id="${c.id}">${escapeHtml(c.nombre)}</div>`).join('')
+      : `<div class="buscador-item-vacio">Sin coincidencias</div>`;
+    resultadosCompania.classList.add('open');
+    resultadosCompania.querySelectorAll('.buscador-item').forEach(el => {
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // evita que el blur del input cierre la lista antes del click
+        const c = (window.clientesCache || []).find(x => x.id === el.dataset.id);
+        if (c) seleccionarCompania(c);
+      });
+    });
+  }
+
+  function seleccionarCompania(c) {
+    selectCompania.value = c.id;
+    inputCompaniaTexto.value = c.nombre;
+    resultadosCompania.classList.remove('open');
+    alCambiarCompania();
+  }
+
+  // Pone en el campo visible el nombre que corresponde al id ya guardado en
+  // selectCompania.value — se usa al cargar una reparación existente, o si
+  // cambia el nombre de la compañía desde la pestaña Clientes.
+  function sincronizarTextoCompaniaDesdeId() {
+    const compania = buscarCompania(selectCompania.value);
+    inputCompaniaTexto.value = compania ? compania.nombre : '';
+  }
+
+  inputCompaniaTexto.addEventListener('input', () => {
+    selectCompania.value = ''; // hasta que elija algo de la lista, no hay selección válida
+    mostrarResultadosCompania();
+    alCambiarCompania();
+  });
+  inputCompaniaTexto.addEventListener('focus', mostrarResultadosCompania);
+  inputCompaniaTexto.addEventListener('blur', () => {
+    setTimeout(() => resultadosCompania.classList.remove('open'), 120);
   });
 
   document.addEventListener('clientes:cambio', () => {
-    poblarSelectCompanias();
+    sincronizarTextoCompaniaDesdeId();
     renderLista(); // los nombres de compañía en las tarjetas pueden haber cambiado
   });
-  if (window.clientesCache && window.clientesCache.length) poblarSelectCompanias();
 
   // ---------- Sub-pestaña Equipos: qué entra a la reparación ----------
   // Un único equipo por reparación: motor, reductor, motor ZD, o
@@ -957,8 +1001,8 @@
     form.reset();
     inputId.value = reparacion ? reparacion.id : '';
     inputNumero.value = reparacion ? reparacion.numero : '';
-    poblarSelectCompanias();
     selectCompania.value = reparacion?.companiaId || '';
+    sincronizarTextoCompaniaDesdeId();
     inputContacto.value = reparacion
       ? (reparacion.contacto || '')
       : ''; // en una reparación nueva se llena solo al elegir la compañía
@@ -977,13 +1021,13 @@
       // (incluye lo que ya tenía escrito, así que se recalcula el header).
       headerNumero.textContent = textoHeader(null);
       modal.classList.add('open');
-      selectCompania.focus();
+      inputCompaniaTexto.focus();
       return;
     }
     cargarFormularioDesdeReparacion(null);
     borradorId = '';
     modal.classList.add('open');
-    selectCompania.focus();
+    inputCompaniaTexto.focus();
   }
 
   function abrirModalEditar(reparacion) {
@@ -1356,7 +1400,7 @@
 
     const companiaId = selectCompania.value;
     if (!companiaId) {
-      selectCompania.focus();
+      inputCompaniaTexto.focus();
       return;
     }
 

@@ -2833,10 +2833,12 @@
 
         <div class="subtab-panel active" id="subtab-reparacion-datos">
           <div class="form-group">
-            <label for="reparacion-compania">Compañía</label>
-            <select id="reparacion-compania" required>
-              <option value="">Selecciona una compañía...</option>
-            </select>
+            <label for="reparacion-compania-input">Compañía</label>
+            <div class="buscador-equipo">
+              <input type="text" id="reparacion-compania-input" class="buscador-input" placeholder="Escribe para buscar una compañía..." autocomplete="off">
+              <input type="hidden" id="reparacion-compania">
+              <div class="buscador-resultados" id="reparacion-compania-resultados"></div>
+            </div>
           </div>
 
           <div class="form-group">

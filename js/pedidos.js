@@ -1089,11 +1089,19 @@
   // Un ítem queda "completado" cuando TODA su cantidad (o todas sus unidades,
   // si usa serial) ya salió en algún envío despachado. Se guarda en Firestore
   // al momento de despachar (ver envios.js), acá solo se lee/calcula.
+  //
+  // Una devolución saca la unidad de "completada" (para que dentro del
+  // detalle del equipo se vea como "Devuelto" y no como "Completado" — ver
+  // estadoPrincipalItem) pero eso NO debe hacer que el ítem — ni el pedido
+  // completo — "regrese" a en proceso: ya se despachó, solo que después
+  // volvió. Por eso acá se le vuelve a sumar devueltasCountItem(item): lo
+  // completado-ahora-mismo más lo que se devolvió reconstruye cuánto se
+  // llegó a despachar en total alguna vez.
   function estaItemCompletado(item) {
     const total = item.cantidad || 0;
     if (!total) return false;
-    if (item.unidadesCompletadas) return item.unidadesCompletadas.length >= total;
-    return (item.cantidadCompletada || 0) >= total;
+    if (item.unidadesCompletadas) return (item.unidadesCompletadas.length + devueltasCountItem(item)) >= total;
+    return ((item.cantidadCompletada || 0) + devueltasCountItem(item)) >= total;
   }
 
   // Cuántas unidades de este ítem ya salieron despachadas (puede ser parcial:
