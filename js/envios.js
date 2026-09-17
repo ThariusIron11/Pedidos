@@ -1662,17 +1662,15 @@
   }
 
   btnNuevaSimulacion.addEventListener('click', async () => {
-    const nombre = prompt('Nombre para esta simulación (ej. "Camión lunes"):');
-    if (nombre === null) return; // canceló
-    const nombreFinal = nombre.trim() || 'Simulación sin nombre';
     try {
       const ref = await db.collection(COLECCION_SIMULACIONES).add({
-        nombre: nombreFinal,
+        nombre: '',
         pedidosSeleccionados: [],
         equiposSueltos: [],
         creadoEn: firebase.firestore.FieldValue.serverTimestamp()
       });
-      abrirFichaSimulacion({ id: ref.id, nombre: nombreFinal, pedidosSeleccionados: [], equiposSueltos: [] });
+      abrirFichaSimulacion({ id: ref.id, nombre: '', pedidosSeleccionados: [], equiposSueltos: [] });
+      inputNombreSimulacion.focus();
     } catch (err) {
       console.error('Error creando la simulación:', err);
       alert('No se pudo crear la simulación. Revisa la consola.');
@@ -1699,7 +1697,13 @@
   });
 
   function renderContenidoFichaSimulacion(sim) {
-    inputNombreSimulacion.value = sim.nombre || '';
+    // Si el campo de nombre tiene el foco (el usuario está escribiendo ahí),
+    // no se pisa con lo que haya en caché — evita que un refresco de fondo
+    // (ej. otro cambio cualquiera en simulaciones) borre lo que se estaba
+    // tecleando antes de que el 'change' lo alcance a guardar.
+    if (document.activeElement !== inputNombreSimulacion) {
+      inputNombreSimulacion.value = sim.nombre || '';
+    }
 
     const peso = pesoTotalSimulacion(sim);
     pesoValorSimulacion.textContent = formatearPeso(peso);
@@ -1812,7 +1816,12 @@
     const abierto = panelAgregarPedido.style.display !== 'none';
     if (abierto) { panelAgregarPedido.style.display = 'none'; return; }
 
-    const pedidosOrdenados = [...(window.pedidosCache || [])].sort((a, b) => (b.numero || 0) - (a.numero || 0));
+    // Solo pedidos "en proceso" — un pedido ya completamente despachado no
+    // tiene sentido incluirlo en una simulación, esto es para planear lo
+    // que todavía falta por enviar.
+    const pedidosOrdenados = [...(window.pedidosCache || [])]
+      .filter(p => !(window.pedidoEstaCompletado && window.pedidoEstaCompletado(p)))
+      .sort((a, b) => (b.numero || 0) - (a.numero || 0));
     selectPedidoSimulacion.innerHTML = '<option value="">Selecciona un pedido...</option>' +
       pedidosOrdenados.map(p => {
         const compania = buscarCompania(p.companiaId);

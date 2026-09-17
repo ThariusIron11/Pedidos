@@ -881,12 +881,25 @@
   async function resolverEquipoId(texto, idExistente, tipoId) {
     if (idExistente) return idExistente;
     if (!texto) return '';
+
+    // La mayoría de motores y reductores sí traen serial de fábrica, así que
+    // un equipo nuevo de esos dos tipos se crea con esa opción ya activada
+    // (se puede desactivar después en la pestaña Equipos si ese modelo en
+    // particular no aplica). Excepción: los motores ZD casi nunca tienen
+    // serial — para esos se deja desactivada por defecto, pero la opción
+    // sigue disponible por si alguno sí llega a tenerlo.
+    const tipo = (window.tiposEquipoCache || []).find(t => t.id === tipoId);
+    const nombreTipoNorm = tipo ? normalizar(tipo.nombre) : '';
+    const esMotorOReductor = nombreTipoNorm === 'motor' || nombreTipoNorm === 'reductor';
+    const esMotorZD = nombreTipoNorm === 'motor' && normalizar(texto).includes('zd');
+    const usaSerialPorDefecto = esMotorOReductor && !esMotorZD;
+
     const nuevo = await db.collection('equipos').add({
       nombre: texto,
       tipoId: tipoId || '',
       variante: 'Reparación',
       peso: null,
-      usaSerial: false,
+      usaSerial: usaSerialPorDefecto,
       creadoEn: firebase.firestore.FieldValue.serverTimestamp()
     });
     return nuevo.id;
