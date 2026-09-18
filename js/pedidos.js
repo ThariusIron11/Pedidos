@@ -261,12 +261,6 @@
 
   // ---------- Lista de equipos dentro del pedido ----------
 
-  function opcionesTiposFiltroHtml(tipoIdSeleccionado) {
-    const tipos = window.tiposEquipoCache || [];
-    return '<option value="">Todos los tipos</option>' +
-      tipos.map(t => `<option value="${t.id}" ${t.id === tipoIdSeleccionado ? 'selected' : ''}>${t.icono ? t.icono + ' ' : ''}${escapeHtml(t.nombre)}</option>`).join('');
-  }
-
   function normalizar(str) {
     return String(str ?? '')
       .toLowerCase()
@@ -365,6 +359,69 @@
     return { refrescar: mostrarResultados };
   }
 
+  // Mismo patrón que inicializarBuscadorEquipo, pero buscando en el catálogo
+  // de TIPOS de equipo (window.tiposEquipoCache) en vez del de equipos.
+  function inicializarBuscadorTipo(contenedor, { seleccionInicialId, onChange }) {
+    const inputTexto = contenedor.querySelector('.buscador-input');
+    const inputValor = contenedor.querySelector('input[type="hidden"]');
+    const resultados = contenedor.querySelector('.buscador-resultados');
+
+    function nombreMostrableTipo(t) {
+      return (t.icono ? t.icono + ' ' : '') + t.nombre;
+    }
+
+    function catalogoFiltrado(texto) {
+      const tipos = window.tiposEquipoCache || [];
+      const t = normalizar(texto);
+      const coincidencias = t ? tipos.filter(ti => normalizar(ti.nombre).includes(t)) : tipos;
+      return coincidencias.slice(0, 8);
+    }
+
+    function mostrarResultados() {
+      const lista = catalogoFiltrado(inputTexto.value);
+      resultados.innerHTML = lista.length
+        ? lista.map(ti => `<div class="buscador-item" data-id="${ti.id}">${escapeHtml(nombreMostrableTipo(ti))}</div>`).join('')
+        : `<div class="buscador-item-vacio">Sin coincidencias</div>`;
+      resultados.classList.add('open');
+      resultados.querySelectorAll('.buscador-item').forEach(el => {
+        el.addEventListener('mousedown', (e) => {
+          e.preventDefault(); // evita que el blur del input cierre la lista antes del click
+          const ti = (window.tiposEquipoCache || []).find(x => x.id === el.dataset.id);
+          if (ti) seleccionar(ti);
+        });
+      });
+    }
+
+    function seleccionar(ti) {
+      inputValor.value = ti.id;
+      inputTexto.value = nombreMostrableTipo(ti);
+      resultados.classList.remove('open');
+      if (onChange) onChange(ti.id);
+    }
+
+    inputTexto.addEventListener('input', () => {
+      inputValor.value = ''; // hasta que elija algo de la lista, no hay filtro de tipo activo
+      mostrarResultados();
+      if (onChange) onChange('');
+    });
+    // 'click' (no 'focus'): así no se abre sola si el campo llega a quedar
+    // enfocado por algo que no sea un clic real del usuario.
+    inputTexto.addEventListener('click', mostrarResultados);
+    inputTexto.addEventListener('blur', () => {
+      setTimeout(() => resultados.classList.remove('open'), 120);
+    });
+
+    if (seleccionInicialId) {
+      const ti = (window.tiposEquipoCache || []).find(x => x.id === seleccionInicialId);
+      if (ti) {
+        inputValor.value = ti.id;
+        inputTexto.value = nombreMostrableTipo(ti);
+      }
+    }
+
+    return { refrescar: mostrarResultados };
+  }
+
   function nuevaFilaEquipoPedido(item, originalIndex) {
     const esMotoreductor = item?.tipoLinea === 'motoreductor';
 
@@ -378,8 +435,12 @@
       </label>
 
       <div class="equipo-pedido-row bloque-individual tiene-filtro" style="${esMotoreductor ? 'display:none;' : ''}">
-        <select class="equipo-pedido-tipo-filtro">${opcionesTiposFiltroHtml()}</select>
-        <div class="buscador-equipo">
+        <div class="buscador-equipo buscador-equipo-tipo">
+          <input type="text" class="buscador-input" placeholder="Tipo (opcional)..." autocomplete="off">
+          <input type="hidden" class="equipo-pedido-tipo-filtro">
+          <div class="buscador-resultados"></div>
+        </div>
+        <div class="buscador-equipo buscador-equipo-nombre">
           <input type="text" class="buscador-input" placeholder="Buscar equipo por nombre..." autocomplete="off">
           <input type="hidden" class="equipo-pedido-select">
           <div class="buscador-resultados"></div>
@@ -393,7 +454,7 @@
         <div class="motoreductor-selects">
           <div>
             <label class="mini-label">⚡ Motor</label>
-            <div class="buscador-equipo">
+            <div class="buscador-equipo buscador-equipo-motor">
               <input type="text" class="buscador-input" placeholder="Escribe para buscar motor..." autocomplete="off">
               <input type="hidden" class="equipo-pedido-motor">
               <div class="buscador-resultados"></div>
@@ -401,7 +462,7 @@
           </div>
           <div>
             <label class="mini-label">⚙️ Reductor</label>
-            <div class="buscador-equipo">
+            <div class="buscador-equipo buscador-equipo-reductor">
               <input type="text" class="buscador-input" placeholder="Escribe para buscar reductor..." autocomplete="off">
               <input type="hidden" class="equipo-pedido-reductor">
               <div class="buscador-resultados"></div>
@@ -468,7 +529,6 @@
     // claramente qué equipo es.
     if (pedidoBloqueadoPorReparacion) {
       row.querySelector('.equipo-pedido-es-motoreductor').disabled = true;
-      row.querySelector('.equipo-pedido-tipo-filtro').disabled = true;
       row.querySelectorAll('.buscador-input').forEach(inp => { inp.disabled = true; });
       row.querySelectorAll('.remove-equipo-pedido').forEach(btn => {
         btn.disabled = true;
@@ -531,19 +591,28 @@
     chkEsMotoreductor.addEventListener('change', actualizarModo);
     actualizarModo(); // aplica el modo inicial y calcula brazo/eje visibles
 
-    const contenedoresBuscador = row.querySelectorAll('.buscador-equipo');
-    const contenedorEquipoIndividual = contenedoresBuscador[0];
-    const contenedorMotor = contenedoresBuscador[1];
-    const contenedorReductor = contenedoresBuscador[2];
+    const contenedorTipoFiltro = row.querySelector('.buscador-equipo-tipo');
+    const contenedorEquipoIndividual = row.querySelector('.buscador-equipo-nombre');
+    const contenedorMotor = row.querySelector('.buscador-equipo-motor');
+    const contenedorReductor = row.querySelector('.buscador-equipo-reductor');
 
-    // Equipo individual: buscador por nombre, filtrable en vivo por el <select>
-    // de tipo de al lado (ambos a la vez, como se pidió).
+    // Tipo: buscador de texto igual al de equipo, pero sobre el catálogo de
+    // tipos — al elegir uno, refiltra el buscador de equipo de al lado. Si ya
+    // había un equipo individual elegido (editando un pedido existente), se
+    // precarga con el tipo de ESE equipo.
+    const equipoIndividualPrevio = !esMotoreductor && item?.equipoId ? buscarEquipoCatalogo(item.equipoId) : null;
+    inicializarBuscadorTipo(contenedorTipoFiltro, {
+      seleccionInicialId: equipoIndividualPrevio?.tipoId || null,
+      onChange: () => buscadorIndividualAPI.refrescar()
+    });
+
+    // Equipo individual: buscador por nombre, filtrable en vivo por el
+    // buscador de tipo de al lado (ambos a la vez, como se pidió).
     const buscadorIndividualAPI = inicializarBuscadorEquipo(contenedorEquipoIndividual, {
       obtenerTipoId: () => selectTipoFiltro.value || null,
       seleccionInicialId: !esMotoreductor ? item?.equipoId : null,
       onChange: () => { actualizarExtrasVisibles(); actualizarCantidadSegunTipoEquipo(); }
     });
-    selectTipoFiltro.addEventListener('change', () => buscadorIndividualAPI.refrescar());
 
     inicializarBuscadorEquipo(contenedorMotor, {
       tipoNombre: 'motor',
@@ -2316,13 +2385,18 @@
     if (pedidoIdEnFicha) renderEnviosVinculados();
   });
 
-  // Si se agrega/edita un tipo de equipo en Config mientras el formulario
-  // del pedido ya está abierto, sin esto los selects de "tipo" de las filas
-  // ya creadas se quedan con la lista vieja hasta recargar la página.
+  // El buscador de tipo lee window.tiposEquipoCache en vivo cada vez que se
+  // busca, así que un tipo nuevo agregado en Config ya aparece solo la
+  // próxima vez que se escriba ahí. Lo único que hay que refrescar a mano es
+  // el TEXTO visible de un tipo que ya estaba elegido (por si le cambiaron
+  // el nombre o el ícono).
   document.addEventListener('tipos-equipo:cambio', () => {
-    equiposPedidoList.querySelectorAll('.equipo-pedido-tipo-filtro').forEach(select => {
-      const valorActual = select.value;
-      select.innerHTML = opcionesTiposFiltroHtml(valorActual);
+    equiposPedidoList.querySelectorAll('.buscador-equipo-tipo').forEach(contenedor => {
+      const inputValor = contenedor.querySelector('.equipo-pedido-tipo-filtro');
+      const inputTexto = contenedor.querySelector('.buscador-input');
+      if (!inputValor.value) return;
+      const tipo = (window.tiposEquipoCache || []).find(t => t.id === inputValor.value);
+      if (tipo) inputTexto.value = `${tipo.icono ? tipo.icono + ' ' : ''}${tipo.nombre}`;
     });
   });
 

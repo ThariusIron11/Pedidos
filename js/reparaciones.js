@@ -587,7 +587,10 @@
     mostrarResultadosCompania();
     alCambiarCompania();
   });
-  inputCompaniaTexto.addEventListener('focus', mostrarResultadosCompania);
+  // 'click' (no 'focus'): si fuera 'focus', el enfoque automático que hace
+  // abrirModalNuevo() al abrir el formulario también dispararía esto, y la
+  // lista se abriría sola sin que el usuario haya hecho nada todavía.
+  inputCompaniaTexto.addEventListener('click', mostrarResultadosCompania);
   inputCompaniaTexto.addEventListener('blur', () => {
     setTimeout(() => resultadosCompania.classList.remove('open'), 120);
   });
