@@ -1770,8 +1770,11 @@
 
     btnEditarDesdeFicha.dataset.id = pedido.id;
     const completado = pedidoEstaCompletado(pedido);
-    btnEditarDesdeFicha.disabled = completado;
-    btnEditarDesdeFicha.title = completado ? 'Pedido completado: no editable, solo se pueden registrar devoluciones' : '';
+    // Antes esto bloqueaba TODO el botón. Ahora sí se puede entrar al
+    // formulario aunque esté completado — adentro, cargarFormularioDesdePedido
+    // se encarga de dejar editable solo la evidencia fotográfica.
+    btnEditarDesdeFicha.disabled = false;
+    btnEditarDesdeFicha.title = completado ? 'Pedido completado: solo se puede editar la evidencia fotográfica' : '';
     modalFicha.classList.add('open');
   }
 
@@ -3060,7 +3063,7 @@
             ${completado ? '<span class="tag-pedido-completado">COMPLETADO</span>' : ''}
             ${conDevolucion ? '<span class="tag-pedido-devolucion">DEVOLUCIÓN</span>' : ''}
             <div class="pedido-card-actions">
-              <button type="button" class="btn-editar" data-id="${pedido.id}" title="${completado ? 'Pedido completado: no editable, solo se pueden registrar devoluciones desde la ficha' : 'Editar'}" ${completado ? 'disabled' : ''}>✏️</button>
+              <button type="button" class="btn-editar" data-id="${pedido.id}" title="${completado ? 'Pedido completado: solo se puede editar la evidencia fotográfica' : 'Editar'}">✏️</button>
               ${pedidoTieneAlgoDespachado(pedido) ? '' : `<button type="button" class="btn-eliminar danger" data-id="${pedido.id}" title="Eliminar">🗑️</button>`}
             </div>
           </div>
