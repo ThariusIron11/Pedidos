@@ -3143,6 +3143,10 @@
             <button type="button" class="btn-link-inline" id="btn-ver-reparacion-desde-pedido">Ver ficha ↗</button>
           </div>
 
+          <div class="nota-vinculo-reparacion" id="pedido-nota-completado" style="display:none;">
+            ✅ Este pedido ya está completado (todo se despachó). Por ahora, solo se puede editar la evidencia fotográfica — el resto queda fijo.
+          </div>
+
           <div class="form-group">
             <label for="pedido-compania">Compañía destino</label>
             <select id="pedido-compania" required>
@@ -3210,6 +3214,9 @@
         <div class="subtab-panel" id="subtab-equipos">
           <div class="nota-vinculo-reparacion" id="pedido-equipos-nota-reparacion" style="display:none;">
             🔧 El equipo de este pedido viene de la reparación vinculada y no se puede cambiar aquí.
+          </div>
+          <div class="nota-vinculo-reparacion" id="pedido-equipos-nota-completado" style="display:none;">
+            ✅ Pedido completado — los equipos ya no se pueden editar.
           </div>
           <div class="equipos-pedido-list" id="equipos-pedido-list"></div>
           <button type="button" class="btn-link" id="btn-add-equipo-pedido">+ Agregar equipo</button>

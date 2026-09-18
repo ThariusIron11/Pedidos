@@ -54,9 +54,12 @@
   // reparación de origen. Cantidad, orden de compra, brazo/eje, etc. sí
   // siguen siendo editables desde acá (son logística propia del pedido).
   let pedidoBloqueadoPorReparacion = false;
+  let pedidoCompletadoBloqueado = false;
   const notaReparacionDatos = document.getElementById('pedido-nota-reparacion');
   const notaReparacionNumero = document.getElementById('pedido-nota-reparacion-numero');
   const notaReparacionEquipos = document.getElementById('pedido-equipos-nota-reparacion');
+  const notaCompletadoDatos = document.getElementById('pedido-nota-completado');
+  const notaCompletadoEquipos = document.getElementById('pedido-equipos-nota-completado');
   const btnVerReparacionDesdePedido = document.getElementById('btn-ver-reparacion-desde-pedido');
 
   const modalFicha = document.getElementById('modal-ficha-pedido');
@@ -538,6 +541,13 @@
       });
     }
 
+    // Pedido ya completado: acá sí se bloquea TODO dentro de la fila (no
+    // solo la identidad del equipo como arriba) — cantidad, orden de compra,
+    // brazo/eje/flanche, preparado, todo queda fijo.
+    if (pedidoCompletadoBloqueado) {
+      row.querySelectorAll('input, select, button').forEach(el => { el.disabled = true; });
+    }
+
     const chkEsMotoreductor = row.querySelector('.equipo-pedido-es-motoreductor');
     const bloqueIndividual = row.querySelector('.bloque-individual');
     const bloqueMotoreductor = row.querySelector('.equipo-pedido-motoreductor');
@@ -770,11 +780,27 @@
     // una reparación: esos datos ya no se editan acá, se sincronizan solos
     // al guardar la reparación de origen (ver reparaciones.js).
     pedidoBloqueadoPorReparacion = !!pedido?.reparacionId;
-    selectCompania.disabled = pedidoBloqueadoPorReparacion;
-    selectContacto.disabled = pedidoBloqueadoPorReparacion;
-    radiosTipoPedido.forEach(r => { r.disabled = pedidoBloqueadoPorReparacion; });
-    btnAddEquipoPedido.style.display = pedidoBloqueadoPorReparacion ? 'none' : '';
+
+    // Y TODO (salvo la evidencia fotográfica) se bloquea cuando el pedido ya
+    // quedó completado — por ahora esto es fijo, se podría abrir algún campo
+    // más adelante si hace falta.
+    pedidoCompletadoBloqueado = !!(pedido && pedidoEstaCompletado(pedido));
+
+    const bloqueoTotal = pedidoBloqueadoPorReparacion || pedidoCompletadoBloqueado;
+    selectCompania.disabled = bloqueoTotal;
+    selectContacto.disabled = bloqueoTotal;
+    radiosTipoPedido.forEach(r => { r.disabled = bloqueoTotal; });
+    checkboxEnvioSubsidiaria.disabled = pedidoCompletadoBloqueado;
+    selectSubsidiaria.disabled = pedidoCompletadoBloqueado;
+    selectSubsidiariaContacto.disabled = pedidoCompletadoBloqueado;
+    btnAddEquipoPedido.style.display = bloqueoTotal ? 'none' : '';
     notaReparacionEquipos.style.display = pedidoBloqueadoPorReparacion ? 'block' : 'none';
+    notaCompletadoDatos.style.display = pedidoCompletadoBloqueado ? 'block' : 'none';
+    notaCompletadoEquipos.style.display = pedidoCompletadoBloqueado ? 'block' : 'none';
+    // La evidencia fotográfica es la excepción: se sigue pudiendo editar
+    // aunque el pedido ya esté completado — solo se bloquea si viene
+    // sincronizada desde una reparación (esa sí es una razón real para no
+    // tocarla acá).
     btnEditarEvidenciaPedido.disabled = pedidoBloqueadoPorReparacion;
     btnEditarEvidenciaPedido.title = pedidoBloqueadoPorReparacion
       ? 'Se sincroniza sola desde la reparación de origen'
