@@ -2999,10 +2999,12 @@
         </div>
 
         <div class="form-group">
-          <label for="equipo-tipo">Tipo</label>
-          <select id="equipo-tipo" required>
-            <option value="">Selecciona un tipo...</option>
-          </select>
+          <label for="equipo-tipo-input">Tipo</label>
+          <div class="buscador-equipo">
+            <input type="text" id="equipo-tipo-input" class="buscador-input" placeholder="Escribe para buscar un tipo..." autocomplete="off">
+            <input type="hidden" id="equipo-tipo">
+            <div class="buscador-resultados" id="equipo-tipo-resultados"></div>
+          </div>
         </div>
 
         <div class="form-group">
@@ -3148,17 +3150,21 @@
           </div>
 
           <div class="form-group">
-            <label for="pedido-compania">Compañía destino</label>
-            <select id="pedido-compania" required>
-              <option value="">Selecciona una compañía...</option>
-            </select>
+            <label for="pedido-compania-input">Compañía destino</label>
+            <div class="buscador-equipo">
+              <input type="text" id="pedido-compania-input" class="buscador-input" placeholder="Escribe para buscar una compañía..." autocomplete="off">
+              <input type="hidden" id="pedido-compania">
+              <div class="buscador-resultados" id="pedido-compania-resultados"></div>
+            </div>
           </div>
 
           <div class="form-group">
-            <label for="pedido-contacto">Contacto de recibir pedidos</label>
-            <select id="pedido-contacto">
-              <option value="">Selecciona una compañía primero</option>
-            </select>
+            <label for="pedido-contacto-input">Contacto de recibir pedidos</label>
+            <div class="buscador-equipo">
+              <input type="text" id="pedido-contacto-input" class="buscador-input" placeholder="Selecciona una compañía primero" autocomplete="off" disabled>
+              <input type="hidden" id="pedido-contacto">
+              <div class="buscador-resultados" id="pedido-contacto-resultados"></div>
+            </div>
           </div>
 
           <div class="form-group">
@@ -3169,17 +3175,21 @@
           </div>
 
           <div class="form-group" id="pedido-grupo-subsidiaria" style="display:none;">
-            <label for="pedido-subsidiaria">Subsidiaria</label>
-            <select id="pedido-subsidiaria">
-              <option value="">Selecciona una subsidiaria...</option>
-            </select>
+            <label for="pedido-subsidiaria-input">Subsidiaria</label>
+            <div class="buscador-equipo">
+              <input type="text" id="pedido-subsidiaria-input" class="buscador-input" placeholder="Escribe para buscar una subsidiaria..." autocomplete="off">
+              <input type="hidden" id="pedido-subsidiaria">
+              <div class="buscador-resultados" id="pedido-subsidiaria-resultados"></div>
+            </div>
           </div>
 
           <div class="form-group" id="pedido-grupo-subsidiaria-contacto" style="display:none;">
-            <label for="pedido-subsidiaria-contacto">Encargado de recibir pedidos (subsidiaria)</label>
-            <select id="pedido-subsidiaria-contacto">
-              <option value="">Selecciona una subsidiaria primero</option>
-            </select>
+            <label for="pedido-subsidiaria-contacto-input">Encargado de recibir pedidos (subsidiaria)</label>
+            <div class="buscador-equipo">
+              <input type="text" id="pedido-subsidiaria-contacto-input" class="buscador-input" placeholder="Selecciona una subsidiaria primero" autocomplete="off" disabled>
+              <input type="hidden" id="pedido-subsidiaria-contacto">
+              <div class="buscador-resultados" id="pedido-subsidiaria-contacto-resultados"></div>
+            </div>
           </div>
 
           <div class="form-group">

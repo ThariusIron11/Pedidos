@@ -29,6 +29,8 @@
   const inputId       = document.getElementById('equipo-id');
   const inputNombre   = document.getElementById('equipo-nombre');
   const inputTipo     = document.getElementById('equipo-tipo');
+  const inputTipoTexto = document.getElementById('equipo-tipo-input');
+  const resultadosTipo = document.getElementById('equipo-tipo-resultados');
   const inputVariante = document.getElementById('equipo-variante');
   const inputPeso     = document.getElementById('equipo-peso');
   const inputUsaSerial = document.getElementById('equipo-usa-serial');
@@ -61,6 +63,10 @@
       .replace(/>/g, '&gt;');
   }
 
+  function escapeAttr(str) {
+    return String(str ?? '').replace(/"/g, '&quot;');
+  }
+
   function normalizar(str) {
     return String(str ?? '')
       .toLowerCase()
@@ -91,21 +97,60 @@
     return (window.tiposEquipoCache || []).find(t => t.id === tipoId) || null;
   }
 
-  // ---------- Sincronizar selects (modal y filtro) con el catálogo de tipos ----------
+  // ---------- Sincronizar filtro (select) y buscador del modal con el catálogo de tipos ----------
 
   function poblarSelectsDeTipo() {
     const tipos = window.tiposEquipoCache || [];
-
-    const tipoActualModal = inputTipo.value;
-    inputTipo.innerHTML = '<option value="">Selecciona un tipo...</option>' +
-      tipos.map(t => `<option value="${t.id}">${t.icono ? t.icono + ' ' : ''}${escapeHtml(t.nombre)}</option>`).join('');
-    if (tipoActualModal) inputTipo.value = tipoActualModal;
 
     const tipoActualFiltro = filtroTipoSelect.value;
     filtroTipoSelect.innerHTML = '<option value="">Todos los tipos</option>' +
       tipos.map(t => `<option value="${t.id}">${t.icono ? t.icono + ' ' : ''}${escapeHtml(t.nombre)}</option>`).join('');
     filtroTipoSelect.value = tipoActualFiltro;
+
+    // El buscador del modal lee window.tiposEquipoCache en vivo al escribir,
+    // así que no hace falta repoblar nada ahí — solo re-sincronizar el TEXTO
+    // visible con el id ya elegido, por si le cambiaron el nombre/ícono.
+    const tipo = buscarTipo(inputTipo.value);
+    if (tipo) inputTipoTexto.value = `${tipo.icono ? tipo.icono + ' ' : ''}${tipo.nombre}`;
   }
+
+  // Buscador de texto para el tipo dentro del modal: escribes, aparecen
+  // coincidencias, eliges una y queda guardado el id en el input oculto.
+  function mostrarResultadosTipo() {
+    const tipos = window.tiposEquipoCache || [];
+    const t = normalizar(inputTipoTexto.value);
+    const coincidencias = (t ? tipos.filter(ti => normalizar(ti.nombre).includes(t)) : tipos).slice(0, 8);
+    resultadosTipo.innerHTML = coincidencias.length
+      ? coincidencias.map(ti => `<div class="buscador-item" data-id="${ti.id}">${ti.icono ? ti.icono + ' ' : ''}${escapeHtml(ti.nombre)}</div>`).join('')
+      : `<div class="buscador-item-vacio">Sin coincidencias</div>`;
+    resultadosTipo.classList.add('open');
+    resultadosTipo.querySelectorAll('.buscador-item').forEach(el => {
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // evita que el blur del input cierre la lista antes del click
+        const ti = (window.tiposEquipoCache || []).find(x => x.id === el.dataset.id);
+        if (ti) seleccionarTipo(ti);
+      });
+    });
+  }
+
+  function seleccionarTipo(ti) {
+    inputTipo.value = ti.id;
+    inputTipoTexto.value = `${ti.icono ? ti.icono + ' ' : ''}${ti.nombre}`;
+    resultadosTipo.classList.remove('open');
+    inputTipo.dispatchEvent(new Event('change')); // dispara la lógica que ya dependía del 'change' del select
+  }
+
+  inputTipoTexto.addEventListener('input', () => {
+    inputTipo.value = ''; // hasta que elija algo de la lista, no hay tipo válido
+    mostrarResultadosTipo();
+    inputTipo.dispatchEvent(new Event('change'));
+  });
+  // 'click' (no 'focus'): así no se abre sola si el campo llega a quedar
+  // enfocado por algo que no sea un clic real del usuario.
+  inputTipoTexto.addEventListener('click', mostrarResultadosTipo);
+  inputTipoTexto.addEventListener('blur', () => {
+    setTimeout(() => resultadosTipo.classList.remove('open'), 120);
+  });
 
   document.addEventListener('tipos-equipo:cambio', () => {
     poblarSelectsDeTipo();
@@ -314,6 +359,8 @@
     inputId.value = equipo ? equipo.id : '';
     inputNombre.value = equipo?.nombre || '';
     inputTipo.value = equipo?.tipoId || '';
+    const tipoCargado = buscarTipo(inputTipo.value);
+    inputTipoTexto.value = tipoCargado ? `${tipoCargado.icono ? tipoCargado.icono + ' ' : ''}${tipoCargado.nombre}` : '';
     inputVariante.value = equipo?.variante || '';
     inputPeso.value = (equipo?.peso ?? '') === '' ? '' : String(equipo.peso);
     inputUsaSerial.checked = !!equipo?.usaSerial;
@@ -409,7 +456,7 @@
       return;
     }
     if (!datos.tipoId) {
-      inputTipo.focus();
+      inputTipoTexto.focus();
       return;
     }
 

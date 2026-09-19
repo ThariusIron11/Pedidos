@@ -33,12 +33,20 @@
   const inputId      = document.getElementById('pedido-id');
   const inputNumero  = document.getElementById('pedido-numero');
   const selectCompania = document.getElementById('pedido-compania');
+  const inputCompaniaTexto = document.getElementById('pedido-compania-input');
+  const resultadosCompania = document.getElementById('pedido-compania-resultados');
   const selectContacto = document.getElementById('pedido-contacto');
+  const inputContactoTexto = document.getElementById('pedido-contacto-input');
+  const resultadosContacto = document.getElementById('pedido-contacto-resultados');
   const checkboxEnvioSubsidiaria = document.getElementById('pedido-envio-subsidiaria');
   const grupoSubsidiaria = document.getElementById('pedido-grupo-subsidiaria');
   const selectSubsidiaria = document.getElementById('pedido-subsidiaria');
+  const inputSubsidiariaTexto = document.getElementById('pedido-subsidiaria-input');
+  const resultadosSubsidiaria = document.getElementById('pedido-subsidiaria-resultados');
   const grupoSubsidiariaContacto = document.getElementById('pedido-grupo-subsidiaria-contacto');
   const selectSubsidiariaContacto = document.getElementById('pedido-subsidiaria-contacto');
+  const inputSubsidiariaContactoTexto = document.getElementById('pedido-subsidiaria-contacto-input');
+  const resultadosSubsidiariaContacto = document.getElementById('pedido-subsidiaria-contacto-resultados');
   const equiposPedidoList = document.getElementById('equipos-pedido-list');
   const radiosTipoPedido = form.querySelectorAll('input[name="tipo-pedido"]');
   const btnAddEquipoPedido = document.getElementById('btn-add-equipo-pedido');
@@ -179,80 +187,154 @@
 
   // ---------- Select de compañía / contacto ----------
 
+  // Buscador de texto genérico (compañía, contacto, subsidiaria, encargado
+  // de subsidiaria comparten el mismo comportamiento): input.buscador-input
+  // visible + input[hidden] que guarda el id/valor real + div.buscador-resultados.
+  // obtenerOpciones() debe devolver [{id, texto}] o null si el campo todavía
+  // no debería mostrar nada (ej. no hay compañía elegida todavía).
+  function inicializarBuscadorTexto(inputTexto, inputValor, resultados, { obtenerOpciones, onChange }) {
+    function mostrarResultados() {
+      if (inputTexto.disabled) return;
+      const opciones = obtenerOpciones();
+      if (!opciones) { resultados.classList.remove('open'); return; }
+      const t = normalizar(inputTexto.value);
+      const coincidencias = (t ? opciones.filter(o => normalizar(o.texto).includes(t)) : opciones).slice(0, 8);
+      resultados.innerHTML = coincidencias.length
+        ? coincidencias.map(o => `<div class="buscador-item" data-id="${escapeAttr(o.id)}">${escapeHtml(o.texto)}</div>`).join('')
+        : `<div class="buscador-item-vacio">Sin coincidencias</div>`;
+      resultados.classList.add('open');
+      resultados.querySelectorAll('.buscador-item').forEach(el => {
+        el.addEventListener('mousedown', (e) => {
+          e.preventDefault(); // evita que el blur del input cierre la lista antes del click
+          const opcionesActuales = obtenerOpciones() || [];
+          const o = opcionesActuales.find(x => x.id === el.dataset.id);
+          if (o) seleccionar(o);
+        });
+      });
+    }
+
+    function seleccionar(o) {
+      inputValor.value = o.id;
+      inputTexto.value = o.texto;
+      resultados.classList.remove('open');
+      if (onChange) onChange(o.id);
+    }
+
+    inputTexto.addEventListener('input', () => {
+      inputValor.value = ''; // hasta que elija algo de la lista, no hay selección válida
+      mostrarResultados();
+      if (onChange) onChange('');
+    });
+    // 'click' (no 'focus'): así no se abre sola si el campo llega a quedar
+    // enfocado por algo que no sea un clic real del usuario.
+    inputTexto.addEventListener('click', mostrarResultados);
+    inputTexto.addEventListener('blur', () => {
+      setTimeout(() => resultados.classList.remove('open'), 120);
+    });
+
+    return { refrescar: mostrarResultados };
+  }
+
+  // ---------- Compañía / contacto ----------
+
+  // El buscador de compañía lee window.clientesCache en vivo cada vez que se
+  // escribe, así que no hace falta "poblar" nada de antemano — esta función
+  // solo re-sincroniza el TEXTO visible con el id ya guardado (al editar un
+  // pedido existente, o si el nombre de la compañía cambió en Clientes).
   function poblarSelectCompanias() {
-    const companias = window.clientesCache || [];
-    const actual = selectCompania.value;
-    selectCompania.innerHTML = '<option value="">Selecciona una compañía...</option>' +
-      companias.map(c => `<option value="${c.id}">${escapeHtml(c.nombre)}</option>`).join('');
-    if (actual) selectCompania.value = actual;
+    const compania = buscarCompania(selectCompania.value);
+    inputCompaniaTexto.value = compania ? compania.nombre : '';
   }
 
   function poblarSelectContacto(companiaId, contactoSeleccionado) {
     const compania = buscarCompania(companiaId);
     const contactos = compania?.contactosPedidos || [];
     if (!compania) {
-      selectContacto.innerHTML = '<option value="">Selecciona una compañía primero</option>';
+      inputContactoTexto.value = '';
+      inputContactoTexto.placeholder = 'Selecciona una compañía primero';
+      inputContactoTexto.disabled = true;
+      selectContacto.value = '';
       return;
     }
     if (!contactos.length) {
-      selectContacto.innerHTML = '<option value="">Esta compañía no tiene contactos de pedidos</option>';
+      inputContactoTexto.value = '';
+      inputContactoTexto.placeholder = 'Esta compañía no tiene contactos de pedidos';
+      inputContactoTexto.disabled = true;
+      selectContacto.value = '';
       return;
     }
-    selectContacto.innerHTML = '<option value="">Selecciona un contacto...</option>' +
-      contactos.map(nombre => `<option value="${escapeHtml(nombre)}">${escapeHtml(nombre)}</option>`).join('');
-    if (contactoSeleccionado) selectContacto.value = contactoSeleccionado;
+    inputContactoTexto.disabled = false;
+    inputContactoTexto.placeholder = 'Escribe para buscar un contacto...';
+    selectContacto.value = contactoSeleccionado || '';
+    inputContactoTexto.value = contactoSeleccionado || '';
   }
 
-  selectCompania.addEventListener('change', () => {
-    poblarSelectContacto(selectCompania.value, '');
+  inicializarBuscadorTexto(inputCompaniaTexto, selectCompania, resultadosCompania, {
+    obtenerOpciones: () => (window.clientesCache || []).map(c => ({ id: c.id, texto: c.nombre })),
+    onChange: (companiaId) => poblarSelectContacto(companiaId, '')
+  });
+
+  inicializarBuscadorTexto(inputContactoTexto, selectContacto, resultadosContacto, {
+    obtenerOpciones: () => {
+      const compania = buscarCompania(selectCompania.value);
+      if (!compania) return null;
+      return (compania.contactosPedidos || []).map(nombre => ({ id: nombre, texto: nombre }));
+    }
   });
 
   // ---------- Envío a Subsidiaria ----------
   // "Subsidiaria" = cliente con tipo 'subsidiaria' (NO 'subsidiaria_edisatech',
-  // esa es otra categoría y queda afuera de este selector a propósito).
+  // esa es otra categoría y queda afuera de este buscador a propósito).
 
   function poblarSelectSubsidiarias(subsidiariaSeleccionada) {
-    const subsidiarias = (window.clientesCache || []).filter(c => c.tipo === 'subsidiaria');
-    if (!subsidiarias.length) {
-      selectSubsidiaria.innerHTML = '<option value="">No hay compañías marcadas como Subsidiaria en Clientes</option>';
-      return;
-    }
-    selectSubsidiaria.innerHTML = '<option value="">Selecciona una subsidiaria...</option>' +
-      subsidiarias.map(c => `<option value="${c.id}">${escapeHtml(c.nombre)}</option>`).join('');
-    if (subsidiariaSeleccionada) selectSubsidiaria.value = subsidiariaSeleccionada;
+    selectSubsidiaria.value = subsidiariaSeleccionada || '';
+    const subsidiaria = (window.clientesCache || []).find(c => c.id === subsidiariaSeleccionada);
+    inputSubsidiariaTexto.value = subsidiaria ? subsidiaria.nombre : '';
   }
 
   function poblarSelectSubsidiariaContacto(subsidiariaId, contactoSeleccionado) {
     const subsidiaria = (window.clientesCache || []).find(c => c.id === subsidiariaId);
     const contactos = subsidiaria?.contactosPedidos || [];
     if (!subsidiaria) {
-      selectSubsidiariaContacto.innerHTML = '<option value="">Selecciona una subsidiaria primero</option>';
+      inputSubsidiariaContactoTexto.value = '';
+      inputSubsidiariaContactoTexto.placeholder = 'Selecciona una subsidiaria primero';
+      inputSubsidiariaContactoTexto.disabled = true;
+      selectSubsidiariaContacto.value = '';
       return;
     }
     if (!contactos.length) {
-      selectSubsidiariaContacto.innerHTML = '<option value="">Esta subsidiaria no tiene contactos de pedidos</option>';
+      inputSubsidiariaContactoTexto.value = '';
+      inputSubsidiariaContactoTexto.placeholder = 'Esta subsidiaria no tiene contactos de pedidos';
+      inputSubsidiariaContactoTexto.disabled = true;
+      selectSubsidiariaContacto.value = '';
       return;
     }
-    selectSubsidiariaContacto.innerHTML = '<option value="">Selecciona un encargado...</option>' +
-      contactos.map(nombre => `<option value="${escapeHtml(nombre)}">${escapeHtml(nombre)}</option>`).join('');
-    if (contactoSeleccionado) selectSubsidiariaContacto.value = contactoSeleccionado;
+    inputSubsidiariaContactoTexto.disabled = false;
+    inputSubsidiariaContactoTexto.placeholder = 'Escribe para buscar un encargado...';
+    selectSubsidiariaContacto.value = contactoSeleccionado || '';
+    inputSubsidiariaContactoTexto.value = contactoSeleccionado || '';
   }
+
+  inicializarBuscadorTexto(inputSubsidiariaTexto, selectSubsidiaria, resultadosSubsidiaria, {
+    obtenerOpciones: () => (window.clientesCache || []).filter(c => c.tipo === 'subsidiaria').map(c => ({ id: c.id, texto: c.nombre })),
+    onChange: (subsidiariaId) => poblarSelectSubsidiariaContacto(subsidiariaId, '')
+  });
+
+  inicializarBuscadorTexto(inputSubsidiariaContactoTexto, selectSubsidiariaContacto, resultadosSubsidiariaContacto, {
+    obtenerOpciones: () => {
+      const subsidiaria = (window.clientesCache || []).find(c => c.id === selectSubsidiaria.value);
+      if (!subsidiaria) return null;
+      return (subsidiaria.contactosPedidos || []).map(nombre => ({ id: nombre, texto: nombre }));
+    }
+  });
 
   checkboxEnvioSubsidiaria.addEventListener('change', () => {
     const marcado = checkboxEnvioSubsidiaria.checked;
     grupoSubsidiaria.style.display = marcado ? 'block' : 'none';
     grupoSubsidiariaContacto.style.display = marcado ? 'block' : 'none';
-    if (marcado) {
-      poblarSelectSubsidiarias('');
-      poblarSelectSubsidiariaContacto('', '');
-    } else {
-      selectSubsidiaria.value = '';
-      selectSubsidiariaContacto.value = '';
-    }
-  });
-
-  selectSubsidiaria.addEventListener('change', () => {
-    poblarSelectSubsidiariaContacto(selectSubsidiaria.value, '');
+    selectSubsidiaria.value = '';
+    inputSubsidiariaTexto.value = '';
+    poblarSelectSubsidiariaContacto('', '');
   });
 
   document.addEventListener('clientes:cambio', () => {
@@ -761,8 +843,8 @@
     inputId.value = pedido ? pedido.id : '';
     inputNumero.value = pedido ? pedido.numero : siguienteNumeroDisponible();
 
-    poblarSelectCompanias();
     selectCompania.value = pedido?.companiaId || '';
+    poblarSelectCompanias();
     poblarSelectContacto(pedido?.companiaId || '', pedido?.contacto || '');
 
     checkboxEnvioSubsidiaria.checked = !!pedido?.envioSubsidiaria;
@@ -788,11 +870,15 @@
 
     const bloqueoTotal = pedidoBloqueadoPorReparacion || pedidoCompletadoBloqueado;
     selectCompania.disabled = bloqueoTotal;
+    inputCompaniaTexto.disabled = bloqueoTotal;
     selectContacto.disabled = bloqueoTotal;
+    inputContactoTexto.disabled = inputContactoTexto.disabled || bloqueoTotal;
     radiosTipoPedido.forEach(r => { r.disabled = bloqueoTotal; });
     checkboxEnvioSubsidiaria.disabled = pedidoCompletadoBloqueado;
     selectSubsidiaria.disabled = pedidoCompletadoBloqueado;
+    inputSubsidiariaTexto.disabled = pedidoCompletadoBloqueado;
     selectSubsidiariaContacto.disabled = pedidoCompletadoBloqueado;
+    inputSubsidiariaContactoTexto.disabled = inputSubsidiariaContactoTexto.disabled || pedidoCompletadoBloqueado;
     btnAddEquipoPedido.style.display = bloqueoTotal ? 'none' : '';
     notaReparacionEquipos.style.display = pedidoBloqueadoPorReparacion ? 'block' : 'none';
     notaCompletadoDatos.style.display = pedidoCompletadoBloqueado ? 'block' : 'none';
@@ -897,7 +983,7 @@
     const companiaId = selectCompania.value;
     if (!companiaId) {
       subtabButtons[0].click();
-      selectCompania.focus();
+      inputCompaniaTexto.focus();
       return;
     }
 
