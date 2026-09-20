@@ -542,36 +542,74 @@
     });
   }
 
+  // Mete la fila arrastrada en `zona`, en la posición que corresponde según
+  // la altura del cursor.
+  function colocarFilaArrastrada(zona, clientY) {
+    const filasHermanas = [...zona.children].filter(el => el.classList.contains('equipo-pedido-row-wrap') && el !== filaEquipoArrastrada);
+    const despuesDe = filasHermanas.find(el => {
+      const r = el.getBoundingClientRect();
+      return clientY < r.top + r.height / 2;
+    });
+    if (despuesDe) zona.insertBefore(filaEquipoArrastrada, despuesDe);
+    else zona.appendChild(filaEquipoArrastrada);
+    // Así el texto "Arrastra equipos aquí" desaparece apenas entra la fila
+    // (si no, el placeholder sigue ocupando espacio durante el arrastre).
+    actualizarContenedoresVacios();
+  }
+
   // zona: el contenedor donde se pueden soltar filas (equiposPedidoList
   // directamente, o el body de un .contenedor-pedido). claseHover es la
   // clase CSS a usar mientras se arrastra encima (distinta para la raíz,
   // que no puede verse como una tarjeta con fondo propio).
-  function habilitarZonaDropEquipos(zona, claseHover) {
+  //
+  // Los .contenedor-pedido viven DENTRO de #equipos-pedido-list, así que los
+  // eventos de arrastre sobre el body de un contenedor BURBUJEAN hasta la
+  // raíz. Sin frenar eso, el handler de la raíz corría después y volvía a
+  // mover la fila al final de la lista: el equipo terminaba justo debajo del
+  // contenedor en vez de quedar adentro. Por eso el body detiene la
+  // propagación (esRaiz = false).
+  function habilitarZonaDropEquipos(zona, claseHover, esRaiz = false) {
+    // Solo llega acá (en la raíz) lo que NO pasó por el body de un
+    // contenedor: el encabezado, el título o el padding del contenedor. En
+    // ese caso se manda la fila al body de ese contenedor igual, para que
+    // soltar "sobre el contenedor" funcione aunque no se apunte exacto.
+    const bodyDelContenedorBajoElCursor = (e) => {
+      if (!esRaiz || !(e.target instanceof Element)) return null;
+      const cont = e.target.closest('.contenedor-pedido');
+      return cont ? cont.querySelector('.contenedor-pedido-body') : null;
+    };
+
     zona.addEventListener('dragenter', (e) => {
       if (!filaEquipoArrastrada) return;
+      if (!esRaiz) e.stopPropagation();
       e.preventDefault();
     });
     zona.addEventListener('dragover', (e) => {
       if (!filaEquipoArrastrada) return;
+      if (!esRaiz) e.stopPropagation();
       e.preventDefault();
+      const bodyDelegado = bodyDelContenedorBajoElCursor(e);
+      if (bodyDelegado) {
+        zona.classList.remove(claseHover);
+        document.querySelectorAll('.contenedor-pedido-body.drag-over').forEach(b => { if (b !== bodyDelegado) b.classList.remove('drag-over'); });
+        bodyDelegado.classList.add('drag-over');
+        colocarFilaArrastrada(bodyDelegado, e.clientY);
+        return;
+      }
       zona.classList.add(claseHover);
-      const filasHermanas = [...zona.children].filter(el => el.classList.contains('equipo-pedido-row-wrap') && el !== filaEquipoArrastrada);
-      const despuesDe = filasHermanas.find(el => {
-        const r = el.getBoundingClientRect();
-        return e.clientY < r.top + r.height / 2;
-      });
-      if (despuesDe) zona.insertBefore(filaEquipoArrastrada, despuesDe);
-      else zona.appendChild(filaEquipoArrastrada);
+      colocarFilaArrastrada(zona, e.clientY);
     });
     zona.addEventListener('dragleave', (e) => {
       if (e.target === zona) zona.classList.remove(claseHover);
     });
     zona.addEventListener('drop', (e) => {
+      if (!esRaiz) e.stopPropagation();
       e.preventDefault();
       zona.classList.remove(claseHover);
+      actualizarContenedoresVacios();
     });
   }
-  habilitarZonaDropEquipos(equiposPedidoList, 'drag-over-raiz');
+  habilitarZonaDropEquipos(equiposPedidoList, 'drag-over-raiz', true);
 
   let contadorContenedoresPedido = 0;
 
