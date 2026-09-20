@@ -165,6 +165,10 @@
     subtabButtons.forEach((b, i) => b.classList.toggle('active', i === 0));
     subtabPanels.forEach((p, i) => p.classList.toggle('active', i === 0));
   }
+  function activarSubtab(nombre) {
+    subtabButtons.forEach(b => b.classList.toggle('active', b.dataset.subtab === nombre));
+    subtabPanels.forEach(p => p.classList.toggle('active', p.id === 'subtab-' + nombre));
+  }
 
   // Sub-pestañas dentro de la Ficha (Datos / Equipos / Envío) — mismo patrón,
   // pero escuchando dentro de modalFicha para no chocar con las de arriba.
@@ -1183,13 +1187,15 @@
     modal.classList.add('open');
   }
 
-  function abrirModalEditar(pedido) {
+  function abrirModalEditar(pedido, subtabInicial) {
     if (borradorId === pedido.id) {
       modalTitulo.textContent = `Editar pedido ${textoNumeroPedido(pedido)}`;
+      if (subtabInicial) activarSubtab(subtabInicial);
       modal.classList.add('open');
       return;
     }
     cargarFormularioDesdePedido(pedido);
+    if (subtabInicial) activarSubtab(subtabInicial);
     modalTitulo.textContent = `Editar pedido ${textoNumeroPedido(pedido)}`;
     borradorId = pedido.id;
     modal.classList.add('open');
@@ -2181,8 +2187,14 @@
   btnEditarDesdeFicha.addEventListener('click', () => {
     const pedido = pedidosCache.find(p => p.id === btnEditarDesdeFicha.dataset.id);
     origenEdicion = 'ficha';
+    // Si estaba viendo Equipos en la ficha, el formulario de edición abre
+    // directo en Equipos. La sub-pestaña Envío no existe en el formulario
+    // de edición, así que en ese caso (y en Datos) se abre en Datos, como
+    // siempre.
+    const subtabFichaActiva = modalFicha.querySelector('.subtab-btn.active')?.dataset.subtab;
+    const subtabDestino = subtabFichaActiva === 'ficha-equipos' ? 'equipos' : 'datos';
     cerrarFicha({ mantenerVolver: true });
-    if (pedido) abrirModalEditar(pedido);
+    if (pedido) abrirModalEditar(pedido, subtabDestino);
   });
 
   // ---------- Sub-modal: números de serial de un equipo del pedido ----------
