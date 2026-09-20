@@ -50,6 +50,7 @@
   const equiposPedidoList = document.getElementById('equipos-pedido-list');
   const radiosTipoPedido = form.querySelectorAll('input[name="tipo-pedido"]');
   const btnAddEquipoPedido = document.getElementById('btn-add-equipo-pedido');
+  const btnAddContenedorPedido = document.getElementById('btn-add-contenedor-pedido');
   const inputEvidenciaPedido = document.getElementById('pedido-evidencia');
   const evidenciaPedidoInputWrap = document.getElementById('pedido-evidencia-input-wrap');
   const btnEditarEvidenciaPedido = document.getElementById('btn-editar-evidencia-pedido');
@@ -507,6 +508,107 @@
     return { refrescar: mostrarResultados };
   }
 
+  // ---------- Contenedores para agrupar equipos dentro del formulario ----------
+  // Puramente organizativo (ej. "Bodega A", "Prioridad alta") — no afecta el
+  // guardado del pedido más que guardar a qué contenedor pertenece cada
+  // equipo. En la Ficha (solo lectura) se muestran agrupados bajo el título
+  // del contenedor; los equipos sin contenedor se ven exactamente igual que
+  // siempre. Mover un equipo de contenedor solo se puede hacer aquí, en el
+  // formulario — la Ficha no permite arrastrar.
+
+  function actualizarContenedoresVacios() {
+    document.querySelectorAll('.contenedor-pedido-body').forEach(body => {
+      body.classList.toggle('vacio', !body.querySelector('.equipo-pedido-row-wrap'));
+    });
+  }
+
+  let filaEquipoArrastrada = null;
+
+  function habilitarArrastreFila(row) {
+    const asa = row.querySelector('.fila-drag-handle');
+    asa.addEventListener('dragstart', () => {
+      filaEquipoArrastrada = row;
+      row.classList.add('arrastrando');
+    });
+    asa.addEventListener('dragend', () => {
+      row.classList.remove('arrastrando');
+      filaEquipoArrastrada = null;
+      document.querySelectorAll('.contenedor-pedido-body, #equipos-pedido-list').forEach(z => z.classList.remove('drag-over', 'drag-over-raiz'));
+      actualizarContenedoresVacios();
+    });
+  }
+
+  // zona: el contenedor donde se pueden soltar filas (equiposPedidoList
+  // directamente, o el body de un .contenedor-pedido). claseHover es la
+  // clase CSS a usar mientras se arrastra encima (distinta para la raíz,
+  // que no puede verse como una tarjeta con fondo propio).
+  function habilitarZonaDropEquipos(zona, claseHover) {
+    zona.addEventListener('dragover', (e) => {
+      if (!filaEquipoArrastrada) return;
+      e.preventDefault();
+      zona.classList.add(claseHover);
+      const filasHermanas = [...zona.children].filter(el => el.classList.contains('equipo-pedido-row-wrap') && el !== filaEquipoArrastrada);
+      const despuesDe = filasHermanas.find(el => {
+        const r = el.getBoundingClientRect();
+        return e.clientY < r.top + r.height / 2;
+      });
+      if (despuesDe) zona.insertBefore(filaEquipoArrastrada, despuesDe);
+      else zona.appendChild(filaEquipoArrastrada);
+    });
+    zona.addEventListener('dragleave', (e) => {
+      if (e.target === zona) zona.classList.remove(claseHover);
+    });
+    zona.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zona.classList.remove(claseHover);
+    });
+  }
+  habilitarZonaDropEquipos(equiposPedidoList, 'drag-over-raiz');
+
+  let contadorContenedoresPedido = 0;
+
+  // Crea (y agrega al DOM) un contenedor con su encabezado editable y su
+  // zona para soltar equipos. Devuelve el elemento .contenedor-pedido-body
+  // donde nuevaFilaEquipoPedido() debe meter las filas que le correspondan.
+  function crearContenedorPedidoDOM(contenedor) {
+    const id = contenedor?.id || `c${Date.now()}_${contadorContenedoresPedido++}`;
+    const div = document.createElement('div');
+    div.className = 'contenedor-pedido';
+    div.dataset.contenedorId = id;
+    div.innerHTML = `
+      <div class="contenedor-pedido-header">
+        <input type="text" class="contenedor-pedido-titulo" placeholder="Nombre del contenedor (ej. Bodega A)" value="${contenedor?.titulo ? escapeAttr(contenedor.titulo) : ''}">
+        <button type="button" class="btn-eliminar-contenedor-pedido" title="Eliminar contenedor (los equipos quedan sueltos)">✕</button>
+      </div>
+      <div class="contenedor-pedido-body" data-contenedor-id="${id}"></div>
+    `;
+    const body = div.querySelector('.contenedor-pedido-body');
+    body.classList.add('vacio');
+    habilitarZonaDropEquipos(body, 'drag-over');
+
+    if (pedidoBloqueadoPorReparacion || pedidoCompletadoBloqueado) {
+      div.querySelector('.contenedor-pedido-titulo').disabled = true;
+      div.querySelector('.btn-eliminar-contenedor-pedido').style.display = 'none';
+    }
+
+    div.querySelector('.btn-eliminar-contenedor-pedido').addEventListener('click', () => {
+      const tieneEquipos = body.querySelector('.equipo-pedido-row-wrap');
+      if (tieneEquipos && !confirm('¿Eliminar este contenedor? Los equipos que tiene adentro quedan sueltos (no se borran).')) return;
+      // Los equipos adentro pasan a "sueltos" (la raíz de la lista) antes de
+      // quitar el contenedor — nunca se elimina un equipo por esto.
+      Array.from(body.querySelectorAll('.equipo-pedido-row-wrap')).forEach(fila => equiposPedidoList.appendChild(fila));
+      div.remove();
+    });
+
+    equiposPedidoList.appendChild(div);
+    return body;
+  }
+
+  btnAddContenedorPedido.addEventListener('click', () => {
+    const body = crearContenedorPedidoDOM(null);
+    body.closest('.contenedor-pedido').querySelector('.contenedor-pedido-titulo').focus();
+  });
+
   function nuevaFilaEquipoPedido(item, originalIndex) {
     const esMotoreductor = item?.tipoLinea === 'motoreductor';
 
@@ -514,6 +616,8 @@
     row.className = 'equipo-pedido-row-wrap';
     if (originalIndex !== undefined) row.dataset.originalIndex = String(originalIndex);
     row.innerHTML = `
+      <div class="fila-drag-handle" draggable="true" title="Arrastra para mover a otro contenedor">⠿ Arrastrar</div>
+
       <label class="extra-check chk-es-motoreductor" style="margin-bottom:8px;">
         <input type="checkbox" class="equipo-pedido-es-motoreductor" ${esMotoreductor ? 'checked' : ''}>
         🔗 Es Motoreductor (Motor + Reductor)
@@ -580,7 +684,7 @@
         </label>
       </div>
     `;
-    row.querySelectorAll('.remove-equipo-pedido').forEach(btn => btn.addEventListener('click', () => row.remove()));
+    row.querySelectorAll('.remove-equipo-pedido').forEach(btn => btn.addEventListener('click', () => { row.remove(); actualizarContenedoresVacios(); }));
 
     // El estado de "preparado" por unidad se gestiona desde la Ficha del
     // pedido (unidad por unidad). Este checkbox solo sirve para marcar TODAS
@@ -621,6 +725,7 @@
         btn.style.opacity = '0.35';
         btn.style.cursor = 'not-allowed';
       });
+      row.querySelector('.fila-drag-handle').style.display = 'none';
     }
 
     // Pedido ya completado: acá sí se bloquea TODO dentro de la fila (no
@@ -628,6 +733,7 @@
     // brazo/eje/flanche, preparado, todo queda fijo.
     if (pedidoCompletadoBloqueado) {
       row.querySelectorAll('input, select, button').forEach(el => { el.disabled = true; });
+      row.querySelector('.fila-drag-handle').style.display = 'none';
     }
 
     const chkEsMotoreductor = row.querySelector('.equipo-pedido-es-motoreductor');
@@ -718,7 +824,17 @@
     actualizarExtrasVisibles(); // por si ya venía un reductor precargado (editar pedido)
     actualizarCantidadSegunTipoEquipo(); // ídem, por si ya venía una cadena precargada
 
-    equiposPedidoList.appendChild(row);
+    habilitarArrastreFila(row);
+
+    // Si el ítem ya tenía un contenedor asignado (viene de un pedido
+    // existente) y ese contenedor ya se creó en el DOM, la fila entra ahí
+    // directo; si no, queda suelta en la raíz de la lista — igual que
+    // siempre se ha visto.
+    const bodyDestino = item?.contenedorId
+      ? equiposPedidoList.querySelector(`.contenedor-pedido-body[data-contenedor-id="${item.contenedorId}"]`)
+      : null;
+    (bodyDestino || equiposPedidoList).appendChild(row);
+    actualizarContenedoresVacios();
   }
 
   function leerEquiposDelFormulario() {
@@ -781,9 +897,31 @@
         }
       }
 
+      // El contenedor se determina por dónde está la fila AHORA en el DOM
+      // (pudo haberse arrastrado a otro desde que se abrió el formulario),
+      // no por lo que traía guardado originalmente.
+      const contenedorPadre = fila.closest('.contenedor-pedido');
+      item.contenedorId = contenedorPadre ? contenedorPadre.dataset.contenedorId : null;
+
       items.push(item);
     });
     return items;
+  }
+
+  // Uno por cada .contenedor-pedido actualmente en el DOM, en el orden en
+  // que aparecen — un contenedor sin ningún equipo adentro simplemente no
+  // se guarda (no tiene sentido conservar uno vacío).
+  function leerContenedoresDelFormulario() {
+    const contenedores = [];
+    equiposPedidoList.querySelectorAll('.contenedor-pedido').forEach(div => {
+      const tieneEquipos = div.querySelector('.equipo-pedido-row-wrap');
+      if (!tieneEquipos) return;
+      contenedores.push({
+        id: div.dataset.contenedorId,
+        titulo: div.querySelector('.contenedor-pedido-titulo').value.trim() || 'Sin nombre'
+      });
+    });
+    return contenedores;
   }
 
 
@@ -880,6 +1018,7 @@
     selectSubsidiariaContacto.disabled = pedidoCompletadoBloqueado;
     inputSubsidiariaContactoTexto.disabled = inputSubsidiariaContactoTexto.disabled || pedidoCompletadoBloqueado;
     btnAddEquipoPedido.style.display = bloqueoTotal ? 'none' : '';
+    btnAddContenedorPedido.style.display = bloqueoTotal ? 'none' : '';
     notaReparacionEquipos.style.display = pedidoBloqueadoPorReparacion ? 'block' : 'none';
     notaCompletadoDatos.style.display = pedidoCompletadoBloqueado ? 'block' : 'none';
     notaCompletadoEquipos.style.display = pedidoCompletadoBloqueado ? 'block' : 'none';
@@ -898,6 +1037,10 @@
     } else {
       notaReparacionDatos.style.display = 'none';
     }
+
+    // Los contenedores se crean PRIMERO, así cada fila de equipo ya tiene
+    // dónde caer si trae un contenedorId guardado (ver nuevaFilaEquipoPedido).
+    (pedido?.contenedores || []).forEach(cont => crearContenedorPedidoDOM(cont));
 
     const items = pedido?.equipos || [];
     if (items.length) {
@@ -992,6 +1135,7 @@
       contacto: selectContacto.value,
       tipo: Array.from(radiosTipoPedido).find(r => r.checked)?.value || 'normal',
       equipos: leerEquiposDelFormulario(),
+      contenedores: leerContenedoresDelFormulario(),
       envioSubsidiaria: checkboxEnvioSubsidiaria.checked,
       subsidiariaId: checkboxEnvioSubsidiaria.checked ? (selectSubsidiaria.value || null) : null,
       subsidiariaContacto: checkboxEnvioSubsidiaria.checked ? (selectSubsidiariaContacto.value || null) : null,
@@ -1758,9 +1902,40 @@
       return;
     }
 
-    fichaEquiposContenido.innerHTML = `<div class="equipos-cards-list">${equipos.map((item, index) =>
-      item.tipoLinea === 'motoreductor' ? renderTarjetaMotoreductor(item, index, pedido) : renderTarjetaIndividual(item, index, pedido)
-    ).join('')}</div>`;
+    function tarjetaHtml(item, index) {
+      return item.tipoLinea === 'motoreductor' ? renderTarjetaMotoreductor(item, index, pedido) : renderTarjetaIndividual(item, index, pedido);
+    }
+
+    const contenedores = pedido.contenedores || [];
+    if (!contenedores.length) {
+      // Sin contenedores: exactamente la misma vista de siempre, sin ningún título.
+      fichaEquiposContenido.innerHTML = `<div class="equipos-cards-list">${equipos.map(tarjetaHtml).join('')}</div>`;
+    } else {
+      // Con contenedores: los equipos sueltos van primero (igual que
+      // siempre, sin título), y debajo cada contenedor con su nombre como
+      // encabezado — un contenedor sin equipos adentro no se muestra.
+      const sueltos = [];
+      const porContenedor = new Map();
+      equipos.forEach((item, index) => {
+        if (item.contenedorId && contenedores.some(c => c.id === item.contenedorId)) {
+          if (!porContenedor.has(item.contenedorId)) porContenedor.set(item.contenedorId, []);
+          porContenedor.get(item.contenedorId).push(tarjetaHtml(item, index));
+        } else {
+          sueltos.push(tarjetaHtml(item, index));
+        }
+      });
+
+      let html = sueltos.length ? `<div class="equipos-cards-list">${sueltos.join('')}</div>` : '';
+      contenedores.forEach(cont => {
+        const tarjetas = porContenedor.get(cont.id);
+        if (!tarjetas || !tarjetas.length) return;
+        html += `
+          <div class="contenedor-ficha-titulo">📦 ${escapeHtml(cont.titulo || 'Sin nombre')}</div>
+          <div class="equipos-cards-list">${tarjetas.join('')}</div>
+        `;
+      });
+      fichaEquiposContenido.innerHTML = html;
+    }
 
     fichaEquiposContenido.querySelectorAll('.equipo-card.clicable').forEach(card => {
       card.addEventListener('click', () => {
