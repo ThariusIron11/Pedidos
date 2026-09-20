@@ -539,6 +539,7 @@
       filaEquipoArrastrada = null;
       document.querySelectorAll('.contenedor-pedido-body, #equipos-pedido-list').forEach(z => z.classList.remove('drag-over', 'drag-over-raiz'));
       actualizarContenedoresVacios();
+      actualizarSelectsMoverContenedor();
     });
   }
 
@@ -613,6 +614,39 @@
 
   let contadorContenedoresPedido = 0;
 
+  // Con 2+ contenedores, arrastrar cada equipo al que corresponde es
+  // incómodo (hay que apuntar bien, uno por uno). Este select da una forma
+  // rápida y sin errores: aparece en cada fila de equipo, lista "Sin
+  // contenedor" + todos los contenedores actuales, y mover la fila es solo
+  // elegir una opción. El drag & drop se deja intacto para quien lo prefiera.
+  function opcionesSelectContenedor(seleccionActualId) {
+    const contenedoresDom = [...equiposPedidoList.querySelectorAll('.contenedor-pedido')];
+    let html = `<option value="">— Sin contenedor —</option>`;
+    contenedoresDom.forEach(div => {
+      const id = div.dataset.contenedorId;
+      const titulo = div.querySelector('.contenedor-pedido-titulo').value.trim() || 'Sin nombre';
+      html += `<option value="${escapeAttr(id)}" ${id === seleccionActualId ? 'selected' : ''}>📦 ${escapeHtml(titulo)}</option>`;
+    });
+    return html;
+  }
+
+  // Se llama cada vez que la lista de contenedores cambia (crear, eliminar,
+  // renombrar) o una fila cambia de padre (drag & drop), para que el select
+  // de CADA fila quede con las opciones y la selección correctas.
+  function actualizarSelectsMoverContenedor() {
+    const hayContenedores = !!equiposPedidoList.querySelector('.contenedor-pedido');
+    equiposPedidoList.querySelectorAll('.equipo-pedido-row-wrap').forEach(row => {
+      const select = row.querySelector('.fila-mover-contenedor');
+      if (!select) return;
+      // Sin contenedores creados, el select solo tendría una opción ("Sin
+      // contenedor") — no aporta nada y solo ocupa espacio.
+      select.style.display = hayContenedores ? '' : 'none';
+      if (!hayContenedores) return;
+      const padre = row.closest('.contenedor-pedido');
+      select.innerHTML = opcionesSelectContenedor(padre ? padre.dataset.contenedorId : '');
+    });
+  }
+
   // Crea (y agrega al DOM) un contenedor con su encabezado editable y su
   // zona para soltar equipos. Devuelve el elemento .contenedor-pedido-body
   // donde nuevaFilaEquipoPedido() debe meter las filas que le correspondan.
@@ -637,6 +671,10 @@
       div.querySelector('.btn-eliminar-contenedor-pedido').style.display = 'none';
     }
 
+    // El nombre del contenedor aparece en el select de cada fila — si lo
+    // renombra, los selects deben reflejarlo de inmediato.
+    div.querySelector('.contenedor-pedido-titulo').addEventListener('input', actualizarSelectsMoverContenedor);
+
     div.querySelector('.btn-eliminar-contenedor-pedido').addEventListener('click', () => {
       const tieneEquipos = body.querySelector('.equipo-pedido-row-wrap');
       if (tieneEquipos && !confirm('¿Eliminar este contenedor? Los equipos que tiene adentro quedan sueltos (no se borran).')) return;
@@ -644,9 +682,12 @@
       // quitar el contenedor — nunca se elimina un equipo por esto.
       Array.from(body.querySelectorAll('.equipo-pedido-row-wrap')).forEach(fila => equiposPedidoList.appendChild(fila));
       div.remove();
+      actualizarContenedoresVacios();
+      actualizarSelectsMoverContenedor();
     });
 
     equiposPedidoList.appendChild(div);
+    actualizarSelectsMoverContenedor();
     return body;
   }
 
@@ -663,6 +704,7 @@
     if (originalIndex !== undefined) row.dataset.originalIndex = String(originalIndex);
     row.innerHTML = `
       <div class="fila-drag-handle" draggable="true" title="Arrastra para mover a otro contenedor">⠿ Arrastrar</div>
+      <select class="fila-mover-contenedor" title="Mover a un contenedor"></select>
 
       <label class="extra-check chk-es-motoreductor" style="margin-bottom:8px;">
         <input type="checkbox" class="equipo-pedido-es-motoreductor" ${esMotoreductor ? 'checked' : ''}>
@@ -772,6 +814,7 @@
         btn.style.cursor = 'not-allowed';
       });
       row.querySelector('.fila-drag-handle').style.display = 'none';
+      row.querySelector('.fila-mover-contenedor').style.display = 'none';
     }
 
     // Pedido ya completado: acá sí se bloquea TODO dentro de la fila (no
@@ -872,6 +915,18 @@
 
     habilitarArrastreFila(row);
 
+    // Mover por select: alternativa al drag & drop, más rápida con varios
+    // contenedores. Al elegir, la fila salta directo al body de ese
+    // contenedor (o a la raíz si elige "Sin contenedor").
+    row.querySelector('.fila-mover-contenedor').addEventListener('change', (e) => {
+      const destinoId = e.target.value;
+      const destino = destinoId
+        ? equiposPedidoList.querySelector(`.contenedor-pedido-body[data-contenedor-id="${destinoId}"]`)
+        : equiposPedidoList;
+      (destino || equiposPedidoList).appendChild(row);
+      actualizarContenedoresVacios();
+    });
+
     // Si el ítem ya tenía un contenedor asignado (viene de un pedido
     // existente) y ese contenedor ya se creó en el DOM, la fila entra ahí
     // directo; si no, queda suelta en la raíz de la lista — igual que
@@ -881,6 +936,7 @@
       : null;
     (bodyDestino || equiposPedidoList).appendChild(row);
     actualizarContenedoresVacios();
+    actualizarSelectsMoverContenedor();
   }
 
   function leerEquiposDelFormulario() {
