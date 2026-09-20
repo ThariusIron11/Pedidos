@@ -526,9 +526,13 @@
 
   function habilitarArrastreFila(row) {
     const asa = row.querySelector('.fila-drag-handle');
-    asa.addEventListener('dragstart', () => {
+    asa.addEventListener('dragstart', (e) => {
       filaEquipoArrastrada = row;
       row.classList.add('arrastrando');
+      // Sin esto, varios navegadores no consideran el arrastre "válido" y el
+      // drop no se completa aunque dragover/drop se vean bien.
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', 'equipo-pedido');
     });
     asa.addEventListener('dragend', () => {
       row.classList.remove('arrastrando');
@@ -543,6 +547,10 @@
   // clase CSS a usar mientras se arrastra encima (distinta para la raíz,
   // que no puede verse como una tarjeta con fondo propio).
   function habilitarZonaDropEquipos(zona, claseHover) {
+    zona.addEventListener('dragenter', (e) => {
+      if (!filaEquipoArrastrada) return;
+      e.preventDefault();
+    });
     zona.addEventListener('dragover', (e) => {
       if (!filaEquipoArrastrada) return;
       e.preventDefault();
