@@ -1507,7 +1507,12 @@
   // Determina el color/ícono/tag "principal" de una tarjeta de equipo cuando
   // hay que resumir varios estados posibles en uno solo (puede tener varias
   // unidades con estados distintos). Prioridad: Devuelto > Completado > Preparado > normal.
-  function estadoPrincipalItem(item, colorTipoDefault, iconoTipoDefault) {
+  // `tipo` es el registro completo del catálogo de tipos (para poder usar su
+  // logo cuando no hay ningún estado especial); iconoRespaldo/colorRespaldo
+  // se usan si el tipo no se encontró (equipo/tipo eliminado, motoreductor
+  // sin tipo "Motoreductor" en el catálogo, etc). El campo devuelto ya es
+  // HTML listo para insertar (imagen o emoji), no texto plano.
+  function estadoPrincipalItem(item, tipo, colorRespaldo, iconoRespaldo) {
     const tieneDevueltas = devueltasCountItem(item) > 0;
     const completado = estaItemCompletado(item);
     const totalPreparable = (item.cantidad || 0) - devueltasCountItem(item);
@@ -1516,7 +1521,7 @@
     if (tieneDevueltas) return { tag: 'Devuelto', color: COLOR_DEVUELTO, icono: '🔵' };
     if (completado) return { tag: 'Completado', color: COLOR_COMPLETADO, icono: '🔒' };
     if (preparado) return { tag: 'Preparado', color: COLOR_PREPARADO, icono: '✅' };
-    return { tag: null, color: colorTipoDefault, icono: iconoTipoDefault };
+    return { tag: null, color: tipo?.color || colorRespaldo, icono: window.iconoTipoHtml(tipo, iconoRespaldo) };
   }
 
   // Un ítem queda "completado" cuando TODA su cantidad (o todas sus unidades,
@@ -1861,7 +1866,7 @@
     const tipo = equipo ? buscarTipoEquipo(equipo.tipoId) : null;
     const preparado = itemEstaFullyPreparado(item);
     const completado = estaItemCompletado(item);
-    const estadoPrincipal = estadoPrincipalItem(item, tipo?.color || '#5b6472', tipo?.icono || '📦');
+    const estadoPrincipal = estadoPrincipalItem(item, tipo, '#5b6472', '📦');
     const color = estadoPrincipal.color;
     const icono = estadoPrincipal.icono;
     const nombreTipo = tipo?.nombre || 'Tipo desconocido';
@@ -1919,7 +1924,7 @@
     const tipoMotoreductor = (window.tiposEquipoCache || []).find(t => normalizar(t.nombre) === 'motoreductor');
     const preparado = itemEstaFullyPreparado(item);
     const completado = estaItemCompletado(item);
-    const estadoPrincipal = estadoPrincipalItem(item, tipoMotoreductor?.color || '#2e7d32', tipoMotoreductor?.icono || '🔧');
+    const estadoPrincipal = estadoPrincipalItem(item, tipoMotoreductor, '#2e7d32', '🔧');
     const color = estadoPrincipal.color;
     const icono = estadoPrincipal.icono;
 
@@ -3335,7 +3340,7 @@
 
   function nombreConIcono(equipo, faltanteTexto) {
     if (!equipo) return `<span style="color:var(--danger);">${faltanteTexto}</span>`;
-    const icono = buscarTipoEquipo(equipo.tipoId)?.icono || '';
+    const icono = window.iconoTipoHtml(buscarTipoEquipo(equipo.tipoId));
     const variante = equipo.variante ? ` <span class="tag-variante">${escapeHtml(equipo.variante)}</span>` : '';
     return `${icono ? icono + ' ' : ''}${escapeHtml(equipo.nombre)}${variante}`;
   }

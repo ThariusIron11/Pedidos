@@ -3,10 +3,58 @@
 // Otras pestañas (Equipos) leen este catálogo desde window.tiposEquipoCache
 // y se suscriben al evento 'tipos-equipo:cambio' para reaccionar en vivo.
 //
-// Cada tipo: { nombre, icono (emoji), color (hex '#rrggbb') }
+// Cada tipo: { nombre, icono (emoji), logoUrl (imagen en base64, opcional), color (hex '#rrggbb') }
+
+// Helper compartido: dado un tipo de equipo, devuelve el HTML de su
+// ícono/logo para usar en CUALQUIER contexto HTML (tarjetas, badges,
+// tablas) — si el tipo tiene logoUrl se pinta como <img>, si no cae al
+// emoji de siempre. NO usar en contextos de solo texto (input.value,
+// <option>, texto de un buscador armado a mano): ahí una <img> no sirve,
+// así que esos sitios siguen usando tipo.icono directo como hasta ahora.
+window.iconoTipoHtml = function (tipo, iconoRespaldo) {
+  if (tipo?.logoUrl) {
+    return `<img src="${tipo.logoUrl}" class="tipo-logo-img" alt="">`;
+  }
+  const icono = tipo?.icono || iconoRespaldo || '';
+  return icono ? String(icono).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])) : '';
+};
 
 (function () {
   const COLECCION = 'tipos_equipo';
+
+  // Un logo se guarda como dataURL dentro del documento del tipo (no hay
+  // Firebase Storage configurado en este proyecto), así que se redimensiona
+  // agresivo a 96x96 antes de guardar — de sobra para un ícono, y liviano
+  // para Firestore (límite de 1 MiB por documento).
+  const LOGO_MAX_PX = 96;
+
+  function archivoALogoDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error);
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('No se pudo leer la imagen'));
+        img.onload = () => {
+          // Redimensiona manteniendo proporción dentro de un cuadro de
+          // LOGO_MAX_PX x LOGO_MAX_PX, sin recortar ni deformar.
+          const escala = Math.min(LOGO_MAX_PX / img.width, LOGO_MAX_PX / img.height, 1);
+          const w = Math.max(1, Math.round(img.width * escala));
+          const h = Math.max(1, Math.round(img.height * escala));
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          // PNG conserva transparencia (típico en logos); si el archivo
+          // original era JPG no hay problema, igual se recodifica a PNG.
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
 
   const DEFAULTS = [
     { nombre: 'Motor',                icono: '⚡', color: '#c1662f' },
@@ -34,6 +82,12 @@
   const inputIcono  = document.getElementById('tipo-icono');
   const inputColor  = document.getElementById('tipo-color');
 
+  const inputLogoFile   = document.getElementById('tipo-logo-input');
+  const inputLogoUrl    = document.getElementById('tipo-logo-url'); // hidden: guarda el dataURL vigente (o vacío)
+  const logoPreview      = document.getElementById('tipo-logo-preview');
+  const logoVacioTexto   = document.getElementById('tipo-logo-vacio');
+  const btnQuitarLogo    = document.getElementById('btn-quitar-logo-tipo');
+
   window.tiposEquipoCache = []; // expuesto globalmente para otras pestañas
   let borradorId = null;
   let seedIntentado = false;
@@ -52,6 +106,35 @@
       detail: { tipos: window.tiposEquipoCache }
     }));
   }
+
+  // Refleja el valor actual de inputLogoUrl (dataURL o vacío) en la vista
+  // previa del formulario: imagen + botón "Quitar", o el texto "Sin logo".
+  function refrescarPreviewLogo() {
+    const url = inputLogoUrl.value;
+    logoPreview.src = url || '';
+    logoPreview.style.display = url ? '' : 'none';
+    logoVacioTexto.style.display = url ? 'none' : '';
+    btnQuitarLogo.style.display = url ? '' : 'none';
+  }
+
+  inputLogoFile.addEventListener('change', async () => {
+    const file = inputLogoFile.files?.[0];
+    if (!file) return;
+    try {
+      inputLogoUrl.value = await archivoALogoDataUrl(file);
+      refrescarPreviewLogo();
+    } catch (err) {
+      console.error('Error procesando el logo:', err);
+      alert('No se pudo procesar esa imagen. Intenta con otro archivo.');
+    } finally {
+      inputLogoFile.value = '';
+    }
+  });
+
+  btnQuitarLogo.addEventListener('click', () => {
+    inputLogoUrl.value = '';
+    refrescarPreviewLogo();
+  });
 
   // ---------- Semilla inicial (solo si la colección está vacía) ----------
 
@@ -80,6 +163,8 @@
     inputNombre.value = tipo?.nombre || '';
     inputIcono.value = tipo?.icono || '';
     inputColor.value = tipo?.color || '#c1662f';
+    inputLogoUrl.value = tipo?.logoUrl || '';
+    refrescarPreviewLogo();
   }
 
   function abrirModalNuevo() {
@@ -116,6 +201,8 @@
 
   function cancelarYLimpiar() {
     form.reset();
+    inputLogoUrl.value = '';
+    refrescarPreviewLogo();
     borradorId = null;
     modal.classList.remove('open');
   }
@@ -134,6 +221,7 @@
     const datos = {
       nombre: inputNombre.value.trim(),
       icono: inputIcono.value.trim(),
+      logoUrl: inputLogoUrl.value || null,
       color: inputColor.value
     };
 
@@ -154,6 +242,8 @@
         await db.collection(COLECCION).add(datos);
       }
       form.reset();
+      inputLogoUrl.value = '';
+      refrescarPreviewLogo();
       borradorId = null;
       modal.classList.remove('open');
     } catch (err) {
@@ -192,7 +282,7 @@
       <tr data-id="${tipo.id}">
         <td>
           <span class="tipo-badge" style="border-color:${tipo.color}; color:${tipo.color}; background:${tipo.color}22;">
-            ${tipo.icono || ''}
+            ${window.iconoTipoHtml(tipo)}
           </span>
         </td>
         <td>${escapeHtml(tipo.nombre)}</td>

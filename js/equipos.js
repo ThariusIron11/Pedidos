@@ -533,7 +533,7 @@
     tablaBody.innerHTML = listaFiltrada.map(equipo => {
       const tipo = buscarTipo(equipo.tipoId);
       const tipoBadge = tipo
-        ? `<span class="tipo-badge" style="border-color:${tipo.color}; color:${tipo.color}; background:${tipo.color}22;">${tipo.icono ? tipo.icono + ' ' : ''}${escapeHtml(tipo.nombre)}</span>`
+        ? `<span class="tipo-badge" style="border-color:${tipo.color}; color:${tipo.color}; background:${tipo.color}22;">${window.iconoTipoHtml(tipo)} ${escapeHtml(tipo.nombre)}</span>`
         : '<span style="color:var(--danger); font-size:12px;">Tipo no encontrado</span>';
 
       const varianteHtml = equipo.variante

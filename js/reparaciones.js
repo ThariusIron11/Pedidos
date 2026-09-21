@@ -789,7 +789,7 @@
   // de que el equipo exista como objeto del catálogo resuelto).
   function iconoDeTipoId(tipoId) {
     const tipo = (window.tiposEquipoCache || []).find(t => t.id === tipoId);
-    return tipo?.icono ? tipo.icono + ' ' : '';
+    return window.iconoTipoHtml(tipo);
   }
 
   // Arma el HTML de la vista de solo lectura a partir de lo que hay
@@ -817,7 +817,8 @@
     if (!texto) return '';
     const nuevoTag = inputEquipoId.value ? '' : ' <span class="tag-nuevo-equipo">(nuevo)</span>';
     const serial = inputSerialIndividual.value.trim() ? `<span class="reparacion-card-serial">S/N ${escapeHtml(inputSerialIndividual.value.trim())}</span>` : '';
-    return `${iconoDeTipoId(selectTipoFiltro.value)}${escapeHtml(texto)}${nuevoTag}${serial}`;
+    const icono = iconoDeTipoId(selectTipoFiltro.value);
+    return `${icono ? icono + ' ' : ''}${escapeHtml(texto)}${nuevoTag}${serial}`;
   }
 
   function actualizarTextoEquipo() {
@@ -1560,7 +1561,7 @@
   function iconoTipoDe(equipo) {
     if (!equipo) return '';
     const tipo = (window.tiposEquipoCache || []).find(t => t.id === equipo.tipoId);
-    return tipo?.icono ? tipo.icono + ' ' : '';
+    return window.iconoTipoHtml(tipo);
   }
 
   // Texto plano (para el buscador) con nombre(s) y serial(es) del equipo.
@@ -1607,7 +1608,8 @@
       ? escapeHtml(nombreMostrableEquipo(eq))
       : '<span style="color:var(--danger);">Equipo no encontrado</span>';
     const serial = item.serial ? `<span class="reparacion-card-serial">S/N ${escapeHtml(item.serial)}</span>` : '';
-    return `${iconoTipoDe(eq)}${nombreTxt}${serial}`;
+    const icono = iconoTipoDe(eq);
+    return `${icono ? icono + ' ' : ''}${nombreTxt}${serial}`;
   }
 
   function reparacionCoincideTexto(reparacion) {

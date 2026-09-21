@@ -441,6 +441,43 @@
     border: 1px solid;
     white-space: nowrap;
   }
+
+  /* Logo personalizado de un tipo de equipo: reemplaza al emoji en tarjetas,
+     tablas y badges (no en buscadores de texto, que no admiten imágenes). */
+  .tipo-logo-img{
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+    border-radius: 3px;
+    vertical-align: middle;
+    display: inline-block;
+    background: #fff;
+    padding: 1px;
+  }
+  .campo-ayuda{
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-top: 4px;
+  }
+  .tipo-logo-editor{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .tipo-logo-preview{
+    width: 44px;
+    height: 44px;
+    object-fit: contain;
+    border: 1px solid #d4d7dc;
+    border-radius: 8px;
+    background: #fff;
+    padding: 3px;
+  }
+  .tipo-logo-vacio{
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
   .tipo-swatch{
     display: inline-block;
     width: 10px;
@@ -3174,8 +3211,21 @@
         </div>
 
         <div class="form-group">
-          <label for="tipo-icono">Ícono</label>
+          <label for="tipo-icono">Ícono (emoji)</label>
           <input type="text" id="tipo-icono" placeholder="Ej: ⚡ (un emoji)" maxlength="4">
+          <div class="campo-ayuda">Se usa como respaldo en buscadores y listas donde no cabe una imagen.</div>
+        </div>
+
+        <div class="form-group">
+          <label for="tipo-logo-input">Logo personalizado (opcional)</label>
+          <div class="tipo-logo-editor">
+            <img id="tipo-logo-preview" class="tipo-logo-preview" style="display:none;" alt="Logo">
+            <span id="tipo-logo-vacio" class="tipo-logo-vacio">Sin logo — se usa el ícono</span>
+            <input type="file" id="tipo-logo-input" accept="image/png,image/jpeg,image/webp,image/svg+xml">
+            <button type="button" class="btn secondary" id="btn-quitar-logo-tipo" style="display:none;">Quitar logo</button>
+          </div>
+          <input type="hidden" id="tipo-logo-url">
+          <div class="campo-ayuda">Si subes un logo, reemplaza al ícono en las tarjetas y tablas (no en buscadores de texto). Se recomienda una imagen cuadrada.</div>
         </div>
 
         <div class="form-group">
@@ -3633,12 +3683,12 @@
   <script src="js/auth.js?v=19"></script>
 
   <!-- Un archivo JS por pestaña -->
-  <script src="js/config.js?v=19"></script>
+  <script src="js/config.js?v=20"></script>
   <script src="js/clientes.js?v=19"></script>
-  <script src="js/equipos.js?v=19"></script>
-  <script src="js/pedidos.js?v=22"></script>
+  <script src="js/equipos.js?v=20"></script>
+  <script src="js/pedidos.js?v=23"></script>
   <script src="js/envios.js?v=19"></script>
-  <script src="js/reparaciones.js?v=19"></script>
+  <script src="js/reparaciones.js?v=20"></script>
   <script src="js/historial.js?v=19"></script>
 
 </body>
