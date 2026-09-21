@@ -121,7 +121,7 @@
     const t = normalizar(inputTipoTexto.value);
     const coincidencias = (t ? tipos.filter(ti => normalizar(ti.nombre).includes(t)) : tipos).slice(0, 8);
     resultadosTipo.innerHTML = coincidencias.length
-      ? coincidencias.map(ti => `<div class="buscador-item" data-id="${ti.id}">${ti.icono ? ti.icono + ' ' : ''}${escapeHtml(ti.nombre)}</div>`).join('')
+      ? coincidencias.map(ti => `<div class="buscador-item" data-id="${ti.id}">${window.iconoTipoHtml(ti)} ${escapeHtml(ti.nombre)}</div>`).join('')
       : `<div class="buscador-item-vacio">Sin coincidencias</div>`;
     resultadosTipo.classList.add('open');
     resultadosTipo.querySelectorAll('.buscador-item').forEach(el => {

@@ -456,6 +456,9 @@
     const inputValor = contenedor.querySelector('input[type="hidden"]');
     const resultados = contenedor.querySelector('.buscador-resultados');
 
+    // Texto plano para lo único que SÍ debe quedar como texto: lo que se
+    // escribe dentro del <input> una vez elegido un tipo (los navegadores no
+    // permiten imágenes ahí, así que ese campo siempre cae al emoji).
     function nombreMostrableTipo(t) {
       return (t.icono ? t.icono + ' ' : '') + t.nombre;
     }
@@ -469,8 +472,10 @@
 
     function mostrarResultados() {
       const lista = catalogoFiltrado(inputTexto.value);
+      // Acá sí es HTML real (un <div> por sugerencia), así que el logo del
+      // tipo se puede mostrar tal cual — solo el nombre va escapado.
       resultados.innerHTML = lista.length
-        ? lista.map(ti => `<div class="buscador-item" data-id="${ti.id}">${escapeHtml(nombreMostrableTipo(ti))}</div>`).join('')
+        ? lista.map(ti => `<div class="buscador-item" data-id="${ti.id}">${window.iconoTipoHtml(ti)} ${escapeHtml(ti.nombre)}</div>`).join('')
         : `<div class="buscador-item-vacio">Sin coincidencias</div>`;
       resultados.classList.add('open');
       resultados.querySelectorAll('.buscador-item').forEach(el => {
