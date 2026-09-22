@@ -402,11 +402,19 @@
     const item = pedido ? (pedido.equipos || [])[0] : null;
     if (!item || !item.reemplazo) return '';
 
-    const filaHtml = (parte, icono, activoId, activoSerial) => {
+    const filaHtml = (parte, tipoNombreFijo, activoId, activoSerial) => {
       const original = item.reemplazo[parte];
       if (!original) return '';
       const viejo = buscarEquipoCatalogo(original.equipoId);
       const nuevo = buscarEquipoCatalogo(activoId);
+      // Motor/Reductor siempre usan el logo de SU tipo fijo; en el caso
+      // "individual" no hay un tipo fijo, así que se usa el del equipo real
+      // (el nuevo si ya se eligió, si no el viejo) — ambos deberían ser del
+      // mismo tipo por tratarse de un reemplazo.
+      const tipoParaIcono = tipoNombreFijo
+        ? (window.tiposEquipoCache || []).find(t => normalizar(t.nombre) === tipoNombreFijo)
+        : (window.tiposEquipoCache || []).find(t => t.id === (nuevo || viejo)?.tipoId);
+      const icono = window.iconoTipoHtml(tipoParaIcono, '📦');
       const nombreViejo = viejo ? escapeHtml(nombreMostrableEquipo(viejo)) : '<span style="color:var(--danger);">Equipo no encontrado</span>';
       const nombreNuevo = nuevo ? escapeHtml(nombreMostrableEquipo(nuevo)) : '<span style="color:var(--danger);">Equipo no encontrado</span>';
       return `
@@ -433,8 +441,8 @@
     };
 
     const filas = item.tipoLinea === 'motoreductor'
-      ? filaHtml('motor', '⚡', item.motorEquipoId, (item.serialesMotor || [])[0]) + filaHtml('reductor', '⚙️', item.reductorEquipoId, (item.serialesReductor || [])[0])
-      : filaHtml('individual', '📦', item.equipoId, (item.seriales || [])[0]);
+      ? filaHtml('motor', 'motor', item.motorEquipoId, (item.serialesMotor || [])[0]) + filaHtml('reductor', 'reductor', item.reductorEquipoId, (item.serialesReductor || [])[0])
+      : filaHtml('individual', null, item.equipoId, (item.seriales || [])[0]);
 
     return filas ? `<div style="margin-top:14px;">${filas}</div>` : '';
   }
@@ -810,7 +818,7 @@
         : '<span style="color:var(--danger);">Falta el reductor</span>';
       const serialMotor = inputSerialMotor.value.trim() ? `<span class="reparacion-card-serial">S/N ${escapeHtml(inputSerialMotor.value.trim())}</span>` : '';
       const serialReductor = inputSerialReductor.value.trim() ? `<span class="reparacion-card-serial">S/N ${escapeHtml(inputSerialReductor.value.trim())}</span>` : '';
-      return `🔗 Motoreductor — ⚡ ${motorHtml}${serialMotor} + ⚙️ ${reductorHtml}${serialReductor}`;
+      return `${iconoDeTipoId(tipoIdPorNombre('motoreductor'))} Motoreductor — ${iconoDeTipoId(tipoIdPorNombre('motor'))} ${motorHtml}${serialMotor} + ${iconoDeTipoId(tipoIdPorNombre('reductor'))} ${reductorHtml}${serialReductor}`;
     }
 
     const texto = inputEquipoTexto.value.trim();
@@ -1600,7 +1608,7 @@
         : '<span style="color:var(--danger);">Reductor no encontrado</span>';
       const serialMotor = item.motorSerial ? `<span class="reparacion-card-serial">S/N ${escapeHtml(item.motorSerial)}</span>` : '';
       const serialReductor = item.reductorSerial ? `<span class="reparacion-card-serial">S/N ${escapeHtml(item.reductorSerial)}</span>` : '';
-      return `🔗 Motoreductor — ⚡ ${motorTxt}${serialMotor} + ⚙️ ${reductorTxt}${serialReductor}`;
+      return `${iconoDeTipoId(tipoIdPorNombre('motoreductor'))} Motoreductor — ${iconoDeTipoId(tipoIdPorNombre('motor'))} ${motorTxt}${serialMotor} + ${iconoDeTipoId(tipoIdPorNombre('reductor'))} ${reductorTxt}${serialReductor}`;
     }
 
     const eq = buscarEquipoCatalogo(item.equipoId);
