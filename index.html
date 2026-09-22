@@ -882,6 +882,23 @@
   .extra-check input{ accent-color: var(--copper); }
   .extra-check.chk-preparado input{ accent-color: var(--ok); }
 
+  /* Brazo/eje/flanche: checkbox + buscador de la pieza específica del
+     catálogo (para poder sumar su peso), apilados en columna. */
+  .extra-con-pieza{
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 200px;
+  }
+  .extra-con-pieza .extra-check{ margin: 0; }
+  .extra-con-pieza .buscador-equipo{
+    max-width: 240px;
+  }
+  .extra-con-pieza .buscador-input{
+    font-size: 12px;
+    padding: 5px 8px;
+  }
+
   .empty-equipos-pedido{
     color: var(--ink-soft);
     font-size: 13px;
@@ -3684,8 +3701,8 @@
   <script src="js/config.js?v=20"></script>
   <script src="js/clientes.js?v=19"></script>
   <script src="js/equipos.js?v=21"></script>
-  <script src="js/pedidos.js?v=24"></script>
-  <script src="js/envios.js?v=19"></script>
+  <script src="js/pedidos.js?v=25"></script>
+  <script src="js/envios.js?v=20"></script>
   <script src="js/reparaciones.js?v=20"></script>
   <script src="js/historial.js?v=19"></script>
 

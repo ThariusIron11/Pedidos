@@ -234,6 +234,17 @@
     return total;
   }
 
+  // Peso (kg) que aportan las piezas de brazo de reacción/eje sólido/flanche
+  // de salida elegidas en un ítem (si marcó alguna casilla y le asoció una
+  // pieza real del catálogo). No se multiplica por cantidad acá.
+  function pesoExtrasItem(item) {
+    let total = 0;
+    if (item?.llevaBrazo && item.brazoEquipoId) total += pesoUnitarioEquipo(buscarEquipoCatalogo(item.brazoEquipoId));
+    if (item?.llevaEje && item.ejeEquipoId) total += pesoUnitarioEquipo(buscarEquipoCatalogo(item.ejeEquipoId));
+    if (item?.llevaFlanche && item.flancheEquipoId) total += pesoUnitarioEquipo(buscarEquipoCatalogo(item.flancheEquipoId));
+    return total;
+  }
+
   // Peso (kg) de un solo ítem de una remisión (it.itemIndex / it.cantidad /
   // it.unidades), buscando el equipo real en el pedido para tomar su peso
   // del catálogo. Los ítems sin peso configurado, o huérfanos (el equipo ya
@@ -252,6 +263,7 @@
       const equipo = buscarEquipoCatalogo(item.equipoId);
       pesoUnitario = pesoUnitarioEquipo(equipo);
     }
+    pesoUnitario += pesoExtrasItem(item);
     return pesoUnitario * cantidad;
   }
 
@@ -1554,13 +1566,23 @@
   }
 
   function itemTienePesoCompleto(item) {
+    let base;
     if (item.tipoLinea === 'motoreductor') {
       const equipoMotor = buscarEquipoCatalogo(item.motorEquipoId);
       const equipoReductor = buscarEquipoCatalogo(item.reductorEquipoId);
-      return equipoTienePesoRegistrado(equipoMotor) && equipoTienePesoRegistrado(equipoReductor);
+      base = equipoTienePesoRegistrado(equipoMotor) && equipoTienePesoRegistrado(equipoReductor);
+    } else {
+      const equipo = buscarEquipoCatalogo(item.equipoId);
+      base = equipoTienePesoRegistrado(equipo);
     }
-    const equipo = buscarEquipoCatalogo(item.equipoId);
-    return equipoTienePesoRegistrado(equipo);
+    if (!base) return false;
+    // Si marcó brazo/eje/flanche, también debe tener una pieza elegida con
+    // su peso registrado — si no, el total de la simulación quedaría corto
+    // sin que nada lo avise.
+    if (item.llevaBrazo && !equipoTienePesoRegistrado(buscarEquipoCatalogo(item.brazoEquipoId))) return false;
+    if (item.llevaEje && !equipoTienePesoRegistrado(buscarEquipoCatalogo(item.ejeEquipoId))) return false;
+    if (item.llevaFlanche && !equipoTienePesoRegistrado(buscarEquipoCatalogo(item.flancheEquipoId))) return false;
+    return true;
   }
 
   function pesoTotalSimulacion(sim) {

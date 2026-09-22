@@ -763,18 +763,39 @@
       </div>
 
       <div class="equipo-pedido-extra">
-        <label class="extra-check chk-brazo" style="display:none;">
-          <input type="checkbox" class="equipo-pedido-brazo" ${item?.llevaBrazo ? 'checked' : ''}>
-          🦾 Lleva brazo de reacción
-        </label>
-        <label class="extra-check chk-eje" style="display:none;">
-          <input type="checkbox" class="equipo-pedido-eje" ${item?.llevaEje ? 'checked' : ''}>
-          🔩 Lleva eje sólido
-        </label>
-        <label class="extra-check chk-flanche" style="display:none;">
-          <input type="checkbox" class="equipo-pedido-flanche" ${item?.llevaFlanche ? 'checked' : ''}>
-          🔘 Lleva flanche de salida
-        </label>
+        <div class="extra-con-pieza chk-brazo" style="display:none;">
+          <label class="extra-check">
+            <input type="checkbox" class="equipo-pedido-brazo" ${item?.llevaBrazo ? 'checked' : ''}>
+            🦾 Lleva brazo de reacción
+          </label>
+          <div class="buscador-equipo buscador-equipo-brazo-pieza" style="${item?.llevaBrazo ? '' : 'display:none;'}">
+            <input type="text" class="buscador-input" placeholder="Buscar brazo de reacción del catálogo..." autocomplete="off">
+            <input type="hidden" class="equipo-pedido-brazo-id" value="${item?.brazoEquipoId || ''}">
+            <div class="buscador-resultados"></div>
+          </div>
+        </div>
+        <div class="extra-con-pieza chk-eje" style="display:none;">
+          <label class="extra-check">
+            <input type="checkbox" class="equipo-pedido-eje" ${item?.llevaEje ? 'checked' : ''}>
+            🔩 Lleva eje sólido
+          </label>
+          <div class="buscador-equipo buscador-equipo-eje-pieza" style="${item?.llevaEje ? '' : 'display:none;'}">
+            <input type="text" class="buscador-input" placeholder="Buscar eje sólido del catálogo..." autocomplete="off">
+            <input type="hidden" class="equipo-pedido-eje-id" value="${item?.ejeEquipoId || ''}">
+            <div class="buscador-resultados"></div>
+          </div>
+        </div>
+        <div class="extra-con-pieza chk-flanche" style="display:none;">
+          <label class="extra-check">
+            <input type="checkbox" class="equipo-pedido-flanche" ${item?.llevaFlanche ? 'checked' : ''}>
+            🔘 Lleva flanche de salida
+          </label>
+          <div class="buscador-equipo buscador-equipo-flanche-pieza" style="${item?.llevaFlanche ? '' : 'display:none;'}">
+            <input type="text" class="buscador-input" placeholder="Buscar flanche de salida del catálogo..." autocomplete="off">
+            <input type="hidden" class="equipo-pedido-flanche-id" value="${item?.flancheEquipoId || ''}">
+            <div class="buscador-resultados"></div>
+          </div>
+        </div>
         <label class="extra-check chk-preparado">
           <input type="checkbox" class="equipo-pedido-preparado" ${(item?.unidadesPreparadas || []).length >= (item?.cantidad || 1) ? 'checked' : ''}>
           ✅ Preparado
@@ -863,9 +884,20 @@
       chkBrazo.style.display = mostrarBrazo ? 'flex' : 'none';
       chkEje.style.display = mostrarEje ? 'flex' : 'none';
       chkFlanche.style.display = mostrarFlanche ? 'flex' : 'none';
-      if (!mostrarBrazo) chkBrazo.querySelector('input').checked = false;
-      if (!mostrarEje) chkEje.querySelector('input').checked = false;
-      if (!mostrarFlanche) chkFlanche.querySelector('input').checked = false;
+      // Al desactivar el checkbox por código (no por un click real) el evento
+      // 'change' no se dispara solo, así que la limpieza de la pieza elegida
+      // (texto + id) hay que hacerla acá también, o quedaría huérfana.
+      if (!mostrarBrazo) limpiarExtraConPieza(chkBrazo, '.equipo-pedido-brazo', '.buscador-equipo-brazo-pieza');
+      if (!mostrarEje) limpiarExtraConPieza(chkEje, '.equipo-pedido-eje', '.buscador-equipo-eje-pieza');
+      if (!mostrarFlanche) limpiarExtraConPieza(chkFlanche, '.equipo-pedido-flanche', '.buscador-equipo-flanche-pieza');
+    }
+
+    function limpiarExtraConPieza(bloque, claseCheckbox, claseContenedorPieza) {
+      bloque.querySelector(claseCheckbox).checked = false;
+      const contenedorPieza = bloque.querySelector(claseContenedorPieza);
+      contenedorPieza.style.display = 'none';
+      contenedorPieza.querySelector('.buscador-input').value = '';
+      contenedorPieza.querySelector('input[type="hidden"]').value = '';
     }
 
     // Cadena se cuenta por metros, así que su cantidad admite decimales
@@ -922,6 +954,36 @@
     actualizarExtrasVisibles(); // por si ya venía un reductor precargado (editar pedido)
     actualizarCantidadSegunTipoEquipo(); // ídem, por si ya venía una cadena precargada
 
+    // Brazo/eje/flanche: cada uno es una PIEZA real del catálogo (para poder
+    // sumar su peso), no solo una bandera — al marcar la casilla aparece un
+    // buscador restringido al tipo correspondiente ('Brazo de reacción',
+    // 'Eje sólido', 'Flanche de salida'; este último tipo hay que crearlo en
+    // Config si todavía no existe, con ese nombre exacto). Al desmarcar la
+    // casilla se limpia la pieza elegida, para no dejar un id huérfano.
+    function conectarExtraConPieza(claseChk, inputCheckbox, contenedorPieza, tipoNombreFiltro) {
+      inicializarBuscadorEquipo(contenedorPieza, { tipoNombre: tipoNombreFiltro });
+      inputCheckbox.addEventListener('change', () => {
+        contenedorPieza.style.display = inputCheckbox.checked ? '' : 'none';
+        if (!inputCheckbox.checked) {
+          contenedorPieza.querySelector('.buscador-input').value = '';
+          contenedorPieza.querySelector('input[type="hidden"]').value = '';
+        }
+      });
+    }
+    conectarExtraConPieza('.chk-brazo', row.querySelector('.equipo-pedido-brazo'), row.querySelector('.buscador-equipo-brazo-pieza'), 'brazo de reaccion');
+    conectarExtraConPieza('.chk-eje', row.querySelector('.equipo-pedido-eje'), row.querySelector('.buscador-equipo-eje-pieza'), 'eje solido');
+    conectarExtraConPieza('.chk-flanche', row.querySelector('.equipo-pedido-flanche'), row.querySelector('.buscador-equipo-flanche-pieza'), 'flanche de salida');
+    // La pieza ya elegida (editando un pedido existente) se precarga por su
+    // id guardado en el value del <input type="hidden"> del propio HTML —
+    // aquí solo falta convertir ese id en el texto visible del buscador.
+    [['brazo', item?.brazoEquipoId], ['eje', item?.ejeEquipoId], ['flanche', item?.flancheEquipoId]].forEach(([nombre, id]) => {
+      if (!id) return;
+      const eq = buscarEquipoCatalogo(id);
+      if (!eq) return;
+      const contenedor = row.querySelector(`.buscador-equipo-${nombre}-pieza`);
+      contenedor.querySelector('.buscador-input').value = nombreMostrableEquipo(eq);
+    });
+
     habilitarArrastreFila(row);
 
     // Mover por select: alternativa al drag & drop, más rápida con varios
@@ -958,6 +1020,11 @@
       const llevaBrazo = fila.querySelector('.equipo-pedido-brazo').checked;
       const llevaEje = fila.querySelector('.equipo-pedido-eje').checked;
       const llevaFlanche = fila.querySelector('.equipo-pedido-flanche').checked;
+      // El id solo cuenta si la casilla sigue marcada — evita guardar una
+      // pieza "fantasma" si el campo quedó con algo pero se desmarcó la casilla.
+      const brazoEquipoId = llevaBrazo ? (fila.querySelector('.equipo-pedido-brazo-id').value || null) : null;
+      const ejeEquipoId = llevaEje ? (fila.querySelector('.equipo-pedido-eje-id').value || null) : null;
+      const flancheEquipoId = llevaFlanche ? (fila.querySelector('.equipo-pedido-flanche-id').value || null) : null;
       const marcarTodasPreparadas = fila.querySelector('.equipo-pedido-preparado').checked;
       const esMotoreductor = fila.querySelector('.equipo-pedido-es-motoreductor').checked;
 
@@ -972,7 +1039,7 @@
         // unidades de una vez; en uno que ya existía, se preserva más abajo
         // lo que ya se gestionó por unidad desde la Ficha.
         const unidadesPreparadas = marcarTodasPreparadas ? Array.from({ length: cantidad }, (_, i) => i) : [];
-        item = { tipoLinea: 'motoreductor', motorEquipoId, reductorEquipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, llevaFlanche, unidadesPreparadas };
+        item = { tipoLinea: 'motoreductor', motorEquipoId, reductorEquipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, llevaFlanche, brazoEquipoId, ejeEquipoId, flancheEquipoId, unidadesPreparadas };
       } else {
         const equipoId = fila.querySelector('.equipo-pedido-select').value;
         if (!equipoId) return; // ignora filas sin equipo elegido
@@ -983,7 +1050,7 @@
           : (parseInt(cantidadTexto, 10) || 1);
         const ordenCompra = fila.querySelector('.equipo-pedido-oc').value.trim();
         const unidadesPreparadas = marcarTodasPreparadas ? Array.from({ length: Math.ceil(cantidad) }, (_, i) => i) : [];
-        item = { tipoLinea: 'individual', equipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, llevaFlanche, unidadesPreparadas };
+        item = { tipoLinea: 'individual', equipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, llevaFlanche, brazoEquipoId, ejeEquipoId, flancheEquipoId, unidadesPreparadas };
       }
 
       // CRÍTICO: este formulario no tiene campos para los números de serial ni
@@ -1434,6 +1501,16 @@
       total += pieza.peso * (p.cantidad || 1);
     }
     return Math.round(total * 100) / 100;
+  }
+
+  // Peso a mostrar en la Ficha para un ítem: el del equipo/motoreductor en sí
+  // más el de sus piezas de brazo/eje/flanche (si eligió alguna). Si no hay
+  // ningún dato de peso disponible (ni base ni extras), sigue mostrando
+  // "Sin peso" en vez de "0 kg", que sería engañoso.
+  function pesoConExtrasFicha(pesoBase, item) {
+    const extras = pesoExtrasItem(item);
+    if ((pesoBase === null || pesoBase === undefined) && extras === 0) return null;
+    return Math.round(((pesoBase || 0) + extras) * 100) / 100;
   }
 
   function resumenSeriales(item, cantidad) {
@@ -1899,7 +1976,7 @@
     const chipParcial = (hecho > 0 && hecho < total) ? `<span class="meta-chip" title="Ya se despachó parte de este ítem">🔒 ${hecho}/${total} despachado</span>` : '';
     const cantDevueltas = devueltasCountItem(item);
     const chipDevuelto = cantDevueltas ? `<span class="meta-chip chip-devuelto" title="Unidad(es) devuelta(s)">🔵 ${cantDevueltas} devuelta${cantDevueltas > 1 ? 's' : ''}</span>` : '';
-    const metaChips = `<span class="meta-chip">${formatearPesoFicha(calcularPesoEquipo(equipo))}</span>${chipParcial}${chipDevuelto}`;
+    const metaChips = `<span class="meta-chip">${formatearPesoFicha(pesoConExtrasFicha(calcularPesoEquipo(equipo), item))}</span>${chipParcial}${chipDevuelto}`;
 
     return `
       <div class="equipo-card clicable ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''} ${cantDevueltas ? 'devuelto' : ''}" data-index="${index}" style="border-color:${color};">
@@ -1982,7 +2059,7 @@
         <div class="motoreductor-subitem">
           <div class="equipo-card-nombre">⚙️ ${nombreReductor}</div>
           <div class="equipo-card-meta">
-            <span class="meta-chip">${formatearPesoFicha(reductor?.peso)}</span>
+            <span class="meta-chip">${formatearPesoFicha(pesoConExtrasFicha(reductor?.peso, item))}</span>
           </div>
           ${puedeReemplazar ? `<button type="button" class="btn-reemplazar-equipo" data-reemplazar data-index="${index}" data-parte="reductor">🔁 Reemplazar reductor</button>` : ''}
         </div>
@@ -2681,6 +2758,17 @@
     return total;
   }
 
+  // Peso (kg) que aportan las piezas de brazo de reacción/eje sólido/flanche
+  // de salida de UN ítem (si eligió alguna del catálogo). No se multiplica
+  // por cantidad acá — quien llama a esto ya multiplica el total del ítem.
+  function pesoExtrasItem(item) {
+    let total = 0;
+    if (item?.llevaBrazo && item.brazoEquipoId) total += pesoUnitarioEquipoEnvio(buscarEquipoCatalogo(item.brazoEquipoId));
+    if (item?.llevaEje && item.ejeEquipoId) total += pesoUnitarioEquipoEnvio(buscarEquipoCatalogo(item.ejeEquipoId));
+    if (item?.llevaFlanche && item.flancheEquipoId) total += pesoUnitarioEquipoEnvio(buscarEquipoCatalogo(item.flancheEquipoId));
+    return total;
+  }
+
   // Peso (kg) de un ítem puntual de una remisión, buscando el equipo real
   // en SU pedido de origen (puede ser distinto al pedido cuya ficha se está
   // mostrando, si el envío agrupa varios pedidos).
@@ -2698,6 +2786,7 @@
       const equipo = buscarEquipoCatalogo(item.equipoId);
       pesoUnitario = pesoUnitarioEquipoEnvio(equipo);
     }
+    pesoUnitario += pesoExtrasItem(item);
     return pesoUnitario * cantidad;
   }
 
