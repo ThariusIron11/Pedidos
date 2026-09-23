@@ -3290,7 +3290,12 @@
     const compania = buscarCompania(pedido.companiaId);
     if (compania && normalizar(compania.nombre).includes(texto)) return true;
     if (pedido.contacto && normalizar(pedido.contacto).includes(texto)) return true;
-    return (pedido.equipos || []).some(item => normalizar(nombreItemPedido(item)).includes(texto));
+    if ((pedido.equipos || []).some(item => normalizar(nombreItemPedido(item)).includes(texto))) return true;
+    // Remisiones: viven dentro de los envíos (un pedido puede tener varias,
+    // repartidas en uno o más envíos), no en el propio documento del pedido.
+    return (window.enviosCache || []).some(envio =>
+      (envio.pedidos || []).some(pInfo => pInfo.pedidoId === pedido.id && normalizar(pInfo.remision).includes(texto))
+    );
   }
 
   function pedidoCoincideConBusqueda(pedido) {
@@ -3305,6 +3310,16 @@
 
   const resultadosBuscadorPedidos = document.getElementById('resultados-buscador-pedidos');
   const resultadosBuscadorSerial = document.getElementById('resultados-buscador-serial-pedidos');
+
+  function remisionCoincidenteConTexto(pedido, texto) {
+    if (!texto) return null;
+    for (const envio of (window.enviosCache || [])) {
+      for (const pInfo of (envio.pedidos || [])) {
+        if (pInfo.pedidoId === pedido.id && normalizar(pInfo.remision).includes(texto)) return pInfo.remision;
+      }
+    }
+    return null;
+  }
 
   function etiquetaPedidoSugerencia(pedido) {
     const compania = buscarCompania(pedido.companiaId);
@@ -3338,12 +3353,15 @@
       return;
     }
 
-    resultadosBuscadorPedidos.innerHTML = candidatos.map(p => `
+    resultadosBuscadorPedidos.innerHTML = candidatos.map(p => {
+      const remisionMatch = remisionCoincidenteConTexto(p, texto);
+      return `
       <div class="buscador-item" data-id="${p.id}">
         ${escapeHtml(etiquetaPedidoSugerencia(p))}
-        <span class="buscador-item-sub">${(p.equipos || []).length} ${(p.equipos || []).length === 1 ? 'equipo' : 'equipos'}${pedidoEstaCompletado(p) ? ' · Completado' : ''}</span>
+        <span class="buscador-item-sub">${(p.equipos || []).length} ${(p.equipos || []).length === 1 ? 'equipo' : 'equipos'}${pedidoEstaCompletado(p) ? ' · Completado' : ''}${remisionMatch ? ` · Remisión ${escapeHtml(remisionMatch)}` : ''}</span>
       </div>
-    `).join('');
+    `;
+    }).join('');
     resultadosBuscadorPedidos.classList.add('open');
 
     resultadosBuscadorPedidos.querySelectorAll('.buscador-item').forEach(el => {

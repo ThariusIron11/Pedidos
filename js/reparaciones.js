@@ -328,6 +328,10 @@
     subtabButtons.forEach(b => b.classList.toggle('active', b.dataset.subtab === 'reparacion-datos'));
     subtabPanels.forEach(p => p.classList.toggle('active', p.id === 'subtab-reparacion-datos'));
   }
+  function activarSubtab(nombre) {
+    subtabButtons.forEach(b => b.classList.toggle('active', b.dataset.subtab === nombre));
+    subtabPanels.forEach(p => p.classList.toggle('active', p.id === 'subtab-' + nombre));
+  }
 
   subtabButtons.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -478,8 +482,12 @@
   });
   btnEditarDesdeFicha.addEventListener('click', () => {
     const reparacion = reparacionesCache.find(r => r.id === btnEditarDesdeFicha.dataset.id);
+    // Mismo criterio que en Pedidos: si estaba viendo Equipos en la ficha,
+    // el formulario de edición abre directo en Equipos; si estaba en Datos
+    // generales, abre en Datos — igual que siempre.
+    const subtabDestino = subtabFichaActiva() === 'ficha-reparacion-equipos' ? 'reparacion-equipos' : 'reparacion-datos';
     cerrarFicha();
-    if (reparacion) abrirModalEditar(reparacion);
+    if (reparacion) abrirModalEditar(reparacion, subtabDestino);
   });
 
   // ---------- Evidencia fotográfica: link a carpeta compartida ----------
@@ -1042,13 +1050,15 @@
     inputCompaniaTexto.focus();
   }
 
-  function abrirModalEditar(reparacion) {
+  function abrirModalEditar(reparacion, subtabInicial) {
     if (borradorId === reparacion.id) {
       headerNumero.textContent = textoHeader(reparacion);
+      if (subtabInicial) activarSubtab(subtabInicial);
       modal.classList.add('open');
       return;
     }
     cargarFormularioDesdeReparacion(reparacion);
+    if (subtabInicial) activarSubtab(subtabInicial);
     borradorId = reparacion.id;
     modal.classList.add('open');
   }
