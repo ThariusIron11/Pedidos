@@ -542,6 +542,7 @@
   }
   .modal .modal-actions{
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
     gap: 8px;
     margin-top: 18px;
@@ -563,6 +564,7 @@
   }
   .modal.modal-ficha .subtabs{ padding-top: 4px; }
   .modal.modal-ficha .modal-actions{ padding-bottom: 22px; }
+  .ficha-envio-actions #btn-cancelar-envio{ margin-right: auto; }
 
   .ficha-header{
     background: linear-gradient(135deg, var(--graphite) 0%, #30384a 100%);
@@ -2445,6 +2447,59 @@
     #sidebar .brand, #sidebar .foot{ display: none; }
     nav#tabs{ flex-direction: row; padding: 0; }
     nav#tabs button{ white-space: nowrap; }
+
+    /* Fichas (Pedido/Envío/Reparación): en vez de depender de una altura
+       fija (88vh) con overflow:hidden — que en pantallas de celular puede
+       "comerse" el footer con los botones — la ficha se vuelve una columna
+       flex: encabezado fijo arriba, contenido que se encoge/estira en el
+       medio, y el footer de botones SIEMPRE visible abajo. Si aun así el
+       footer tiene más botones de los que caben en una fila, se acomodan
+       solos en varias líneas (o se apilan uno debajo del otro en Envíos,
+       que es el que más botones tiene) y, como último recurso, el propio
+       footer se vuelve deslizable verticalmente para poder "moverlo" y
+       llegar al resto de los botones sin que la ficha entera se corte. */
+    .modal-backdrop{ padding: 0; align-items: stretch; }
+    .modal.modal-ficha{
+      max-width: none;
+      width: 100%;
+      height: 100%;
+      max-height: none;
+      border-radius: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .modal.modal-ficha .ficha-header{ flex-shrink: 0; }
+    .modal.modal-ficha .subtabs{ flex-shrink: 0; }
+    .modal.modal-ficha .ficha-envio-contenido-wrap,
+    .modal.modal-ficha .subtab-panel{
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
+    }
+    .modal.modal-ficha .modal-actions{
+      flex-shrink: 0;
+      max-height: 45vh;
+      overflow-y: auto;
+      /* Sombra sutil arriba del footer: pista visual de que se puede
+         seguir bajando/deslizando para ver botones que no entraron. */
+      box-shadow: 0 -6px 10px -8px rgba(0,0,0,0.25);
+      position: relative;
+      z-index: 1;
+    }
+    /* Envíos es el caso con más botones (hasta 6) — se apilan de a uno,
+       de ancho completo, para que sean fáciles de tocar con el dedo y
+       quede claro el orden en que se puede actuar sobre el envío. */
+    .ficha-envio-actions{
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .ficha-envio-actions #btn-cancelar-envio{
+      margin-right: 0;
+      order: 10;
+      margin-top: 6px;
+      padding-top: 12px;
+      border-top: 1px dashed #e2e4e9;
+    }
   }
 </style>
 </head>
@@ -3501,15 +3556,13 @@
       <div class="ficha-envio-contenido-wrap">
         <div id="ficha-envio-contenido"><!-- generado por envios.js --></div>
       </div>
-      <div class="modal-actions" style="justify-content:space-between;">
+      <div class="modal-actions ficha-envio-actions">
         <button type="button" class="btn secondary danger-text" id="btn-cancelar-envio">Cancelar envío</button>
-        <div style="display:flex; gap:8px;">
-          <button type="button" class="btn secondary" id="btn-descargar-remesa">📷 Descargar remesa</button>
-          <button type="button" class="btn secondary" id="btn-compartir-remesa-whatsapp">📲 Compartir por WhatsApp</button>
-          <button type="button" class="btn secondary" id="btn-cerrar-ficha-envio">Cerrar</button>
-          <button type="button" class="btn secondary" id="btn-guardar-envio">Guardar cambios</button>
-          <button type="button" class="btn" id="btn-despachar-envio">Marcar como despachado</button>
-        </div>
+        <button type="button" class="btn secondary" id="btn-descargar-remesa">📷 Descargar remesa</button>
+        <button type="button" class="btn secondary" id="btn-compartir-remesa-whatsapp">📲 Compartir por WhatsApp</button>
+        <button type="button" class="btn secondary" id="btn-cerrar-ficha-envio">Cerrar</button>
+        <button type="button" class="btn secondary" id="btn-guardar-envio">Guardar cambios</button>
+        <button type="button" class="btn" id="btn-despachar-envio">Marcar como despachado</button>
       </div>
     </div>
   </div>
