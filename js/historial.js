@@ -37,6 +37,8 @@
   const form = document.getElementById('form-fabricacion');
   const inputId = document.getElementById('fabricacion-id');
   const selectSubsidiaria = document.getElementById('fabricacion-subsidiaria');
+  const grupoContacto = document.getElementById('fabricacion-grupo-contacto');
+  const selectContacto = document.getElementById('fabricacion-contacto');
   const inputDescripcion = document.getElementById('fabricacion-descripcion');
   const inputFechaInicio = document.getElementById('fabricacion-fecha-inicio');
   const inputCosto = document.getElementById('fabricacion-costo');
@@ -148,7 +150,37 @@
 
   document.addEventListener('clientes:cambio', () => {
     poblarSelectSubsidiarias();
+    // Si el modal está abierto y la subsidiaria elegida sigue siendo válida,
+    // sus contactos también pueden haber cambiado (se agregó/renombró uno).
+    if (modal.classList.contains('open')) poblarSelectContacto(selectSubsidiaria.value, selectContacto.value);
     renderTodo(); // los nombres de subsidiaria mostrados en las tarjetas/tabla pueden haber cambiado
+  });
+
+  // ---------- Select de contacto de recibir pedidos (depende de la subsidiaria elegida) ----------
+  // Por defecto se usa el PRIMER contacto registrado en esa compañía, pero
+  // se deja el select abierto por si en el futuro una compañía llega a
+  // tener más de uno y hace falta elegir cuál recibió esta pieza.
+  function poblarSelectContacto(subsidiariaId, contactoPreferido) {
+    const cliente = (window.clientesCache || []).find(c => c.id === subsidiariaId);
+    const contactos = (cliente?.contactosPedidos || []).filter(Boolean);
+
+    if (!contactos.length) {
+      grupoContacto.style.display = 'none';
+      selectContacto.innerHTML = '';
+      return;
+    }
+    grupoContacto.style.display = '';
+    selectContacto.innerHTML = contactos.map(nombre => `<option value="${escapeHtml(nombre)}">${escapeHtml(nombre)}</option>`).join('');
+    // Si el contacto que ya traía la pieza (editando) sigue en la lista, se
+    // respeta; si no (pieza nueva, o ese contacto ya no existe), se cae al
+    // primero de la compañía — el comportamiento "por defecto" pedido.
+    selectContacto.value = contactos.includes(contactoPreferido) ? contactoPreferido : contactos[0];
+  }
+
+  selectSubsidiaria.addEventListener('change', () => {
+    // Cambiar de subsidiaria es una compañía distinta — no tiene sentido
+    // conservar el contacto anterior, así que siempre vuelve al primero.
+    poblarSelectContacto(selectSubsidiaria.value, null);
   });
 
   // ---------- Cargar datos limpios en el formulario ----------
@@ -158,6 +190,7 @@
     poblarSelectSubsidiarias();
     inputId.value = pieza ? pieza.id : '';
     selectSubsidiaria.value = pieza?.subsidiariaId || '';
+    poblarSelectContacto(selectSubsidiaria.value, pieza?.contacto || null);
     inputDescripcion.value = pieza?.descripcion || '';
     inputFechaInicio.value = pieza?.fechaInicio || fechaHoyISO();
     inputCosto.value = pieza?.costo != null ? Number(pieza.costo).toLocaleString('es-CO') : '';
@@ -216,6 +249,7 @@
 
     const datos = {
       subsidiariaId: selectSubsidiaria.value,
+      contacto: grupoContacto.style.display !== 'none' ? (selectContacto.value || null) : null,
       descripcion: inputDescripcion.value.trim(),
       fechaInicio: inputFechaInicio.value || fechaHoyISO(),
       costo: parsearCosto(inputCosto.value)
@@ -414,11 +448,12 @@
           : '';
         const costoTexto = formatearCosto(pieza.costo);
         const costoHtml = costoTexto ? ` · ${costoTexto}` : '';
+        const contactoHtml = pieza.contacto ? ` · 👤 ${escapeHtml(pieza.contacto)}` : '';
         return `
           <div class="pieza-row" data-id="${pieza.id}">
             <div class="pieza-info">
               <div class="pieza-descripcion">${escapeHtml(pieza.descripcion)}</div>
-              <div class="pieza-fecha">Enviado: ${formatearFecha(pieza.fechaInicio)} ${diasHtml}${costoHtml}</div>
+              <div class="pieza-fecha">Enviado: ${formatearFecha(pieza.fechaInicio)} ${diasHtml}${costoHtml}${contactoHtml}</div>
             </div>
             <button type="button" class="btn-recoger" data-id="${pieza.id}">✔ Marcar recogido</button>
             <button type="button" class="btn-icon-inline btn-eliminar-pieza" data-id="${pieza.id}" title="Eliminar">🗑️</button>
@@ -493,6 +528,7 @@
       return `
         <tr>
           <td>${nombreHtml}</td>
+          <td>${pieza.contacto ? escapeHtml(pieza.contacto) : '<span style="color:var(--ink-soft);">—</span>'}</td>
           <td>${escapeHtml(pieza.descripcion)}</td>
           <td>${formatearFecha(pieza.fechaInicio)}</td>
           <td>${formatearFecha(pieza.fechaRecogido)}</td>

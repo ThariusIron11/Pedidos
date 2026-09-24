@@ -2702,8 +2702,18 @@
           <button type="button" class="btn" id="btn-nuevo-cliente">+ Nueva compañía</button>
         </div>
 
-        <div class="form-group" style="max-width:340px;">
-          <input type="text" id="buscador-clientes" placeholder="Buscar por empresa o encargado...">
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">
+          <div class="form-group" style="max-width:340px; margin-bottom:0; flex:1;">
+            <input type="text" id="buscador-clientes" placeholder="Buscar por empresa o encargado...">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <select id="filtro-tipo-clientes">
+              <option value="">Todos los tipos</option>
+              <option value="normal">🏢 Empresa normal</option>
+              <option value="subsidiaria">🔗 Subsidiaria</option>
+              <option value="subsidiaria_edisatech">🏭 Subsidiaria de Edisatech</option>
+            </select>
+          </div>
         </div>
 
         <table class="data-table" id="tabla-clientes">
@@ -2787,6 +2797,7 @@
             <thead>
               <tr>
                 <th>Subsidiaria</th>
+                <th>Contacto</th>
                 <th>Qué se mandó a hacer</th>
                 <th>Fecha inicio</th>
                 <th>Fecha recogido</th>
@@ -2920,6 +2931,12 @@
         <div class="form-group">
           <label for="fabricacion-subsidiaria">Subsidiaria (Edisatech)</label>
           <select id="fabricacion-subsidiaria" required></select>
+        </div>
+
+        <div class="form-group" id="fabricacion-grupo-contacto" style="display:none;">
+          <label for="fabricacion-contacto">Contacto de recibir pedidos</label>
+          <select id="fabricacion-contacto"></select>
+          <div class="campo-ayuda">Por defecto se usa el primero registrado en esa compañía — puedes elegir otro si tiene más de uno.</div>
         </div>
 
         <div class="form-group">
@@ -3752,12 +3769,12 @@
 
   <!-- Un archivo JS por pestaña -->
   <script src="js/config.js?v=20"></script>
-  <script src="js/clientes.js?v=19"></script>
+  <script src="js/clientes.js?v=20"></script>
   <script src="js/equipos.js?v=21"></script>
   <script src="js/pedidos.js?v=26"></script>
   <script src="js/envios.js?v=20"></script>
   <script src="js/reparaciones.js?v=22"></script>
-  <script src="js/historial.js?v=19"></script>
+  <script src="js/historial.js?v=20"></script>
 
 </body>
 </html>

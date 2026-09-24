@@ -32,6 +32,7 @@
   const modalTitulo = document.getElementById('modal-cliente-titulo');
   const form         = document.getElementById('form-cliente');
   const buscador      = document.getElementById('buscador-clientes');
+  const filtroTipo     = document.getElementById('filtro-tipo-clientes');
 
   const inputId               = document.getElementById('cliente-id');
   const inputNombre           = document.getElementById('cliente-nombre');
@@ -46,6 +47,7 @@
 
   let clientesCache = []; // [{id, ...datos}] — también expuesto en window.clientesCache
   let filtroTexto = '';
+  let filtroTipoValor = '';
 
   // Estado del borrador: 'id' del registro en edición ('' = compañía nueva),
   // o null si no hay ningún borrador activo (el modal fue cancelado/guardado).
@@ -313,7 +315,13 @@
     renderTabla();
   });
 
+  filtroTipo.addEventListener('change', () => {
+    filtroTipoValor = filtroTipo.value;
+    renderTabla();
+  });
+
   function clienteCoincideConFiltro(cliente) {
+    if (filtroTipoValor && (cliente.tipo || 'normal') !== filtroTipoValor) return false;
     if (!filtroTexto) return true;
     if (normalizar(cliente.nombre).includes(filtroTexto)) return true;
     const contactos = cliente.contactosPedidos || [];
