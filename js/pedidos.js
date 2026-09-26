@@ -1015,7 +1015,15 @@
     const equiposOriginales = pedidoOriginal?.equipos || [];
 
     const filas = equiposPedidoList.querySelectorAll('.equipo-pedido-row-wrap');
-    const items = [];
+    // CRÍTICO: los envíos identifican cada equipo por su POSICIÓN dentro de
+    // este arreglo (itemIndex), no por ningún id propio. Los contenedores
+    // permiten arrastrar una fila a otro grupo (o moverla con el select),
+    // lo cual cambia su posición VISUAL en el DOM — pero guardar en ese
+    // mismo orden visual desordenaría el arreglo real y dejaría a los
+    // envíos ya despachados apuntando al equipo equivocado. Por eso acá se
+    // arma cada item por separado (`filasConItem`) y solo AL FINAL se decide
+    // el orden de guardado, sin usar el orden del DOM para eso.
+    const filasConItem = [];
     filas.forEach(fila => {
       const llevaBrazo = fila.querySelector('.equipo-pedido-brazo').checked;
       const llevaEje = fila.querySelector('.equipo-pedido-eje').checked;
@@ -1059,8 +1067,9 @@
       // (por ejemplo, al agregar un equipo nuevo se sobrescribiría TODO el
       // arreglo de equipos, borrando los seriales de los demás).
       const origIdxRaw = fila.dataset.originalIndex;
-      if (origIdxRaw !== undefined && origIdxRaw !== '') {
-        const original = equiposOriginales[parseInt(origIdxRaw, 10)];
+      const origIdx = (origIdxRaw !== undefined && origIdxRaw !== '') ? parseInt(origIdxRaw, 10) : null;
+      if (origIdx !== null) {
+        const original = equiposOriginales[origIdx];
         if (original) {
           if (original.seriales) item.seriales = original.seriales;
           if (original.serialesMotor) item.serialesMotor = original.serialesMotor;
@@ -1075,15 +1084,24 @@
         }
       }
 
-      // El contenedor se determina por dónde está la fila AHORA en el DOM
-      // (pudo haberse arrastrado a otro desde que se abrió el formulario),
-      // no por lo que traía guardado originalmente.
+      // El contenedor SÍ se determina por dónde está la fila AHORA en el DOM
+      // (pudo haberse arrastrado a otro desde que se abrió el formulario) —
+      // esto es puramente visual/de agrupación y no afecta el itemIndex.
       const contenedorPadre = fila.closest('.contenedor-pedido');
       item.contenedorId = contenedorPadre ? contenedorPadre.dataset.contenedorId : null;
 
-      items.push(item);
+      filasConItem.push({ item, origIdx });
     });
-    return items;
+
+    // Orden de guardado: primero los equipos que YA EXISTÍAN, en su mismo
+    // orden relativo de siempre (sin importar el contenedor al que se hayan
+    // arrastrado), y solo al final los equipos NUEVOS — en una posición que
+    // ningún envío pudo haber referenciado todavía. Esto es lo que evita que
+    // un simple arrastre a un contenedor deje a un envío ya despachado
+    // apuntando al equipo equivocado.
+    const existentes = filasConItem.filter(f => f.origIdx !== null).sort((a, b) => a.origIdx - b.origIdx);
+    const nuevos = filasConItem.filter(f => f.origIdx === null);
+    return [...existentes, ...nuevos].map(f => f.item);
   }
 
   // Uno por cada .contenedor-pedido actualmente en el DOM, en el orden en
