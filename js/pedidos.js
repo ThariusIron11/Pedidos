@@ -101,7 +101,12 @@
 
   const TIPO_PEDIDO_LABEL = {
     normal: { texto: 'Normal', clase: 'tag-pedido-normal' },
-    reparacion: { texto: 'Reparación', clase: 'tag-pedido-reparacion' }
+    reparacion: { texto: 'Reparación', clase: 'tag-pedido-reparacion' },
+    // Traslado: mover equipos ya existentes a otra sede — no es una venta
+    // nueva. Funciona exactamente igual a un pedido Normal (misma compañía,
+    // mismo flujo de Envíos); lo único distinto es la etiqueta y una
+    // excepción puntual en el aviso de serial duplicado (ver buscarUsosDeSerial).
+    traslado: { texto: 'Traslado', clase: 'tag-pedido-traslado' }
   };
 
   let pedidosCache = [];
@@ -2060,6 +2065,20 @@
     const reemplazoMotor = reemplazoDeParte(item, 'motor');
     const reemplazoReductor = reemplazoDeParte(item, 'reductor');
 
+    // Cuando se reemplaza SOLO una parte, el resumen combinado de abajo
+    // ("Serial motor / Serial reductor") se oculta entero — así que la
+    // parte que NO se tocó necesita mostrar su propio serial aquí mismo, o
+    // se queda sin ningún lugar donde aparecer. Si NINGUNA se reemplazó,
+    // esto se deja vacío a propósito: el resumen combinado de siempre ya lo
+    // muestra, y no hace falta duplicarlo.
+    function serialParteSola(usaSerial, serial) {
+      if (!usaSerial) return '';
+      const s = (serial || '').trim();
+      return `<div class="equipo-card-serial ${s ? 'completo' : 'pendiente'}" style="display:block;">${s ? '🔢' : '🔴'} ${escapeHtml(s || 'Falta serial')}</div>`;
+    }
+    const serialMotorSolo = (!reemplazoMotor && reemplazoReductor) ? serialParteSola(usaSerialMotor, (item.serialesMotor || [])[0]) : '';
+    const serialReductorSolo = (!reemplazoReductor && reemplazoMotor) ? serialParteSola(usaSerialReductor, (item.serialesReductor || [])[0]) : '';
+
     const filaMotorHtml = reemplazoMotor
       ? filaReemplazoHtml('motor', '⚡', buscarEquipoCatalogo(reemplazoMotor.equipoId), reemplazoMotor.serial, motor, (item.serialesMotor || [])[0], index, conteoCompletadoItem(item).hecho === 0)
       : `
@@ -2068,6 +2087,7 @@
           <div class="equipo-card-meta">
             <span class="meta-chip">${formatearPesoFicha(motor?.peso)}</span>
           </div>
+          ${serialMotorSolo}
           ${puedeReemplazar ? `<button type="button" class="btn-reemplazar-equipo" data-reemplazar data-index="${index}" data-parte="motor">🔁 Reemplazar motor</button>` : ''}
         </div>
       `;
@@ -2079,6 +2099,7 @@
           <div class="equipo-card-meta">
             <span class="meta-chip">${formatearPesoFicha(pesoConExtrasFicha(reductor?.peso, item))}</span>
           </div>
+          ${serialReductorSolo}
           ${puedeReemplazar ? `<button type="button" class="btn-reemplazar-equipo" data-reemplazar data-index="${index}" data-parte="reductor">🔁 Reemplazar reductor</button>` : ''}
         </div>
       `;
@@ -2405,6 +2426,12 @@
       (lista || []).forEach((s, u) => {
         if (!s || s.trim() !== serial) return;
         if ((item.unidadesDevueltas || []).includes(u)) return; // devuelto: el serial queda libre otra vez
+        // Traslado ya despachado: el equipo se considera que YA llegó a la
+        // otra sede, así que ese serial queda libre para usarse en
+        // cualquier otro pedido — igual que una devolución. Mientras el
+        // traslado todavía se está armando (no despachado), SÍ cuenta como
+        // uso normal y genera el aviso de conflicto, como cualquier pedido.
+        if (pedido.tipo === 'traslado' && (item.unidadesCompletadas || []).includes(u)) return;
         if (excluir && pedido.id === excluir.pedidoId && indexItem === excluir.indexItem && campo === excluir.campo && u === excluir.unidad) return;
         usos.push({ pedido, item, campo, unidad: u });
       });
