@@ -1862,6 +1862,43 @@
     border-color: var(--graphite);
   }
 
+  .filtros-pedidos{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .filtros-pedidos-activos{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .filtro-chip-activo{
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:12.5px; font-weight:600;
+    background:var(--graphite); color:#fff;
+    border-radius:999px; padding:6px 6px 6px 12px; white-space:nowrap;
+  }
+  .filtro-chip-quitar{
+    font-family:inherit; font-size:13px; line-height:1;
+    width:20px; height:20px; border:none; border-radius:50%;
+    background:rgba(255,255,255,.18); color:#fff; cursor:pointer; padding:0;
+  }
+  .filtro-chip-quitar:hover{ background:rgba(255,255,255,.35); }
+  .filtro-limpiar{
+    font-family:inherit; font-size:12px; font-weight:600; color:var(--ink-soft);
+    background:none; border:none; cursor:pointer; text-decoration:underline; padding:4px;
+  }
+  .filtro-agregar-wrap{ position:relative; }
+  .filtro-menu{
+    display:none; position:absolute; top:calc(100% + 6px); left:0; z-index:30;
+    min-width:210px; background:#fff; border:1px solid #d4d7dc; border-radius:10px;
+    box-shadow:0 8px 24px rgba(0,0,0,.12); padding:6px;
+  }
+  .filtro-menu.open{ display:block; }
+  .filtro-menu-titulo{
+    font-size:10.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--ink-soft); padding:6px 10px 2px;
+  }
+  .filtro-menu-item{
+    display:flex; align-items:center; gap:8px; width:100%; text-align:left;
+    font-family:inherit; font-size:13px; background:none; border:none;
+    border-radius:6px; padding:8px 10px; cursor:pointer;
+  }
+  .filtro-menu-item:hover{ background:#f3f4f6; }
+  .filtro-menu-vacio{ font-size:12.5px; color:var(--ink-soft); padding:8px 10px; }
+
   .ficha-envio-contenido-wrap{
     padding: 20px 26px;
     max-height: 60vh;
@@ -2597,17 +2634,12 @@
             <input type="text" id="buscador-serial-pedidos" placeholder="Buscar por número de serial..." autocomplete="off">
             <div class="buscador-resultados" id="resultados-buscador-serial-pedidos"></div>
           </div>
-          <div class="filtro-estado-pedidos" id="filtro-estado-pedidos">
-            <button type="button" class="chip-filtro-estado" data-estado="en_proceso">En proceso</button>
-            <button type="button" class="chip-filtro-estado" data-estado="completado">Completado</button>
-            <button type="button" class="chip-filtro-estado" data-estado="devolucion">Devolución</button>
-            <button type="button" class="chip-filtro-estado" data-estado="todos">Todos</button>
-          </div>
-          <div class="filtro-estado-pedidos" id="filtro-tipo-pedidos" title="Filtrar por tipo de pedido">
-            <button type="button" class="chip-filtro-estado" data-tipo="todos">Todos los tipos</button>
-            <button type="button" class="chip-filtro-estado" data-tipo="normal">Normal</button>
-            <button type="button" class="chip-filtro-estado" data-tipo="reparacion">Reparación</button>
-            <button type="button" class="chip-filtro-estado" data-tipo="traslado">Traslado</button>
+          <div class="filtros-pedidos" id="filtros-pedidos">
+            <div class="filtros-pedidos-activos" id="filtros-pedidos-activos"></div>
+            <div class="filtro-agregar-wrap">
+              <button type="button" class="chip-filtro-estado" id="btn-agregar-filtro-pedidos">＋ Filtro</button>
+              <div class="filtro-menu" id="menu-filtros-pedidos"></div>
+            </div>
           </div>
         </div>
 
@@ -3790,7 +3822,7 @@
   <script src="js/config.js?v=20"></script>
   <script src="js/clientes.js?v=20"></script>
   <script src="js/equipos.js?v=21"></script>
-  <script src="js/pedidos.js?v=30"></script>
+  <script src="js/pedidos.js?v=31"></script>
   <script src="js/envios.js?v=20"></script>
   <script src="js/reparaciones.js?v=22"></script>
   <script src="js/historial.js?v=20"></script>

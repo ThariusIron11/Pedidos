@@ -3330,32 +3330,112 @@
 
   const buscadorPedidos = document.getElementById('buscador-pedidos');
   const buscadorSerialPedidos = document.getElementById('buscador-serial-pedidos');
-  const chipsFiltroEstado = document.querySelectorAll('#filtro-estado-pedidos .chip-filtro-estado');
-  let filtroEstadoPedidos = 'en_proceso'; // predeterminado
-  const chipsFiltroTipo = document.querySelectorAll('#filtro-tipo-pedidos .chip-filtro-estado');
-  let filtroTipoPedidos = 'todos'; // 'todos' | 'normal' | 'reparacion' | 'traslado'
+  // ----- Filtros agregables (estado + tipo) -----
+  // Cada filtro se agrega desde el botón "＋ Filtro" y aparece como una
+  // etiqueta con su icono y una "×" para retirarlo. Reglas: dentro de un mismo
+  // grupo se suman (Normal + Traslado = ambos tipos); entre grupos se combinan
+  // (Traslado + En proceso = solo traslados en proceso). Sin filtros = todos.
+  const FILTROS_PEDIDOS = [
+    { grupo: 'estado', clave: 'en_proceso',  icono: '⏳', texto: 'En proceso' },
+    { grupo: 'estado', clave: 'completado',  icono: '✅', texto: 'Completado' },
+    { grupo: 'estado', clave: 'devolucion',  icono: '↩️', texto: 'Devolución' },
+    { grupo: 'tipo',   clave: 'normal',      icono: '📦', texto: 'Normal' },
+    { grupo: 'tipo',   clave: 'reparacion',  icono: '🔧', texto: 'Reparación' },
+    { grupo: 'tipo',   clave: 'traslado',    icono: '🚚', texto: 'Traslado' }
+  ];
+  const TITULO_GRUPO_FILTRO = { estado: 'Estado', tipo: 'Tipo de pedido' };
+  const filtrosActivosPedidos = { estado: new Set(['en_proceso']), tipo: new Set() }; // "En proceso" queda por defecto
+
+  const contenedorFiltrosActivos = document.getElementById('filtros-pedidos-activos');
+  const btnAgregarFiltro = document.getElementById('btn-agregar-filtro-pedidos');
+  const menuFiltros = document.getElementById('menu-filtros-pedidos');
+
+  function hayFiltrosActivosPedidos() {
+    return filtrosActivosPedidos.estado.size > 0 || filtrosActivosPedidos.tipo.size > 0;
+  }
+
+  // El aviso/ficha de devolución solo aplica cuando "Devolución" es el único
+  // filtro de estado (igual que cuando era un chip exclusivo).
+  function soloFiltroDevolucion() {
+    return filtrosActivosPedidos.estado.size === 1 && filtrosActivosPedidos.estado.has('devolucion');
+  }
+
+  function refrescarPedidosPorFiltros() {
+    renderFiltrosPedidos();
+    renderTabla();
+    mostrarSugerenciasPedidos();
+    mostrarSugerenciasSerial();
+  }
+
+  function agregarFiltroPedidos(grupo, clave) {
+    filtrosActivosPedidos[grupo].add(clave);
+    cerrarMenuFiltros();
+    refrescarPedidosPorFiltros();
+  }
+
+  function quitarFiltroPedidos(grupo, clave) {
+    filtrosActivosPedidos[grupo].delete(clave);
+    refrescarPedidosPorFiltros();
+  }
+
+  function renderFiltrosPedidos() {
+    const activos = FILTROS_PEDIDOS.filter(f => filtrosActivosPedidos[f.grupo].has(f.clave));
+    contenedorFiltrosActivos.innerHTML = activos.map(f => `
+      <span class="filtro-chip-activo">
+        <span>${f.icono}</span><span>${f.texto}</span>
+        <button type="button" class="filtro-chip-quitar" data-grupo="${f.grupo}" data-clave="${f.clave}" aria-label="Quitar filtro ${f.texto}" title="Quitar filtro">×</button>
+      </span>`).join('') +
+      (activos.length > 1 ? '<button type="button" class="filtro-limpiar" id="btn-limpiar-filtros-pedidos">Limpiar todo</button>' : '');
+
+    contenedorFiltrosActivos.querySelectorAll('.filtro-chip-quitar').forEach(btn => {
+      btn.addEventListener('click', () => quitarFiltroPedidos(btn.dataset.grupo, btn.dataset.clave));
+    });
+    const btnLimpiar = document.getElementById('btn-limpiar-filtros-pedidos');
+    if (btnLimpiar) {
+      btnLimpiar.addEventListener('click', () => {
+        filtrosActivosPedidos.estado.clear();
+        filtrosActivosPedidos.tipo.clear();
+        refrescarPedidosPorFiltros();
+      });
+    }
+    renderMenuFiltros();
+  }
+
+  // El menú solo ofrece los filtros que todavía no están agregados.
+  function renderMenuFiltros() {
+    const disponibles = FILTROS_PEDIDOS.filter(f => !filtrosActivosPedidos[f.grupo].has(f.clave));
+    if (!disponibles.length) {
+      menuFiltros.innerHTML = '<div class="filtro-menu-vacio">Ya agregaste todos los filtros</div>';
+      return;
+    }
+    let html = '';
+    ['estado', 'tipo'].forEach(grupo => {
+      const items = disponibles.filter(f => f.grupo === grupo);
+      if (!items.length) return;
+      html += `<div class="filtro-menu-titulo">${TITULO_GRUPO_FILTRO[grupo]}</div>` +
+        items.map(f => `<button type="button" class="filtro-menu-item" data-grupo="${f.grupo}" data-clave="${f.clave}"><span>${f.icono}</span><span>${f.texto}</span></button>`).join('');
+    });
+    menuFiltros.innerHTML = html;
+    menuFiltros.querySelectorAll('.filtro-menu-item').forEach(btn => {
+      btn.addEventListener('click', () => agregarFiltroPedidos(btn.dataset.grupo, btn.dataset.clave));
+    });
+  }
+
+  function cerrarMenuFiltros() { menuFiltros.classList.remove('open'); }
+
+  btnAgregarFiltro.addEventListener('click', (e) => {
+    e.stopPropagation();
+    menuFiltros.classList.toggle('open');
+  });
+  document.addEventListener('click', (e) => {
+    if (!menuFiltros.contains(e.target) && e.target !== btnAgregarFiltro) cerrarMenuFiltros();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarMenuFiltros(); });
+
+  renderFiltrosPedidos();
+
   let filtroTextoPedidos = '';
   let filtroSerialPedidos = '';
-
-  chipsFiltroEstado.forEach(chip => {
-    chip.classList.toggle('active', chip.dataset.estado === filtroEstadoPedidos);
-    chip.addEventListener('click', () => {
-      filtroEstadoPedidos = chip.dataset.estado;
-      chipsFiltroEstado.forEach(c => c.classList.toggle('active', c === chip));
-      renderTabla();
-    });
-  });
-
-  chipsFiltroTipo.forEach(chip => {
-    chip.classList.toggle('active', chip.dataset.tipo === filtroTipoPedidos);
-    chip.addEventListener('click', () => {
-      filtroTipoPedidos = chip.dataset.tipo;
-      chipsFiltroTipo.forEach(c => c.classList.toggle('active', c === chip));
-      renderTabla();
-      mostrarSugerenciasPedidos();
-      mostrarSugerenciasSerial();
-    });
-  });
 
   // Tipo "efectivo" de un pedido: si viene de una reparación cuenta como
   // 'reparacion' aunque su campo tipo falte; si no tiene tipo, es 'normal'.
@@ -3364,17 +3444,21 @@
     return pedido.tipo || 'normal';
   }
 
-  // Aplica los filtros activos (estado + tipo) (chip: en proceso / completado /
-  // devolución / todos) a una lista de pedidos. La usan tanto la tabla como
-  // las sugerencias de autocompletar de los dos buscadores, para que las
-  // sugerencias siempre queden "atadas" al filtro visible en pantalla.
+  // Aplica los filtros activos (estado + tipo) a una lista de pedidos. La
+  // usan tanto la tabla como las sugerencias de autocompletar de los dos
+  // buscadores, para que siempre queden "atadas" a los filtros visibles.
   function pedidosPorFiltroEstado(lista) {
+    const { estado, tipo } = filtrosActivosPedidos;
     return lista.filter(pedido => {
-      if (filtroTipoPedidos !== 'todos' && tipoEfectivoPedido(pedido) !== filtroTipoPedidos) return false;
-      if (filtroEstadoPedidos === 'completado') return pedidoEstaCompletado(pedido);
-      if (filtroEstadoPedidos === 'en_proceso') return !pedidoEstaCompletado(pedido);
-      if (filtroEstadoPedidos === 'devolucion') return pedidoTieneDevolucion(pedido);
-      return true; // todos
+      if (tipo.size && !tipo.has(tipoEfectivoPedido(pedido))) return false;
+      if (estado.size) {
+        const cumpleEstado =
+          (estado.has('completado') && pedidoEstaCompletado(pedido)) ||
+          (estado.has('en_proceso') && !pedidoEstaCompletado(pedido)) ||
+          (estado.has('devolucion') && pedidoTieneDevolucion(pedido));
+        if (!cumpleEstado) return false;
+      }
+      return true;
     });
   }
 
@@ -3456,7 +3540,7 @@
   }
 
   function irAPedidoDesdeSugerencia(pedido) {
-    if (filtroEstadoPedidos === 'devolucion') abrirFichaDevolucion(pedido);
+    if (soloFiltroDevolucion()) abrirFichaDevolucion(pedido);
     else abrirFicha(pedido);
   }
 
@@ -3475,7 +3559,7 @@
       .slice(0, 8);
 
     if (!candidatos.length) {
-      resultadosBuscadorPedidos.innerHTML = `<div class="buscador-item-vacio">Sin pedidos que coincidan${(filtroEstadoPedidos !== 'todos' || filtroTipoPedidos !== 'todos') ? ' con este filtro' : ''}</div>`;
+      resultadosBuscadorPedidos.innerHTML = `<div class="buscador-item-vacio">Sin pedidos que coincidan${hayFiltrosActivosPedidos() ? ' con este filtro' : ''}</div>`;
       resultadosBuscadorPedidos.classList.add('open');
       return;
     }
@@ -3523,7 +3607,7 @@
     const limitados = candidatos.slice(0, 8);
 
     if (!limitados.length) {
-      resultadosBuscadorSerial.innerHTML = `<div class="buscador-item-vacio">Sin seriales que coincidan${(filtroEstadoPedidos !== 'todos' || filtroTipoPedidos !== 'todos') ? ' con este filtro' : ''}</div>`;
+      resultadosBuscadorSerial.innerHTML = `<div class="buscador-item-vacio">Sin seriales que coincidan${hayFiltrosActivosPedidos() ? ' con este filtro' : ''}</div>`;
       resultadosBuscadorSerial.classList.add('open');
       return;
     }
@@ -3554,15 +3638,6 @@
   buscadorPedidos.addEventListener('blur', () => setTimeout(() => ocultarResultados(resultadosBuscadorPedidos), 120));
   buscadorSerialPedidos.addEventListener('focus', mostrarSugerenciasSerial);
   buscadorSerialPedidos.addEventListener('blur', () => setTimeout(() => ocultarResultados(resultadosBuscadorSerial), 120));
-
-  // Si el usuario cambia el chip de estado con una búsqueda ya escrita, las
-  // sugerencias deben recalcularse también (no solo la tabla).
-  chipsFiltroEstado.forEach(chip => {
-    chip.addEventListener('click', () => {
-      mostrarSugerenciasPedidos();
-      mostrarSugerenciasSerial();
-    });
-  });
 
   // ---------- Expandible "Ver equipos" en la tarjeta de la lista ----------
   // Resumen compacto por ítem: nombre + extras (brazo/eje/flanche) + cuántas
@@ -3632,7 +3707,7 @@
       listaContenedor.innerHTML = '';
       tablaEmpty.style.display = 'block';
       tablaEmpty.textContent = pedidosCache.length
-        ? (filtroEstadoPedidos === 'devolucion'
+        ? (soloFiltroDevolucion()
             ? 'Ningún pedido tiene devoluciones registradas (con este filtro/búsqueda).'
             : 'Ningún pedido coincide con el filtro/búsqueda.')
         : 'Todavía no hay pedidos registrados.';
@@ -3707,7 +3782,7 @@
         if (e.target.closest('button')) return; // los botones tienen su propio comportamiento
         const pedido = pedidosCache.find(p => p.id === card.dataset.id);
         if (!pedido) return;
-        if (filtroEstadoPedidos === 'devolucion') abrirFichaDevolucion(pedido);
+        if (soloFiltroDevolucion()) abrirFichaDevolucion(pedido);
         else abrirFicha(pedido);
       });
     });
