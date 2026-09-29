@@ -7,8 +7,9 @@
 // del cliente) y el EQUIPO que ingresa.
 //
 // Una reparación solo puede traer UN equipo: un motor, un reductor, un
-// motor ZD, o un motoreductor (motor + reductor juntos, con el checkbox
-// "Es Motoreductor"). El "Tipo" se busca en el mismo catálogo de Equipos
+// motor ZD, un reductor ZD, o un motoreductor (motor + reductor juntos, con
+// el checkbox "Es Motoreductor"; si además se marca "Es ZD" es un
+// motoreductor ZD: motor ZD + reductor ZD). El "Tipo" se busca en el mismo catálogo de Equipos
 // que usa Pedidos, con autocompletar. Si el equipo elegido en el catálogo
 // tiene número de serial habilitado ("usaSerial"), aparece un campo para
 // escribirlo. Si el equipo NO existe en el catálogo (porque no es de
@@ -44,8 +45,8 @@
 //             vinculado, se elimina al marcarla),
 //   equipo: null, o uno de:
 //     { tipoLinea: 'individual', tipoId, equipoId, serial? }
-//     { tipoLinea: 'motoreductor', motorEquipoId, motorSerial?,
-//       reductorEquipoId, reductorSerial? }
+//     { tipoLinea: 'motoreductor', zd? (true = motoreductor ZD),
+//       motorEquipoId, motorSerial?, reductorEquipoId, reductorSerial? }
 // }
 //
 // Depende también de window.pedidosCache (expuesto por pedidos.js) para
@@ -240,6 +241,7 @@
   }
 
   const chkEsMotoreductor = document.getElementById('reparacion-equipo-es-motoreductor');
+  const chkMotoreductorZD = document.getElementById('reparacion-motoreductor-es-zd');
   const bloqueIndividual = document.getElementById('reparacion-bloque-individual');
   const bloqueMotoreductor = document.getElementById('reparacion-bloque-motoreductor');
   const selectTipoFiltro = document.getElementById('reparacion-equipo-tipo-filtro');
@@ -320,6 +322,35 @@
   function tipoIdPorNombre(nombreNormalizado) {
     const tipo = (window.tiposEquipoCache || []).find(t => normalizar(t.nombre) === nombreNormalizado);
     return tipo ? tipo.id : '';
+  }
+
+  // Tipos de catálogo que puede ser una pieza individual. Un motoreductor
+  // puede entrar de DOS formas: como una sola pieza del catálogo (tipo
+  // "Motoreductor" / "Motoreductor ZD", un solo serial) o armado con sus dos
+  // piezas (checkbox "Es Motoreductor": motor + reductor, cada uno con su
+  // serial; con "Es ZD" usa Motor ZD + Reductor ZD).
+  const TIPOS_INDIVIDUALES_PERMITIDOS = ['motor', 'reductor', 'motor zd', 'reductor zd', 'motoreductor', 'motoreductor zd'];
+
+  // Nombres (normalizados) de los tipos de catálogo que usa un motoreductor:
+  // el normal usa Motor + Reductor; el ZD usa Motor ZD + Reductor ZD.
+  function nombresTipoMotoreductor(zd) {
+    return zd
+      ? { linea: 'motoreductor zd', motor: 'motor zd', reductor: 'reductor zd' }
+      : { linea: 'motoreductor', motor: 'motor', reductor: 'reductor' };
+  }
+
+  // Icono de la línea: si existe el tipo "Motoreductor ZD" en Config se usa
+  // ese; si no, el de "Motoreductor".
+  function tipoIdLineaMotoreductor(zd) {
+    return (zd && tipoIdPorNombre('motoreductor zd')) || tipoIdPorNombre('motoreductor');
+  }
+
+  function etiquetaMotoreductor(zd) {
+    return zd ? 'Motoreductor ZD' : 'Motoreductor';
+  }
+
+  function esMotoreductorZDEnFormulario() {
+    return chkEsMotoreductor.checked && chkMotoreductorZD.checked;
   }
 
   // ---------- Sub-pestañas del modal (Datos generales / Equipos) ----------
@@ -444,8 +475,9 @@
       `;
     };
 
+    const ntFicha = nombresTipoMotoreductor(!!reparacion.equipo?.zd);
     const filas = item.tipoLinea === 'motoreductor'
-      ? filaHtml('motor', 'motor', item.motorEquipoId, (item.serialesMotor || [])[0]) + filaHtml('reductor', 'reductor', item.reductorEquipoId, (item.serialesReductor || [])[0])
+      ? filaHtml('motor', ntFicha.motor, item.motorEquipoId, (item.serialesMotor || [])[0]) + filaHtml('reductor', ntFicha.reductor, item.reductorEquipoId, (item.serialesReductor || [])[0])
       : filaHtml('individual', null, item.equipoId, (item.seriales || [])[0]);
 
     return filas ? `<div style="margin-top:14px;">${filas}</div>` : '';
@@ -631,8 +663,7 @@
   // Tipos que puede ser una pieza individual (Motoreductor no aparece acá:
   // se maneja aparte con el checkbox "Es Motoreductor").
   function opcionesTipoFiltroHtml() {
-    const permitidos = ['motor', 'reductor', 'motor zd'];
-    const tipos = (window.tiposEquipoCache || []).filter(t => permitidos.includes(normalizar(t.nombre)));
+    const tipos = (window.tiposEquipoCache || []).filter(t => TIPOS_INDIVIDUALES_PERMITIDOS.includes(normalizar(t.nombre)));
     return '<option value="">Tipo...</option>' +
       tipos.map(t => `<option value="${t.id}">${t.icono ? t.icono + ' ' : ''}${escapeHtml(t.nombre)}</option>`).join('');
   }
@@ -659,15 +690,14 @@
     if (!mostrar) inputEl.value = '';
   }
 
-  // IDs de tipo permitidos (motor, reductor, motor zd) — usado tanto para
+  // IDs de tipo permitidos (motor, reductor, motor zd, reductor zd, motoreductor, motoreductor zd) — usado tanto para
   // poblar el select "Tipo..." como para que el buscador de equipo, cuando
   // todavía no se ha elegido un tipo, no muestre TODO el catálogo (acoples,
-  // cadenas, etc.) sino solo estos tres.
+  // cadenas, etc.) sino solo estos seis.
   function tipoIdsPermitidos() {
-    const permitidos = ['motor', 'reductor', 'motor zd'];
     return new Set(
       (window.tiposEquipoCache || [])
-        .filter(t => permitidos.includes(normalizar(t.nombre)))
+        .filter(t => TIPOS_INDIVIDUALES_PERMITIDOS.includes(normalizar(t.nombre)))
         .map(t => t.id)
     );
   }
@@ -692,7 +722,7 @@
   //
   // `restringirATiposPermitidos`: cuando no hay un tipo elegido todavía
   // (obtenerTipoId() devuelve vacío), en vez de mostrar todo el catálogo
-  // solo muestra motor/reductor/motor ZD. Se usa en el buscador individual,
+  // solo muestra motor/reductor/motoreductor y sus versiones ZD. Se usa en el buscador individual,
   // que es el único con tipo variable (motor y reductor del motoreductor ya
   // vienen con su tipo fijo).
   function inicializarBuscadorEquipoReparacion({ inputTexto, inputValor, avisoEl, obtenerTipoId, restringirATiposPermitidos, onSeleccion }) {
@@ -789,7 +819,7 @@
     inputTexto: inputMotorTexto,
     inputValor: inputMotorId,
     avisoEl: avisoMotorNuevo,
-    obtenerTipoId: () => tipoIdPorNombre('motor'),
+    obtenerTipoId: () => tipoIdPorNombre(nombresTipoMotoreductor(esMotoreductorZDEnFormulario()).motor),
     onSeleccion: (eq) => mostrarOcultarSerial(serialWrapMotor, inputSerialMotor, eq)
   });
 
@@ -797,8 +827,23 @@
     inputTexto: inputReductorTexto,
     inputValor: inputReductorId,
     avisoEl: avisoReductorNuevo,
-    obtenerTipoId: () => tipoIdPorNombre('reductor'),
+    obtenerTipoId: () => tipoIdPorNombre(nombresTipoMotoreductor(esMotoreductorZDEnFormulario()).reductor),
     onSeleccion: (eq) => mostrarOcultarSerial(serialWrapReductor, inputSerialReductor, eq)
+  });
+
+  // Al alternar "Es ZD", motor y reductor cambian de tipo de catálogo: lo ya
+  // elegido era del otro tipo, así que se limpia y los buscadores se refiltran
+  // solos al escribir (mismo criterio que al cambiar el "Tipo" en el equipo individual).
+  chkMotoreductorZD.addEventListener('change', () => {
+    inputMotorId.value = '';
+    inputMotorTexto.value = '';
+    avisoMotorNuevo.style.display = 'none';
+    mostrarOcultarSerial(serialWrapMotor, inputSerialMotor, false);
+    inputReductorId.value = '';
+    inputReductorTexto.value = '';
+    avisoReductorNuevo.style.display = 'none';
+    mostrarOcultarSerial(serialWrapReductor, inputSerialReductor, false);
+    actualizarTextoEquipo();
   });
 
   // Icono del tipo de equipo según su tipoId (para la vista de texto, antes
@@ -826,7 +871,9 @@
         : '<span style="color:var(--danger);">Falta el reductor</span>';
       const serialMotor = inputSerialMotor.value.trim() ? `<span class="reparacion-card-serial">S/N ${escapeHtml(inputSerialMotor.value.trim())}</span>` : '';
       const serialReductor = inputSerialReductor.value.trim() ? `<span class="reparacion-card-serial">S/N ${escapeHtml(inputSerialReductor.value.trim())}</span>` : '';
-      return `${iconoDeTipoId(tipoIdPorNombre('motoreductor'))} Motoreductor — ${iconoDeTipoId(tipoIdPorNombre('motor'))} ${motorHtml}${serialMotor} + ${iconoDeTipoId(tipoIdPorNombre('reductor'))} ${reductorHtml}${serialReductor}`;
+      const zd = esMotoreductorZDEnFormulario();
+      const nt = nombresTipoMotoreductor(zd);
+      return `${iconoDeTipoId(tipoIdLineaMotoreductor(zd))} ${etiquetaMotoreductor(zd)} — ${iconoDeTipoId(tipoIdPorNombre(nt.motor))} ${motorHtml}${serialMotor} + ${iconoDeTipoId(tipoIdPorNombre(nt.reductor))} ${reductorHtml}${serialReductor}`;
     }
 
     const texto = inputEquipoTexto.value.trim();
@@ -869,6 +916,7 @@
   // Deja el bloque de equipo completamente en blanco (equipo nuevo/borrado).
   function limpiarEquipoReparacion() {
     chkEsMotoreductor.checked = false;
+    chkMotoreductorZD.checked = false;
     actualizarModoEquipo();
 
     inputEquipoTexto.value = '';
@@ -902,6 +950,7 @@
 
     if (equipo.tipoLinea === 'motoreductor') {
       chkEsMotoreductor.checked = true;
+      chkMotoreductorZD.checked = !!equipo.zd;
       actualizarModoEquipo();
 
       const motor = buscarEquipoCatalogo(equipo.motorEquipoId);
@@ -954,7 +1003,7 @@
     // sigue disponible por si alguno sí llega a tenerlo.
     const tipo = (window.tiposEquipoCache || []).find(t => t.id === tipoId);
     const nombreTipoNorm = tipo ? normalizar(tipo.nombre) : '';
-    const esMotorOReductor = nombreTipoNorm === 'motor' || nombreTipoNorm === 'reductor';
+    const esMotorOReductor = nombreTipoNorm === 'motor' || nombreTipoNorm === 'reductor' || nombreTipoNorm === 'motoreductor';
     const esMotorZD = nombreTipoNorm === 'motor' && normalizar(texto).includes('zd');
     const usaSerialPorDefecto = esMotorOReductor && !esMotorZD;
 
@@ -978,13 +1027,16 @@
       const reductorTexto = inputReductorTexto.value.trim();
       if (!motorTexto && !reductorTexto) return { equipo: null };
 
-      const motorEquipoId = await resolverEquipoId(motorTexto, inputMotorId.value, tipoIdPorNombre('motor'));
-      const reductorEquipoId = await resolverEquipoId(reductorTexto, inputReductorId.value, tipoIdPorNombre('reductor'));
+      const zd = esMotoreductorZDEnFormulario();
+      const nt = nombresTipoMotoreductor(zd);
+      const motorEquipoId = await resolverEquipoId(motorTexto, inputMotorId.value, tipoIdPorNombre(nt.motor));
+      const reductorEquipoId = await resolverEquipoId(reductorTexto, inputReductorId.value, tipoIdPorNombre(nt.reductor));
       const motorSerial = inputSerialMotor.value.trim();
       const reductorSerial = inputSerialReductor.value.trim();
       return {
         equipo: {
           tipoLinea: 'motoreductor',
+          ...(zd ? { zd: true } : {}),
           motorEquipoId,
           ...(motorSerial ? { motorSerial } : {}),
           reductorEquipoId,
@@ -1590,6 +1642,7 @@
       const motor = buscarEquipoCatalogo(item.motorEquipoId);
       const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
       return normalizar([
+        item.zd ? 'motoreductor zd' : '',
         motor ? nombreMostrableEquipo(motor) : '',
         reductor ? nombreMostrableEquipo(reductor) : '',
         item.motorSerial || '',
@@ -1618,7 +1671,8 @@
         : '<span style="color:var(--danger);">Reductor no encontrado</span>';
       const serialMotor = item.motorSerial ? `<span class="reparacion-card-serial">S/N ${escapeHtml(item.motorSerial)}</span>` : '';
       const serialReductor = item.reductorSerial ? `<span class="reparacion-card-serial">S/N ${escapeHtml(item.reductorSerial)}</span>` : '';
-      return `${iconoDeTipoId(tipoIdPorNombre('motoreductor'))} Motoreductor — ${iconoDeTipoId(tipoIdPorNombre('motor'))} ${motorTxt}${serialMotor} + ${iconoDeTipoId(tipoIdPorNombre('reductor'))} ${reductorTxt}${serialReductor}`;
+      const nt = nombresTipoMotoreductor(!!item.zd);
+      return `${iconoDeTipoId(tipoIdLineaMotoreductor(!!item.zd))} ${etiquetaMotoreductor(!!item.zd)} — ${iconoDeTipoId(tipoIdPorNombre(nt.motor))} ${motorTxt}${serialMotor} + ${iconoDeTipoId(tipoIdPorNombre(nt.reductor))} ${reductorTxt}${serialReductor}`;
     }
 
     const eq = buscarEquipoCatalogo(item.equipoId);

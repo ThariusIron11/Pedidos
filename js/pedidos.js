@@ -3341,17 +3341,19 @@
     { grupo: 'estado', clave: 'devolucion',  icono: '↩️', texto: 'Devolución' },
     { grupo: 'tipo',   clave: 'normal',      icono: '📦', texto: 'Normal' },
     { grupo: 'tipo',   clave: 'reparacion',  icono: '🔧', texto: 'Reparación' },
-    { grupo: 'tipo',   clave: 'traslado',    icono: '🚚', texto: 'Traslado' }
+    { grupo: 'tipo',   clave: 'traslado',    icono: '🚚', texto: 'Traslado' },
+    { grupo: 'envio',  clave: 'armado',      icono: '🛠️', texto: 'Envío armado' },
+    { grupo: 'envio',  clave: 'despachado',  icono: '📬', texto: 'Envío despachado' }
   ];
-  const TITULO_GRUPO_FILTRO = { estado: 'Estado', tipo: 'Tipo de pedido' };
-  const filtrosActivosPedidos = { estado: new Set(['en_proceso']), tipo: new Set() }; // "En proceso" queda por defecto
+  const TITULO_GRUPO_FILTRO = { estado: 'Estado', tipo: 'Tipo de pedido', envio: 'Envío' };
+  const filtrosActivosPedidos = { estado: new Set(['en_proceso']), tipo: new Set(), envio: new Set() }; // "En proceso" queda por defecto
 
   const contenedorFiltrosActivos = document.getElementById('filtros-pedidos-activos');
   const btnAgregarFiltro = document.getElementById('btn-agregar-filtro-pedidos');
   const menuFiltros = document.getElementById('menu-filtros-pedidos');
 
   function hayFiltrosActivosPedidos() {
-    return filtrosActivosPedidos.estado.size > 0 || filtrosActivosPedidos.tipo.size > 0;
+    return filtrosActivosPedidos.estado.size > 0 || filtrosActivosPedidos.tipo.size > 0 || filtrosActivosPedidos.envio.size > 0;
   }
 
   // El aviso/ficha de devolución solo aplica cuando "Devolución" es el único
@@ -3395,6 +3397,7 @@
       btnLimpiar.addEventListener('click', () => {
         filtrosActivosPedidos.estado.clear();
         filtrosActivosPedidos.tipo.clear();
+        filtrosActivosPedidos.envio.clear();
         refrescarPedidosPorFiltros();
       });
     }
@@ -3409,7 +3412,7 @@
       return;
     }
     let html = '';
-    ['estado', 'tipo'].forEach(grupo => {
+    ['estado', 'tipo', 'envio'].forEach(grupo => {
       const items = disponibles.filter(f => f.grupo === grupo);
       if (!items.length) return;
       html += `<div class="filtro-menu-titulo">${TITULO_GRUPO_FILTRO[grupo]}</div>` +
@@ -3444,13 +3447,31 @@
     return pedido.tipo || 'normal';
   }
 
-  // Aplica los filtros activos (estado + tipo) a una lista de pedidos. La
+  function pedidoTieneEnvioEnEstado(pedido, estadosEnvio) {
+    return (window.enviosCache || []).some(en =>
+      estadosEnvio.has(en.estado) && (en.pedidos || []).some(pInfo => pInfo.pedidoId === pedido.id)
+    );
+  }
+
+  // Si cambia un envío (se arma, se despacha, se elimina), la lista debe
+  // reflejarlo cuando hay un filtro de envío activo.
+  document.addEventListener('envios:cambio', () => {
+    if (!filtrosActivosPedidos.envio.size) return;
+    renderTabla();
+    mostrarSugerenciasPedidos();
+    mostrarSugerenciasSerial();
+  });
+
+  // Aplica los filtros activos (estado + tipo + envío) a una lista de pedidos. La
   // usan tanto la tabla como las sugerencias de autocompletar de los dos
   // buscadores, para que siempre queden "atadas" a los filtros visibles.
   function pedidosPorFiltroEstado(lista) {
-    const { estado, tipo } = filtrosActivosPedidos;
+    const { estado, tipo, envio } = filtrosActivosPedidos;
     return lista.filter(pedido => {
       if (tipo.size && !tipo.has(tipoEfectivoPedido(pedido))) return false;
+      // Envío: el pedido cumple si está en al menos un envío con alguno de los
+      // estados elegidos (un pedido puede estar repartido en varios envíos).
+      if (envio.size && !pedidoTieneEnvioEnEstado(pedido, envio)) return false;
       if (estado.size) {
         const cumpleEstado =
           (estado.has('completado') && pedidoEstaCompletado(pedido)) ||
