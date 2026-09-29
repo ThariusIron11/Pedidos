@@ -3,10 +3,12 @@
 //
 // Cada pedido:
 // {
-//   numero (entero, se reutiliza el menor número libre si se borra un pedido),
+//   numero (entero, se reutiliza el menor número libre si se borra un pedido.
+//           Cada tipo tiene su PROPIA numeración: Normal → N1, N2…;
+//           Traslado → T01, T02…; los de Reparación copian el R01 de su reparación),
 //   companiaId (referencia a "clientes"),
 //   contacto (nombre, tomado de contactosPedidos de la compañía),
-//   tipo ('normal' | 'reparacion' — se pone 'reparacion' automáticamente
+//   tipo ('normal' | 'reparacion' | 'traslado' — 'reparacion' se pone 'reparacion' automáticamente
 //         cuando el pedido se creó desde la ficha de una reparación),
 //   reparacionId (solo si viene de una reparación — mismo valor que el ID
 //                 de este mismo pedido, porque se crea con ese mismo ID;
@@ -134,26 +136,49 @@
     return (window.equiposCache || []).find(eq => eq.id === id) || null;
   }
 
-  function siguienteNumeroDisponible() {
-    // Los pedidos que vienen de una reparación no cuentan para esta bolsa:
+  // Un pedido es "traslado" (numeración T01, T02…) solo si no viene de una
+  // reparación: los pedidos de reparación siempre usan la numeración R.
+  function esPedidoTraslado(pedido) {
+    return !pedido.reparacionId && pedido.tipo === 'traslado';
+  }
+
+  // Menor número libre DENTRO de la numeración del tipo indicado (mismas
+  // reglas para Normal y Traslado: se reutiliza el hueco si se borra uno).
+  // `excluirId` sirve al editar: el propio pedido no cuenta como "ocupando"
+  // un número al reasignarle uno nuevo por cambio de tipo.
+  function siguienteNumeroDisponible(tipo = 'normal', excluirId = null) {
+    // Los pedidos que vienen de una reparación no cuentan para ninguna bolsa:
     // su "numero" es una copia del N° de esa reparación (otra colección,
     // otra numeración — ver textoNumeroPedido), no un N° propio de Pedidos.
-    const usados = new Set(pedidosCache.filter(p => !p.reparacionId).map(p => p.numero));
+    const buscaTraslado = (tipo === 'traslado');
+    const usados = new Set(
+      pedidosCache
+        .filter(p => !p.reparacionId && p.id !== excluirId && esPedidoTraslado(p) === buscaTraslado)
+        .map(p => p.numero)
+    );
     let n = 1;
     while (usados.has(n)) n++;
     return n;
   }
 
-  // Texto del N° tal como se muestra en toda la pestaña. Si el pedido viene
-  // de una reparación (mismo ID en las dos colecciones), se muestra con el
-  // mismo formato que esa reparación ("R01") en vez del "N" habitual, porque
-  // su "numero" es una copia exacta del N° de esa reparación (ver
-  // crearPedidoDesdeReparacion en reparaciones.js) — así el mismo caso se ve
-  // igual en ambas pestañas.
+  // Texto del N° tal como se muestra en toda la pestaña:
+  //  - Reparación (mismo ID en las dos colecciones): "R01", copia exacta del
+  //    N° de esa reparación (ver crearPedidoDesdeReparacion en reparaciones.js).
+  //  - Traslado: "T01", "T02"… (numeración propia).
+  //  - Normal: "N1", "N2"…
   function textoNumeroPedido(pedido) {
-    return pedido.reparacionId
-      ? ('R' + String(pedido.numero).padStart(2, '0'))
-      : ('N' + pedido.numero);
+    if (pedido.reparacionId) return 'R' + String(pedido.numero).padStart(2, '0');
+    if (pedido.tipo === 'traslado') return 'T' + String(pedido.numero).padStart(2, '0');
+    return 'N' + pedido.numero;
+  }
+  window.textoNumeroPedido = textoNumeroPedido;
+
+  // Orden de las listas: por número y, si coinciden (N1 / T01 / R01), por
+  // serie para que el orden sea estable.
+  const ORDEN_SERIE = { N: 0, T: 1, R: 2 };
+  function compararPedidosPorNumero(a, b) {
+    if (a.numero !== b.numero) return a.numero - b.numero;
+    return ORDEN_SERIE[textoNumeroPedido(a)[0]] - ORDEN_SERIE[textoNumeroPedido(b)[0]];
   }
 
   // ---------- Sub-pestañas del modal (Datos / Equipos) ----------
@@ -1180,7 +1205,7 @@
     resetSubtabs();
 
     inputId.value = pedido ? pedido.id : '';
-    inputNumero.value = pedido ? pedido.numero : siguienteNumeroDisponible();
+    inputNumero.value = pedido ? pedido.numero : siguienteNumeroDisponible('normal');
 
     selectCompania.value = pedido?.companiaId || '';
     poblarSelectCompanias();
@@ -1268,16 +1293,45 @@
     window.abrirFichaReparacion(pedido.reparacionId);
   });
 
+  // ---------- Número según el tipo elegido ----------
+  // Normal y Traslado tienen numeraciones separadas, así que al cambiar el
+  // radio de tipo se recalcula el número que va a recibir el pedido y se
+  // actualiza el título del modal.
+  function tipoSeleccionadoEnFormulario() {
+    return Array.from(radiosTipoPedido).find(r => r.checked)?.value || 'normal';
+  }
+
+  function actualizarNumeroYTituloSegunTipo() {
+    const id = inputId.value;
+    const tipo = tipoSeleccionadoEnFormulario();
+
+    if (!id) {
+      const numero = siguienteNumeroDisponible(tipo);
+      inputNumero.value = numero;
+      modalTitulo.textContent = `Nuevo pedido (N° ${textoNumeroPedido({ tipo, numero })})`;
+      return;
+    }
+
+    const original = pedidosCache.find(p => p.id === id);
+    if (!original || original.reparacionId) return;
+    const cambiaSerie = esPedidoTraslado(original) !== (tipo === 'traslado');
+    const proyectado = { ...original, tipo, numero: cambiaSerie ? siguienteNumeroDisponible(tipo, id) : original.numero };
+    inputNumero.value = proyectado.numero;
+    modalTitulo.textContent = `Editar pedido ${textoNumeroPedido(proyectado)}`;
+  }
+
+  radiosTipoPedido.forEach(r => r.addEventListener('change', actualizarNumeroYTituloSegunTipo));
+
   // ---------- Abrir / cerrar modal ----------
 
   function abrirModalNuevo() {
     if (borradorId === '') {
-      modalTitulo.textContent = `Nuevo pedido (N° ${inputNumero.value})`;
+      actualizarNumeroYTituloSegunTipo();
       modal.classList.add('open');
       return;
     }
     cargarFormularioDesdePedido(null);
-    modalTitulo.textContent = `Nuevo pedido (N° ${inputNumero.value})`;
+    actualizarNumeroYTituloSegunTipo();
     borradorId = '';
     modal.classList.add('open');
   }
@@ -1375,9 +1429,16 @@
     try {
       let numeroFinal = id ? parseInt(inputNumero.value, 10) : null;
       if (id) {
+        // Si el tipo cambió entre Normal <-> Traslado, el pedido pasa a la
+        // otra numeración y recibe el menor número libre de ella.
+        const original = pedidosCache.find(p => p.id === id);
+        if (original && !original.reparacionId && esPedidoTraslado(original) !== (datos.tipo === 'traslado')) {
+          numeroFinal = siguienteNumeroDisponible(datos.tipo, id);
+          datos.numero = numeroFinal;
+        }
         await db.collection(COLECCION).doc(id).update(datos);
       } else {
-        numeroFinal = siguienteNumeroDisponible(); // recalculado justo antes de guardar
+        numeroFinal = siguienteNumeroDisponible(datos.tipo); // recalculado justo antes de guardar
         datos.numero = numeroFinal;
         datos.creadoEn = firebase.firestore.FieldValue.serverTimestamp();
         await db.collection(COLECCION).add(datos);
@@ -3271,6 +3332,8 @@
   const buscadorSerialPedidos = document.getElementById('buscador-serial-pedidos');
   const chipsFiltroEstado = document.querySelectorAll('#filtro-estado-pedidos .chip-filtro-estado');
   let filtroEstadoPedidos = 'en_proceso'; // predeterminado
+  const chipsFiltroTipo = document.querySelectorAll('#filtro-tipo-pedidos .chip-filtro-estado');
+  let filtroTipoPedidos = 'todos'; // 'todos' | 'normal' | 'reparacion' | 'traslado'
   let filtroTextoPedidos = '';
   let filtroSerialPedidos = '';
 
@@ -3283,12 +3346,31 @@
     });
   });
 
-  // Aplica el filtro de estado activo (chip: en proceso / completado /
+  chipsFiltroTipo.forEach(chip => {
+    chip.classList.toggle('active', chip.dataset.tipo === filtroTipoPedidos);
+    chip.addEventListener('click', () => {
+      filtroTipoPedidos = chip.dataset.tipo;
+      chipsFiltroTipo.forEach(c => c.classList.toggle('active', c === chip));
+      renderTabla();
+      mostrarSugerenciasPedidos();
+      mostrarSugerenciasSerial();
+    });
+  });
+
+  // Tipo "efectivo" de un pedido: si viene de una reparación cuenta como
+  // 'reparacion' aunque su campo tipo falte; si no tiene tipo, es 'normal'.
+  function tipoEfectivoPedido(pedido) {
+    if (pedido.reparacionId) return 'reparacion';
+    return pedido.tipo || 'normal';
+  }
+
+  // Aplica los filtros activos (estado + tipo) (chip: en proceso / completado /
   // devolución / todos) a una lista de pedidos. La usan tanto la tabla como
   // las sugerencias de autocompletar de los dos buscadores, para que las
   // sugerencias siempre queden "atadas" al filtro visible en pantalla.
   function pedidosPorFiltroEstado(lista) {
     return lista.filter(pedido => {
+      if (filtroTipoPedidos !== 'todos' && tipoEfectivoPedido(pedido) !== filtroTipoPedidos) return false;
       if (filtroEstadoPedidos === 'completado') return pedidoEstaCompletado(pedido);
       if (filtroEstadoPedidos === 'en_proceso') return !pedidoEstaCompletado(pedido);
       if (filtroEstadoPedidos === 'devolucion') return pedidoTieneDevolucion(pedido);
@@ -3389,11 +3471,11 @@
 
     const candidatos = pedidosPorFiltroEstado(pedidosCache)
       .filter(p => pedidoCoincideConBusquedaTexto(p, texto))
-      .sort((a, b) => a.numero - b.numero)
+      .sort(compararPedidosPorNumero)
       .slice(0, 8);
 
     if (!candidatos.length) {
-      resultadosBuscadorPedidos.innerHTML = `<div class="buscador-item-vacio">Sin pedidos que coincidan${filtroEstadoPedidos !== 'todos' ? ' con este filtro' : ''}</div>`;
+      resultadosBuscadorPedidos.innerHTML = `<div class="buscador-item-vacio">Sin pedidos que coincidan${(filtroEstadoPedidos !== 'todos' || filtroTipoPedidos !== 'todos') ? ' con este filtro' : ''}</div>`;
       resultadosBuscadorPedidos.classList.add('open');
       return;
     }
@@ -3437,11 +3519,11 @@
         });
       });
     });
-    candidatos.sort((a, b) => a.pedido.numero - b.pedido.numero);
+    candidatos.sort((a, b) => compararPedidosPorNumero(a.pedido, b.pedido));
     const limitados = candidatos.slice(0, 8);
 
     if (!limitados.length) {
-      resultadosBuscadorSerial.innerHTML = `<div class="buscador-item-vacio">Sin seriales que coincidan${filtroEstadoPedidos !== 'todos' ? ' con este filtro' : ''}</div>`;
+      resultadosBuscadorSerial.innerHTML = `<div class="buscador-item-vacio">Sin seriales que coincidan${(filtroEstadoPedidos !== 'todos' || filtroTipoPedidos !== 'todos') ? ' con este filtro' : ''}</div>`;
       resultadosBuscadorSerial.classList.add('open');
       return;
     }
@@ -3558,7 +3640,7 @@
     }
     tablaEmpty.style.display = 'none';
 
-    const ordenados = [...filtrados].sort((a, b) => a.numero - b.numero);
+    const ordenados = [...filtrados].sort(compararPedidosPorNumero);
 
     listaContenedor.innerHTML = ordenados.map(pedido => {
       const compania = buscarCompania(pedido.companiaId);
