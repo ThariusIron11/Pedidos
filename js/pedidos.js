@@ -404,6 +404,14 @@
     return !!tipo && TIPOS_CON_CANTIDAD_DECIMAL.includes(normalizar(tipo.nombre));
   }
 
+  // Un ítem "por medida" (hoy: cadena) no se cuenta en unidades sueltas: su
+  // cantidad son metros y lo preparado es un total en metros
+  // (item.cantidadPreparada: 11, 12.5…), no una lista de unidades marcadas.
+  function itemEsPorMedida(item) {
+    if (!item || item.tipoLinea === 'motoreductor') return false;
+    return esTipoCantidadDecimal(buscarEquipoCatalogo(item.equipoId));
+  }
+
   function nombreMostrableEquipo(eq) {
     return eq.nombre + (eq.variante ? ` (${eq.variante})` : '');
   }
@@ -1087,8 +1095,12 @@
           ? (parseFloat(cantidadTexto) || 1)
           : (parseInt(cantidadTexto, 10) || 1);
         const ordenCompra = fila.querySelector('.equipo-pedido-oc').value.trim();
-        const unidadesPreparadas = marcarTodasPreparadas ? Array.from({ length: Math.ceil(cantidad) }, (_, i) => i) : [];
+        const porMedida = esTipoCantidadDecimal(equipoSeleccionado);
+        // Cadena: "Preparado" marca todos los metros de una vez; el resto
+        // de tipos marca todas sus unidades.
+        const unidadesPreparadas = (marcarTodasPreparadas && !porMedida) ? Array.from({ length: Math.ceil(cantidad) }, (_, i) => i) : [];
         item = { tipoLinea: 'individual', equipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, llevaFlanche, brazoEquipoId, ejeEquipoId, flancheEquipoId, unidadesPreparadas };
+        if (porMedida) item.cantidadPreparada = marcarTodasPreparadas ? cantidad : 0;
       }
 
       // CRÍTICO: este formulario no tiene campos para los números de serial ni
@@ -1111,6 +1123,7 @@
           // El "preparado" por unidad se gestiona desde la Ficha, no desde
           // este formulario — siempre se preserva tal cual estaba.
           item.unidadesPreparadas = original.unidadesPreparadas || [];
+          if (original.cantidadPreparada !== undefined) item.cantidadPreparada = original.cantidadPreparada;
         }
       }
 
@@ -1666,6 +1679,12 @@
   // Cuántas unidades están marcadas como preparadas, sin contar las que ya
   // fueron devueltas (una unidad devuelta no debe seguir contando como lista).
   function cantidadPreparadaItem(item) {
+    // Por medida: lo preparado ya es un total en metros (nunca más de lo
+    // que queda por preparar tras las devoluciones).
+    if (itemEsPorMedida(item)) {
+      const tope = Math.max(0, redondear2((item.cantidad || 0) - devueltasCountItem(item)));
+      return Math.min(redondear2(item.cantidadPreparada || 0), tope);
+    }
     const devueltos = indicesDevueltosItem(item);
     return (item.unidadesPreparadas || []).filter(u => !devueltos.has(u)).length;
   }
@@ -1681,7 +1700,7 @@
   function estadoPrincipalItem(item, tipo, colorRespaldo, iconoRespaldo) {
     const tieneDevueltas = devueltasCountItem(item) > 0;
     const completado = estaItemCompletado(item);
-    const totalPreparable = (item.cantidad || 0) - devueltasCountItem(item);
+    const totalPreparable = redondear2((item.cantidad || 0) - devueltasCountItem(item));
     const preparado = totalPreparable > 0 && cantidadPreparadaItem(item) >= totalPreparable;
 
     if (tieneDevueltas) return { tag: 'Devuelto', color: COLOR_DEVUELTO, icono: '🔵' };
@@ -1827,9 +1846,12 @@
   // Texto corto que resume el estado de "preparado" de un ítem, ya sea de
   // una sola unidad o de varias (se prepara por unidad cuando cantidad > 1).
   function textoResumenPreparado(item) {
-    const totalPreparable = (item.cantidad || 0) - devueltasCountItem(item);
+    const totalPreparable = redondear2((item.cantidad || 0) - devueltasCountItem(item));
     if (totalPreparable <= 0) return 'Sin unidades disponibles para preparar (todas devueltas)';
     const cantPreparadas = cantidadPreparadaItem(item);
+    if (itemEsPorMedida(item)) {
+      return `${cantPreparadas >= totalPreparable ? '✅' : '⬜'} Preparado ${cantPreparadas}/${totalPreparable} m`;
+    }
     if ((item.cantidad || 1) > 1) {
       return `${cantPreparadas >= totalPreparable ? '✅' : '⬜'} Preparado ${cantPreparadas}/${totalPreparable}`;
     }
@@ -1837,7 +1859,7 @@
   }
 
   function itemEstaFullyPreparado(item) {
-    const totalPreparable = (item.cantidad || 0) - devueltasCountItem(item);
+    const totalPreparable = redondear2((item.cantidad || 0) - devueltasCountItem(item));
     return totalPreparable > 0 && cantidadPreparadaItem(item) >= totalPreparable;
   }
 
@@ -2065,7 +2087,7 @@
     return `
       <div class="equipo-card clicable ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''} ${cantDevueltas ? 'devuelto' : ''}" data-index="${index}" style="border-color:${color};">
         <div class="equipo-card-header" style="background:${color};">
-          <span>${icono}</span><span>${escapeHtml(nombreTipo)} x ${item.cantidad}</span>
+          <span>${icono}</span><span>${escapeHtml(nombreTipo)} x ${item.cantidad}${itemEsPorMedida(item) ? ' m' : ''}</span>
           ${estadoPrincipal.tag ? `<span class="equipo-card-preparado-tag">${estadoPrincipal.tag}</span>` : ''}
         </div>
         <div class="equipo-card-body" style="background:${color}15;">
@@ -2274,6 +2296,29 @@
     });
   }
 
+  // Cadena (por medida): guarda el total de metros preparados, entre 0 y la
+  // cantidad pedida (menos lo devuelto).
+  async function guardarMetrosPreparados(indexItem, metros) {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) return;
+    const item = (pedido.equipos || [])[indexItem];
+    if (!item) return;
+
+    const tope = Math.max(0, redondear2((item.cantidad || 0) - devueltasCountItem(item)));
+    const valor = Math.min(tope, Math.max(0, redondear2(metros)));
+    const itemActualizado = { ...item, cantidadPreparada: valor };
+    const equiposActualizados = (pedido.equipos || []).map((it, i) => i === indexItem ? itemActualizado : it);
+
+    try {
+      await db.collection(COLECCION).doc(pedido.id).update({ equipos: equiposActualizados });
+      renderSeccionEquipos({ ...pedido, equipos: equiposActualizados });
+      if (indexEquipoEnSeriales === indexItem) refrescarModalSerialesConservandoSinGuardar(indexItem);
+    } catch (err) {
+      console.error('Error actualizando metros preparados:', err);
+      alert('No se pudo actualizar. Revisa la consola.');
+    }
+  }
+
   async function toggleUnidadPreparada(indexItem, unidad, marcado) {
     const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
     if (!pedido) return;
@@ -2423,6 +2468,34 @@
     const preparadas = new Set(item.unidadesPreparadas || []);
     const devueltosSet = indicesDevueltosItem(item);
     const completadasSet = new Set(item.unidadesCompletadas || []);
+
+    // Por medida (cadena): en vez de una fila por unidad, un solo campo con
+    // los metros preparados en total.
+    if (itemEsPorMedida(item)) {
+      const total = redondear2(item.cantidad || 0);
+      const despachados = redondear2(item.cantidadCompletada || 0);
+      const devueltos = redondear2(item.cantidadDevuelta || 0);
+      const disponibles = redondear2(despachados - devueltos);
+      return `
+        <div class="seriales-grupo-titulo">Metros</div>
+        <div class="seriales-campos-list">
+          <div class="unidad-preparado-fila">
+            <label class="chk-unidad-preparado">
+              Preparados
+              <input type="number" id="input-metros-preparados" min="0" max="${total}" step="0.01" value="${redondear2(item.cantidadPreparada || 0)}" style="width:100px; margin:0 6px;">
+              de ${total} m
+            </label>
+            <button type="button" class="btn-devolucion" id="btn-metros-todo">✅ Todo</button>
+          </div>
+          ${despachados > 0 ? `<div class="unidad-estado-tag" style="margin-top:6px;">🔒 Despachado: ${despachados} m</div>` : ''}
+          ${devueltos > 0 ? `<div class="unidad-estado-tag" style="margin-top:6px;">🔵 Devuelto: ${devueltos} m</div>` : ''}
+        </div>
+        ${disponibles > 0 ? `
+          <button type="button" id="btn-devolucion-cantidad" class="btn-devolucion" style="margin-top:10px;">
+            ↩️ Registrar devolución (${disponibles} m despachados disponibles)
+          </button>` : ''}
+      `;
+    }
 
     const filas = Array.from({ length: cantidad }).map((_, i) => {
       const devuelta = devueltosSet.has(i);
@@ -2661,6 +2734,11 @@
     serialesCampos.innerHTML = htmlSeriales + unidadesEstadoHtml(item);
     conectarValidacionSerialesDuplicados();
 
+    const inputMetros = serialesCampos.querySelector('#input-metros-preparados');
+    if (inputMetros) {
+      inputMetros.addEventListener('change', () => guardarMetrosPreparados(index, inputMetros.value));
+      serialesCampos.querySelector('#btn-metros-todo').addEventListener('click', () => guardarMetrosPreparados(index, item.cantidad || 0));
+    }
     serialesCampos.querySelectorAll('.chk-preparado-unidad').forEach(chk => {
       chk.addEventListener('change', () => toggleUnidadPreparada(index, parseInt(chk.dataset.unidad, 10), chk.checked));
     });
@@ -3343,7 +3421,8 @@
     { grupo: 'tipo',   clave: 'reparacion',  icono: '🔧', texto: 'Reparación' },
     { grupo: 'tipo',   clave: 'traslado',    icono: '🚚', texto: 'Traslado' },
     { grupo: 'envio',  clave: 'armado',      icono: '🛠️', texto: 'Envío armado' },
-    { grupo: 'envio',  clave: 'despachado',  icono: '📬', texto: 'Envío despachado' }
+    { grupo: 'envio',  clave: 'despachado',  icono: '📬', texto: 'Envío despachado' },
+    { grupo: 'envio',  clave: 'sin_armado',  icono: '📭', texto: 'Equipos sin envío armado' }
   ];
   const TITULO_GRUPO_FILTRO = { estado: 'Estado', tipo: 'Tipo de pedido', envio: 'Envío' };
   const filtrosActivosPedidos = { estado: new Set(['en_proceso']), tipo: new Set(), envio: new Set() }; // "En proceso" queda por defecto
@@ -3453,6 +3532,28 @@
     );
   }
 
+  // "Equipos sin envío armado": el pedido tiene al menos un equipo (ítem) al
+  // que todavía le falta cantidad por despachar y esa cantidad pendiente NO
+  // está cubierta por envíos en estado "armado". Lo ya despachado (completado)
+  // y lo devuelto no cuenta como pendiente.
+  function pedidoTieneEquiposSinEnvioArmado(pedido) {
+    const enviosArmados = (window.enviosCache || []).filter(en => en.estado === 'armado');
+    return (pedido.equipos || []).some((item, itemIndex) => {
+      const pendiente = redondear2((item.cantidad || 0) - conteoCompletadoItem(item).hecho - devueltasCountItem(item));
+      if (pendiente <= 0) return false;
+      let reservadoArmado = 0;
+      enviosArmados.forEach(en => {
+        (en.pedidos || []).forEach(pInfo => {
+          if (pInfo.pedidoId !== pedido.id) return;
+          (pInfo.items || []).forEach(it => {
+            if (it.itemIndex === itemIndex) reservadoArmado += it.cantidad || 0;
+          });
+        });
+      });
+      return redondear2(reservadoArmado) < pendiente;
+    });
+  }
+
   // Si cambia un envío (se arma, se despacha, se elimina), la lista debe
   // reflejarlo cuando hay un filtro de envío activo.
   document.addEventListener('envios:cambio', () => {
@@ -3471,7 +3572,13 @@
       if (tipo.size && !tipo.has(tipoEfectivoPedido(pedido))) return false;
       // Envío: el pedido cumple si está en al menos un envío con alguno de los
       // estados elegidos (un pedido puede estar repartido en varios envíos).
-      if (envio.size && !pedidoTieneEnvioEnEstado(pedido, envio)) return false;
+      if (envio.size) {
+        const estadosEnvio = new Set([...envio].filter(k => k !== 'sin_armado'));
+        const cumpleEnvio =
+          (estadosEnvio.size > 0 && pedidoTieneEnvioEnEstado(pedido, estadosEnvio)) ||
+          (envio.has('sin_armado') && pedidoTieneEquiposSinEnvioArmado(pedido));
+        if (!cumpleEnvio) return false;
+      }
       if (estado.size) {
         const cumpleEstado =
           (estado.has('completado') && pedidoEstaCompletado(pedido)) ||
@@ -3692,16 +3799,17 @@
       nombre = `${nombreConIcono(equipo, 'Equipo no encontrado')}${htmlExtrasItem(item)}`;
     }
 
-    const totalPreparable = (item.cantidad || 0) - devueltasCountItem(item);
+    const totalPreparable = redondear2((item.cantidad || 0) - devueltasCountItem(item));
     const preparadas = cantidadPreparadaItem(item);
+    const esMedida = itemEsPorMedida(item);
     const preparadoTexto = totalPreparable > 0
-      ? `<span class="preparado-chip ${preparadas >= totalPreparable ? 'listo' : ''}">${preparadas} de ${totalPreparable} preparadas</span>`
+      ? `<span class="preparado-chip ${preparadas >= totalPreparable ? 'listo' : ''}">${preparadas} de ${totalPreparable}${esMedida ? ' m preparados' : ' preparadas'}</span>`
       : '';
 
     return `
       <div class="equipo-expandible-fila">
         <span class="nombre">${nombre}</span>
-        <span class="cantidad">Cant. ${item.cantidad || 1}</span>
+        <span class="cantidad">Cant. ${item.cantidad || 1}${itemEsPorMedida(item) ? ' m' : ''}</span>
         ${preparadoTexto}
       </div>
     `;
