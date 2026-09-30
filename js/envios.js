@@ -1244,7 +1244,15 @@
 
   // Mismo nombre + extras (brazo/eje/flanche) que se usa en la ficha, pero
   // aparte porque aquí no hace falta ninguno de los botones de retirar.
-  function nombreItemParaRemesa(item) {
+  // Texto " (variante)" del equipo, o vacío si no tiene. Se usa en las
+  // Simulaciones para distinguir equipos con el mismo nombre.
+  function sufijoVariante(equipo) {
+    return equipo?.variante ? ` (${escapeHtml(equipo.variante)})` : '';
+  }
+
+  // `conVariante` (solo Simulaciones) agrega la variante de cada equipo; la
+  // remesa exportable y las fichas de envío siguen igual que antes.
+  function nombreItemParaRemesa(item, conVariante = false) {
     const extras = [
       item.llevaBrazo ? '+ Brazo de reacción' : '',
       item.llevaEje ? '+ Eje sólido' : '',
@@ -1256,11 +1264,13 @@
       const equipoReductor = buscarEquipoCatalogo(item.reductorEquipoId);
       const iconoMotor = buscarTipoEquipo(equipoMotor?.tipoId)?.icono || '';
       const iconoReductor = buscarTipoEquipo(equipoReductor?.tipoId)?.icono || '';
-      return `${iconoMotor ? iconoMotor + ' ' : ''}${equipoMotor?.nombre || '?'} + ${iconoReductor ? iconoReductor + ' ' : ''}${equipoReductor?.nombre || '?'}${extras}`;
+      const varMotor = conVariante ? sufijoVariante(equipoMotor) : '';
+      const varReductor = conVariante ? sufijoVariante(equipoReductor) : '';
+      return `${iconoMotor ? iconoMotor + ' ' : ''}${equipoMotor?.nombre || '?'}${varMotor} + ${iconoReductor ? iconoReductor + ' ' : ''}${equipoReductor?.nombre || '?'}${varReductor}${extras}`;
     }
     const equipo = buscarEquipoCatalogo(item.equipoId);
     const icono = buscarTipoEquipo(equipo?.tipoId)?.icono || '';
-    return `${icono ? icono + ' ' : ''}${equipo?.nombre || 'Equipo no encontrado'}${extras}`;
+    return `${icono ? icono + ' ' : ''}${equipo?.nombre || 'Equipo no encontrado'}${conVariante ? sufijoVariante(equipo) : ''}${extras}`;
   }
 
   // Arma la ficha completa como HTML — un bloque "Destino" por cada pedido
@@ -1604,13 +1614,13 @@
     (sim.pedidosSeleccionados || []).forEach(sel => {
       const pedido = buscarPedido(sel.pedidoId);
       const item = pedido?.equipos?.[sel.itemIndex];
-      if (item && !itemTienePesoCompleto(item)) faltantes.push(nombreItemParaRemesa(item));
+      if (item && !itemTienePesoCompleto(item)) faltantes.push(nombreItemParaRemesa(item, true));
     });
     (sim.equiposSueltos || []).forEach(suelto => {
       const equipo = buscarEquipoCatalogo(suelto.equipoId);
       if (equipo && !equipoTienePesoRegistrado(equipo)) {
         const icono = buscarTipoEquipo(equipo.tipoId)?.icono || '';
-        faltantes.push(`${icono ? icono + ' ' : ''}${escapeHtml(equipo.nombre)}`);
+        faltantes.push(`${icono ? icono + ' ' : ''}${escapeHtml(equipo.nombre)}${sufijoVariante(equipo)}`);
       }
     });
     return faltantes;
@@ -1746,7 +1756,7 @@
       const pedido = buscarPedido(sel.pedidoId);
       const item = pedido?.equipos?.[sel.itemIndex];
       const compania = pedido ? buscarCompania(pedido.companiaId) : null;
-      const nombre = item ? nombreItemParaRemesa(item) : '⚠️ Ítem no encontrado (el pedido pudo haber cambiado)';
+      const nombre = item ? nombreItemParaRemesa(item, true) : '⚠️ Ítem no encontrado (el pedido pudo haber cambiado)';
       const pesoFila = pedido ? pesoItem(pedido, sel) : 0;
       const sinPeso = item && !itemTienePesoCompleto(item);
       const origen = pedido ? `N${pedido.numero} - ${escapeHtml(compania ? compania.nombre : '?')}` : '';
@@ -1764,7 +1774,7 @@
     (sim.equiposSueltos || []).forEach((suelto, idx) => {
       const equipo = buscarEquipoCatalogo(suelto.equipoId);
       const icono = equipo ? (buscarTipoEquipo(equipo.tipoId)?.icono || '') : '';
-      const nombre = equipo ? `${icono ? icono + ' ' : ''}${escapeHtml(equipo.nombre)}` : '⚠️ Equipo no encontrado';
+      const nombre = equipo ? `${icono ? icono + ' ' : ''}${escapeHtml(equipo.nombre)}${sufijoVariante(equipo)}` : '⚠️ Equipo no encontrado';
       const pesoFila = equipo ? pesoUnitarioEquipo(equipo) * (suelto.cantidad || 0) : 0;
       const sinPeso = equipo && !equipoTienePesoRegistrado(equipo);
       filas.push({
@@ -1860,7 +1870,7 @@
     if (!pedido) { checklistPedidoSimulacion.innerHTML = ''; return; }
 
     checklistPedidoSimulacion.innerHTML = (pedido.equipos || []).map((item, idx) => {
-      const nombre = nombreItemParaRemesa(item);
+      const nombre = nombreItemParaRemesa(item, true);
       const equipoParaDecimal = item.tipoLinea === 'individual' ? buscarEquipoCatalogo(item.equipoId) : null;
       const esDecimal = esTipoCantidadDecimal(equipoParaDecimal);
       return `
@@ -1909,7 +1919,7 @@
     selectEquipoSuelto.innerHTML = '<option value="">Selecciona un equipo...</option>' +
       equipos.map(eq => {
         const icono = buscarTipoEquipo(eq.tipoId)?.icono || '';
-        return `<option value="${eq.id}">${icono ? icono + ' ' : ''}${escapeHtml(eq.nombre)}</option>`;
+        return `<option value="${eq.id}">${icono ? icono + ' ' : ''}${escapeHtml(eq.nombre)}${sufijoVariante(eq)}</option>`;
       }).join('');
   }
 
