@@ -191,8 +191,50 @@
 
   // Icono/color configurados en Config para el tipo de un equipo (mismo
   // catálogo que usa equipos.js — window.tiposEquipoCache).
+  const TIPO_SET_ID = '__set__'; // tipo "virtual" de los sets (ver más abajo)
+
   function buscarTipoEquipo(tipoId) {
+    // Tipo "virtual" de los sets de sprockets (ver pedidos.js): usa el icono de Sprocket.
+    if (tipoId === TIPO_SET_ID) {
+      const sprocket = (window.tiposEquipoCache || []).find(t => normalizar(t.nombre) === 'sprocket');
+      return { id: TIPO_SET_ID, nombre: 'Set', icono: sprocket?.icono || '⚙️' };
+    }
     return (window.tiposEquipoCache || []).find(t => t.id === tipoId) || null;
+  }
+
+  // ---------- Sets de sprockets ----------
+  // Un ítem de pedido con tipoLinea 'set' (2 sprockets + caja de cadena
+  // opcional) se trata como UN solo equipo: nombre armado con los sprockets
+  // (con su variante entre paréntesis) y peso = suma de sus piezas.
+  function nombreSetItem(item) {
+    const partes = [item.sprocket1EquipoId, item.sprocket2EquipoId].map(id => {
+      const eq = buscarEquipoCatalogo(id);
+      return eq ? escapeHtml(eq.nombre) + (eq.variante ? ` (${escapeHtml(eq.variante)})` : '') : '?';
+    });
+    return `${item.cajaEquipoId ? 'Set sprocket y caja de cadena' : 'Set sprocket'} ${partes.join(' - ')}`;
+  }
+
+  function equipoVirtualSet(item) {
+    const piezas = [item.sprocket1EquipoId, item.sprocket2EquipoId, item.cajaEquipoId]
+      .filter(Boolean).map(buscarEquipoCatalogo);
+    const completo = piezas.length > 0 && piezas.every(equipoTienePesoRegistrado);
+    return {
+      id: null,
+      nombre: nombreSetItem(item),
+      variante: '',
+      tipoId: TIPO_SET_ID,
+      usaSerial: false,
+      esSet: true,
+      // Con alguna pieza sin peso, el set queda "sin peso" (avisa en la simulación).
+      peso: completo ? Math.round(piezas.reduce((t, eq) => t + pesoUnitarioEquipo(eq), 0) * 100) / 100 : undefined
+    };
+  }
+
+  // Equipo (del catálogo, o virtual si es un set) de un ítem de pedido
+  // individual/set.
+  function equipoDeItem(item) {
+    if (item?.tipoLinea === 'set') return equipoVirtualSet(item);
+    return buscarEquipoCatalogo(item?.equipoId);
   }
 
   // Mismo mapa que usa pedidos.js para el tag de tipo de pedido — se
@@ -260,7 +302,7 @@
       const equipoReductor = buscarEquipoCatalogo(item.reductorEquipoId);
       pesoUnitario = pesoUnitarioEquipo(equipoMotor) + pesoUnitarioEquipo(equipoReductor);
     } else {
-      const equipo = buscarEquipoCatalogo(item.equipoId);
+      const equipo = equipoDeItem(item);
       pesoUnitario = pesoUnitarioEquipo(equipo);
     }
     pesoUnitario += pesoExtrasItem(item);
@@ -645,7 +687,7 @@
             const iconoReductor = buscarTipoEquipo(equipoReductor?.tipoId)?.icono || '';
             nombre = `${iconoMotor ? iconoMotor + ' ' : ''}${equipoMotor?.nombre || '?'} + ${iconoReductor ? iconoReductor + ' ' : ''}${equipoReductor?.nombre || '?'}${extras}`;
           } else {
-            const equipo = buscarEquipoCatalogo(item.equipoId);
+            const equipo = equipoDeItem(item);
             const icono = buscarTipoEquipo(equipo?.tipoId)?.icono || '';
             nombre = `${icono ? icono + ' ' : ''}${equipo?.nombre || 'Equipo no encontrado'}${extras}`;
           }
@@ -662,7 +704,7 @@
           // Equipo SIN serial: las unidades son indistinguibles entre sí, así
           // que se retira por cantidad (puede ser parcial, no solo todo o nada).
           // Cadena se cuenta por metros, así que su cantidad admite decimales.
-          const equipoParaDecimal = item.tipoLinea === 'individual' ? buscarEquipoCatalogo(item.equipoId) : null;
+          const equipoParaDecimal = item.tipoLinea === 'individual' ? equipoDeItem(item) : null;
           const esDecimal = esTipoCantidadDecimal(equipoParaDecimal);
           const controlCantidad = despachado ? '' : `
                 <span class="retirar-cantidad-control">
@@ -1268,7 +1310,7 @@
       const varReductor = conVariante ? sufijoVariante(equipoReductor) : '';
       return `${iconoMotor ? iconoMotor + ' ' : ''}${equipoMotor?.nombre || '?'}${varMotor} + ${iconoReductor ? iconoReductor + ' ' : ''}${equipoReductor?.nombre || '?'}${varReductor}${extras}`;
     }
-    const equipo = buscarEquipoCatalogo(item.equipoId);
+    const equipo = equipoDeItem(item);
     const icono = buscarTipoEquipo(equipo?.tipoId)?.icono || '';
     return `${icono ? icono + ' ' : ''}${equipo?.nombre || 'Equipo no encontrado'}${conVariante ? sufijoVariante(equipo) : ''}${extras}`;
   }
@@ -1582,7 +1624,7 @@
       const equipoReductor = buscarEquipoCatalogo(item.reductorEquipoId);
       base = equipoTienePesoRegistrado(equipoMotor) && equipoTienePesoRegistrado(equipoReductor);
     } else {
-      const equipo = buscarEquipoCatalogo(item.equipoId);
+      const equipo = equipoDeItem(item);
       base = equipoTienePesoRegistrado(equipo);
     }
     if (!base) return false;
@@ -1871,7 +1913,7 @@
 
     checklistPedidoSimulacion.innerHTML = (pedido.equipos || []).map((item, idx) => {
       const nombre = nombreItemParaRemesa(item, true);
-      const equipoParaDecimal = item.tipoLinea === 'individual' ? buscarEquipoCatalogo(item.equipoId) : null;
+      const equipoParaDecimal = item.tipoLinea === 'individual' ? equipoDeItem(item) : null;
       const esDecimal = esTipoCantidadDecimal(equipoParaDecimal);
       return `
         <div class="simulacion-pedido-item-row">

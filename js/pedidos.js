@@ -136,6 +136,52 @@
     return (window.equiposCache || []).find(eq => eq.id === id) || null;
   }
 
+  // ---------- Sets de sprockets ----------
+  // Un "set" es UNA línea del pedido (tipoLinea: 'set') que agrupa piezas del
+  // catálogo: dos sprockets y, opcionalmente, una caja de cadena.
+  //   { tipoLinea: 'set', sprocket1EquipoId, sprocket2EquipoId,
+  //     cajaEquipoId (o null si el set es solo de sprockets), cantidad (sets),
+  //     ordenCompra, unidadesPreparadas, ... }
+  // Para el resto del programa se ve y se cuenta como UN solo equipo: el
+  // nombre se arma con los sprockets y el peso es la suma de sus piezas.
+  // equipoDeItem(item) devuelve un "equipo virtual" con esos datos, así los
+  // flujos de equipo individual (preparado, despacho, devolución, peso,
+  // búsqueda) funcionan igual, sin seriales por pieza.
+  const TIPO_SET_ID = '__set__';
+
+  function nombreSet(item) {
+    const partes = [item.sprocket1EquipoId, item.sprocket2EquipoId].map(id => {
+      const eq = buscarEquipoCatalogo(id);
+      return eq ? nombreMostrableEquipo(eq) : '?';
+    });
+    return `${item.cajaEquipoId ? 'Set sprocket y caja de cadena' : 'Set sprocket'} ${partes.join(' - ')}`;
+  }
+
+  function equipoVirtualSet(item) {
+    const piezas = [item.sprocket1EquipoId, item.sprocket2EquipoId, item.cajaEquipoId]
+      .filter(Boolean).map(buscarEquipoCatalogo);
+    const tienePeso = (eq) => !!eq && (eq.esCompuesto || (eq.peso !== undefined && eq.peso !== null && eq.peso !== ''));
+    const completo = piezas.length > 0 && piezas.every(tienePeso);
+    return {
+      id: null,
+      nombre: nombreSet(item),
+      variante: '',
+      tipoId: TIPO_SET_ID,
+      usaSerial: false,
+      esSet: true,
+      // Si a alguna pieza le falta el peso, el set queda "sin peso" (igual
+      // que cualquier equipo sin peso) en vez de mostrar un total incompleto.
+      peso: completo ? Math.round(piezas.reduce((t, eq) => t + pesoUnitarioEquipoEnvio(eq), 0) * 100) / 100 : undefined
+    };
+  }
+
+  // Equipo (del catálogo, o virtual si es un set) al que corresponde un ítem
+  // de tipo individual/set.
+  function equipoDeItem(item) {
+    if (item?.tipoLinea === 'set') return equipoVirtualSet(item);
+    return buscarEquipoCatalogo(item?.equipoId);
+  }
+
   // Un pedido es "traslado" (numeración T01, T02…) solo si no viene de una
   // reparación: los pedidos de reparación siempre usan la numeración R.
   function esPedidoTraslado(pedido) {
@@ -409,7 +455,7 @@
   // (item.cantidadPreparada: 11, 12.5…), no una lista de unidades marcadas.
   function itemEsPorMedida(item) {
     if (!item || item.tipoLinea === 'motoreductor') return false;
-    return esTipoCantidadDecimal(buscarEquipoCatalogo(item.equipoId));
+    return esTipoCantidadDecimal(equipoDeItem(item));
   }
 
   function nombreMostrableEquipo(eq) {
@@ -745,6 +791,7 @@
 
   function nuevaFilaEquipoPedido(item, originalIndex) {
     const esMotoreductor = item?.tipoLinea === 'motoreductor';
+    const esSet = item?.tipoLinea === 'set';
 
     const row = document.createElement('div');
     row.className = 'equipo-pedido-row-wrap';
@@ -757,8 +804,12 @@
         <input type="checkbox" class="equipo-pedido-es-motoreductor" ${esMotoreductor ? 'checked' : ''}>
         🔗 Es Motoreductor (Motor + Reductor)
       </label>
+      <label class="extra-check chk-es-set" style="margin-bottom:8px;">
+        <input type="checkbox" class="equipo-pedido-es-set" ${esSet ? 'checked' : ''}>
+        ⚙️ Es Set (2 sprockets + caja de cadena opcional)
+      </label>
 
-      <div class="equipo-pedido-row bloque-individual tiene-filtro" style="${esMotoreductor ? 'display:none;' : ''}">
+      <div class="equipo-pedido-row bloque-individual tiene-filtro" style="${(esMotoreductor || esSet) ? 'display:none;' : ''}">
         <div class="buscador-equipo buscador-equipo-tipo">
           <input type="text" class="buscador-input" placeholder="Tipo (opcional)..." autocomplete="off">
           <input type="hidden" class="equipo-pedido-tipo-filtro">
@@ -796,6 +847,41 @@
         <div class="equipo-pedido-row" style="grid-template-columns: 80px 1fr auto; margin-top:8px;">
           <input type="number" class="equipo-pedido-cantidad-mr" min="1" step="1" placeholder="Cant." value="${item?.cantidad ?? 1}">
           <input type="text" class="equipo-pedido-oc-mr" placeholder="Orden de compra (opcional)" value="${item?.ordenCompra ? escapeHtml(item.ordenCompra) : ''}">
+          <button type="button" class="remove-equipo-pedido" title="Quitar equipo">✕</button>
+        </div>
+      </div>
+
+      <div class="equipo-pedido-set" style="${esSet ? '' : 'display:none;'}">
+        <div class="motoreductor-selects">
+          <div>
+            <label class="mini-label">⚙️ Sprocket 1</label>
+            <div class="buscador-equipo buscador-equipo-sprocket1">
+              <input type="text" class="buscador-input" placeholder="Escribe para buscar sprocket..." autocomplete="off">
+              <input type="hidden" class="equipo-pedido-sprocket1">
+              <div class="buscador-resultados"></div>
+            </div>
+          </div>
+          <div>
+            <label class="mini-label">⚙️ Sprocket 2</label>
+            <div class="buscador-equipo buscador-equipo-sprocket2">
+              <input type="text" class="buscador-input" placeholder="Escribe para buscar sprocket..." autocomplete="off">
+              <input type="hidden" class="equipo-pedido-sprocket2">
+              <div class="buscador-resultados"></div>
+            </div>
+          </div>
+        </div>
+        <label class="extra-check" style="margin-top:8px;">
+          <input type="checkbox" class="equipo-pedido-set-con-caja" ${item?.cajaEquipoId ? 'checked' : ''}>
+          📦 Incluye caja de cadena
+        </label>
+        <div class="buscador-equipo buscador-equipo-caja" style="${item?.cajaEquipoId ? '' : 'display:none;'}">
+          <input type="text" class="buscador-input" placeholder="Escribe para buscar caja de cadena..." autocomplete="off">
+          <input type="hidden" class="equipo-pedido-caja">
+          <div class="buscador-resultados"></div>
+        </div>
+        <div class="equipo-pedido-row" style="grid-template-columns: 80px 1fr auto; margin-top:8px;">
+          <input type="number" class="equipo-pedido-cantidad-set" min="1" step="1" placeholder="Cant." value="${item?.cantidad ?? 1}">
+          <input type="text" class="equipo-pedido-oc-set" placeholder="Orden de compra (opcional)" value="${item?.ordenCompra ? escapeHtml(item.ordenCompra) : ''}">
           <button type="button" class="remove-equipo-pedido" title="Quitar equipo">✕</button>
         </div>
       </div>
@@ -862,7 +948,7 @@
         btn.style.opacity = '0.35';
         btn.style.cursor = 'not-allowed';
       });
-      row.querySelectorAll('.equipo-pedido-cantidad, .equipo-pedido-cantidad-mr').forEach(inp => {
+      row.querySelectorAll('.equipo-pedido-cantidad, .equipo-pedido-cantidad-mr, .equipo-pedido-cantidad-set').forEach(inp => {
         inp.min = String(conteoCompletadoItem(item).hecho);
       });
     }
@@ -874,6 +960,7 @@
     // claramente qué equipo es.
     if (pedidoBloqueadoPorReparacion) {
       row.querySelector('.equipo-pedido-es-motoreductor').disabled = true;
+      row.querySelector('.equipo-pedido-es-set').disabled = true;
       row.querySelectorAll('.buscador-input').forEach(inp => { inp.disabled = true; });
       row.querySelectorAll('.remove-equipo-pedido').forEach(btn => {
         btn.disabled = true;
@@ -896,23 +983,32 @@
     const chkEsMotoreductor = row.querySelector('.equipo-pedido-es-motoreductor');
     const bloqueIndividual = row.querySelector('.bloque-individual');
     const bloqueMotoreductor = row.querySelector('.equipo-pedido-motoreductor');
+    const chkEsSet = row.querySelector('.equipo-pedido-es-set');
+    const bloqueSet = row.querySelector('.equipo-pedido-set');
+    const chkSetConCaja = row.querySelector('.equipo-pedido-set-con-caja');
+    const contenedorCaja = row.querySelector('.buscador-equipo-caja');
     const selectIndividual = row.querySelector('.equipo-pedido-select'); // ahora es un input[hidden]
     const selectTipoFiltro = row.querySelector('.equipo-pedido-tipo-filtro');
     const selectReductor = row.querySelector('.equipo-pedido-reductor'); // ídem, input[hidden]
 
     function actualizarModo() {
       const activo = chkEsMotoreductor.checked;
-      bloqueIndividual.style.display = activo ? 'none' : 'grid';
+      const activoSet = chkEsSet.checked;
+      bloqueIndividual.style.display = (activo || activoSet) ? 'none' : 'grid';
       bloqueMotoreductor.style.display = activo ? 'block' : 'none';
+      bloqueSet.style.display = activoSet ? 'block' : 'none';
       actualizarExtrasVisibles();
     }
 
     function actualizarExtrasVisibles() {
       // El brazo/eje siempre depende del REDUCTOR: en modo individual, si lo que
       // eligieron ES un reductor; en modo motoreductor, del reductor seleccionado.
-      const equipoRelevante = chkEsMotoreductor.checked
-        ? buscarEquipoCatalogo(selectReductor.value)
-        : buscarEquipoCatalogo(selectIndividual.value);
+      // Un set no lleva brazo/eje/flanche (esos son del reductor).
+      const equipoRelevante = chkEsSet.checked
+        ? null
+        : (chkEsMotoreductor.checked
+          ? buscarEquipoCatalogo(selectReductor.value)
+          : buscarEquipoCatalogo(selectIndividual.value));
       const chkBrazo = row.querySelector('.chk-brazo');
       const chkEje = row.querySelector('.chk-eje');
       const chkFlanche = row.querySelector('.chk-flanche');
@@ -954,7 +1050,16 @@
       }
     }
 
-    chkEsMotoreductor.addEventListener('change', actualizarModo);
+    // Motoreductor y Set son modos excluyentes entre sí.
+    chkEsMotoreductor.addEventListener('change', () => { if (chkEsMotoreductor.checked) chkEsSet.checked = false; actualizarModo(); });
+    chkEsSet.addEventListener('change', () => { if (chkEsSet.checked) chkEsMotoreductor.checked = false; actualizarModo(); });
+    chkSetConCaja.addEventListener('change', () => {
+      contenedorCaja.style.display = chkSetConCaja.checked ? '' : 'none';
+      if (!chkSetConCaja.checked) {
+        contenedorCaja.querySelector('.buscador-input').value = '';
+        contenedorCaja.querySelector('input[type="hidden"]').value = '';
+      }
+    });
     actualizarModo(); // aplica el modo inicial y calcula brazo/eje visibles
 
     const contenedorTipoFiltro = row.querySelector('.buscador-equipo-tipo');
@@ -966,7 +1071,7 @@
     // tipos — al elegir uno, refiltra el buscador de equipo de al lado. Si ya
     // había un equipo individual elegido (editando un pedido existente), se
     // precarga con el tipo de ESE equipo.
-    const equipoIndividualPrevio = !esMotoreductor && item?.equipoId ? buscarEquipoCatalogo(item.equipoId) : null;
+    const equipoIndividualPrevio = !esMotoreductor && !esSet && item?.equipoId ? equipoDeItem(item) : null;
     inicializarBuscadorTipo(contenedorTipoFiltro, {
       seleccionInicialId: equipoIndividualPrevio?.tipoId || null,
       onChange: () => buscadorIndividualAPI.refrescar()
@@ -976,7 +1081,7 @@
     // buscador de tipo de al lado (ambos a la vez, como se pidió).
     const buscadorIndividualAPI = inicializarBuscadorEquipo(contenedorEquipoIndividual, {
       obtenerTipoId: () => selectTipoFiltro.value || null,
-      seleccionInicialId: !esMotoreductor ? item?.equipoId : null,
+      seleccionInicialId: (!esMotoreductor && !esSet) ? item?.equipoId : null,
       onChange: () => { actualizarExtrasVisibles(); actualizarCantidadSegunTipoEquipo(); }
     });
 
@@ -988,6 +1093,18 @@
       tipoNombre: 'reductor',
       seleccionInicialId: esMotoreductor ? item?.reductorEquipoId : null,
       onChange: actualizarExtrasVisibles
+    });
+    inicializarBuscadorEquipo(row.querySelector('.buscador-equipo-sprocket1'), {
+      tipoNombre: 'sprocket',
+      seleccionInicialId: esSet ? item?.sprocket1EquipoId : null
+    });
+    inicializarBuscadorEquipo(row.querySelector('.buscador-equipo-sprocket2'), {
+      tipoNombre: 'sprocket',
+      seleccionInicialId: esSet ? item?.sprocket2EquipoId : null
+    });
+    inicializarBuscadorEquipo(contenedorCaja, {
+      tipoNombre: 'caja de cadena',
+      seleccionInicialId: esSet ? item?.cajaEquipoId : null
     });
     actualizarExtrasVisibles(); // por si ya venía un reductor precargado (editar pedido)
     actualizarCantidadSegunTipoEquipo(); // ídem, por si ya venía una cadena precargada
@@ -1073,9 +1190,21 @@
       const flancheEquipoId = llevaFlanche ? (fila.querySelector('.equipo-pedido-flanche-id').value || null) : null;
       const marcarTodasPreparadas = fila.querySelector('.equipo-pedido-preparado').checked;
       const esMotoreductor = fila.querySelector('.equipo-pedido-es-motoreductor').checked;
+      const esSetFila = fila.querySelector('.equipo-pedido-es-set').checked;
 
       let item;
-      if (esMotoreductor) {
+      if (esSetFila) {
+        const sprocket1EquipoId = fila.querySelector('.equipo-pedido-sprocket1').value;
+        const sprocket2EquipoId = fila.querySelector('.equipo-pedido-sprocket2').value;
+        if (!sprocket1EquipoId || !sprocket2EquipoId) return; // ignora sets incompletos
+        const conCaja = fila.querySelector('.equipo-pedido-set-con-caja').checked;
+        const cajaEquipoId = conCaja ? (fila.querySelector('.equipo-pedido-caja').value || null) : null;
+        if (conCaja && !cajaEquipoId) return; // marcó "incluye caja" pero no eligió cuál
+        const cantidad = parseInt(fila.querySelector('.equipo-pedido-cantidad-set').value, 10) || 1;
+        const ordenCompra = fila.querySelector('.equipo-pedido-oc-set').value.trim();
+        const unidadesPreparadas = marcarTodasPreparadas ? Array.from({ length: cantidad }, (_, i) => i) : [];
+        item = { tipoLinea: 'set', sprocket1EquipoId, sprocket2EquipoId, cajaEquipoId, cantidad, ordenCompra, llevaBrazo: false, llevaEje: false, llevaFlanche: false, brazoEquipoId: null, ejeEquipoId: null, flancheEquipoId: null, unidadesPreparadas };
+      } else if (esMotoreductor) {
         const motorEquipoId = fila.querySelector('.equipo-pedido-motor').value;
         const reductorEquipoId = fila.querySelector('.equipo-pedido-reductor').value;
         if (!motorEquipoId || !reductorEquipoId) return; // ignora filas incompletas
@@ -1783,7 +1912,7 @@
       if (reductor?.usaSerial) partes.push(`Reductor: <span class="serial-valor">${escapeHtml(item.serialesReductor?.[unidad] || '—')}</span>`);
       return partes.join(' · ');
     }
-    const equipo = buscarEquipoCatalogo(item.equipoId);
+    const equipo = equipoDeItem(item);
     if (equipo?.usaSerial) return `Serial: <span class="serial-valor">${escapeHtml(item.seriales?.[unidad] || '—')}</span>`;
     return '';
   }
@@ -1796,7 +1925,7 @@
       const nombreReductor = reductor ? escapeHtml(reductor.nombre) : 'Reductor no encontrado';
       return `🔧 Motoreductor — ${nombreMotor} / ${nombreReductor}`;
     }
-    const equipo = buscarEquipoCatalogo(item.equipoId);
+    const equipo = equipoDeItem(item);
     return equipo ? `📦 ${escapeHtml(nombreMostrableEquipo(equipo))}` : '<span style="color:var(--danger);">Equipo no encontrado</span>';
   }
 
@@ -2050,7 +2179,7 @@
   }
 
   function renderTarjetaIndividual(item, index, pedido) {
-    const equipo = buscarEquipoCatalogo(item.equipoId);
+    const equipo = equipoDeItem(item);
     const tipo = equipo ? buscarTipoEquipo(equipo.tipoId) : null;
     const preparado = itemEstaFullyPreparado(item);
     const completado = estaItemCompletado(item);
@@ -2274,6 +2403,11 @@
   }
 
   function buscarTipoEquipo(tipoId) {
+    // Tipo "virtual" de los sets: usa el icono de Sprocket.
+    if (tipoId === TIPO_SET_ID) {
+      const sprocket = (window.tiposEquipoCache || []).find(t => normalizar(t.nombre) === 'sprocket');
+      return { id: TIPO_SET_ID, nombre: 'Set', icono: sprocket?.icono || '⚙️' };
+    }
     return (window.tiposEquipoCache || []).find(t => t.id === tipoId) || null;
   }
 
@@ -2545,7 +2679,7 @@
     let equipo;
     if (campo === 'motor') equipo = buscarEquipoCatalogo(item.motorEquipoId);
     else if (campo === 'reductor') equipo = buscarEquipoCatalogo(item.reductorEquipoId);
-    else equipo = buscarEquipoCatalogo(item.equipoId);
+    else equipo = equipoDeItem(item);
     const tipo = equipo ? buscarTipoEquipo(equipo.tipoId) : null;
     return tipo ? normalizar(tipo.nombre) : null;
   }
@@ -2726,7 +2860,7 @@
       if (motor?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input-motor', 'motor', cantidad, item.serialesMotor || [], `⚡ Motor — ${escapeHtml(motor.nombre)}`, unidadesCompletadas, unidadesDevueltas, bloqueoUnidad0('motor'));
       if (reductor?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input-reductor', 'reductor', cantidad, item.serialesReductor || [], `⚙️ Reductor — ${escapeHtml(reductor.nombre)}`, unidadesCompletadas, unidadesDevueltas, bloqueoUnidad0('reductor'));
     } else {
-      const equipo = buscarEquipoCatalogo(item.equipoId);
+      const equipo = equipoDeItem(item);
       modalSerialesTitulo.textContent = `Unidades — ${equipo ? equipo.nombre : 'Equipo'}`;
       if (equipo?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input', 'individual', cantidad, item.seriales || [], '', unidadesCompletadas, unidadesDevueltas, bloqueoUnidad0('individual'));
     }
@@ -2840,7 +2974,7 @@
       const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
       return `Motoreductor (${motor ? motor.nombre : '?'} + ${reductor ? reductor.nombre : '?'})`;
     }
-    const equipo = buscarEquipoCatalogo(item.equipoId);
+    const equipo = equipoDeItem(item);
     return equipo ? equipo.nombre + (equipo.variante ? ` (${equipo.variante})` : '') : 'Equipo no encontrado';
   }
 
@@ -2867,7 +3001,7 @@
       const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
       return !!(motor?.usaSerial || reductor?.usaSerial);
     }
-    const equipo = buscarEquipoCatalogo(item.equipoId);
+    const equipo = equipoDeItem(item);
     return !!equipo?.usaSerial;
   }
 
@@ -2967,7 +3101,7 @@
       const equipoReductor = buscarEquipoCatalogo(item.reductorEquipoId);
       pesoUnitario = pesoUnitarioEquipoEnvio(equipoMotor) + pesoUnitarioEquipoEnvio(equipoReductor);
     } else {
-      const equipo = buscarEquipoCatalogo(item.equipoId);
+      const equipo = equipoDeItem(item);
       pesoUnitario = pesoUnitarioEquipoEnvio(equipo);
     }
     pesoUnitario += pesoExtrasItem(item);
@@ -3247,7 +3381,7 @@
       // navegador bloquea el envío diciendo que el valor no es válido/entero
       // (con step="1" un valor como 2.5 nunca pasa la validación).
       const esDecimal = item.tipoLinea !== 'motoreductor'
-        && esTipoCantidadDecimal(buscarEquipoCatalogo(item.equipoId));
+        && esTipoCantidadDecimal(equipoDeItem(item));
       const paso = esDecimal ? '0.01' : '1';
 
       return `
@@ -3795,7 +3929,7 @@
       // Brazo/eje/flanche son piezas del reductor, así que el extra va pegado a su nombre.
       nombre = `${nombreConIcono(motor, 'Motor no encontrado')} + ${nombreConIcono(reductor, 'Reductor no encontrado')}${htmlExtrasItem(item)}`;
     } else {
-      const equipo = buscarEquipoCatalogo(item.equipoId);
+      const equipo = equipoDeItem(item);
       nombre = `${nombreConIcono(equipo, 'Equipo no encontrado')}${htmlExtrasItem(item)}`;
     }
 
