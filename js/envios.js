@@ -69,8 +69,14 @@
 
   const btnAbrirAgregarSuelto = document.getElementById('btn-simulacion-agregar-suelto');
   const panelAgregarSuelto = document.getElementById('simulacion-panel-agregar-suelto');
+  // Tipo y Equipo ahora son buscadores con autocompletado: el input visible
+  // se escribe, y el input oculto (mismos ids de antes) guarda el id elegido.
   const selectTipoSuelto = document.getElementById('simulacion-suelto-tipo-filtro');
   const selectEquipoSuelto = document.getElementById('simulacion-suelto-equipo');
+  const inputTipoSueltoTexto = document.getElementById('simulacion-suelto-tipo-input');
+  const inputEquipoSueltoTexto = document.getElementById('simulacion-suelto-equipo-input');
+  const resultadosTipoSuelto = document.getElementById('simulacion-suelto-tipo-resultados');
+  const resultadosEquipoSuelto = document.getElementById('simulacion-suelto-equipo-resultados');
   const inputCantidadSuelto = document.getElementById('simulacion-suelto-cantidad');
   const btnCancelarAgregarSuelto = document.getElementById('btn-cancelar-simulacion-agregar-suelto');
   const btnConfirmarAgregarSuelto = document.getElementById('btn-confirmar-simulacion-agregar-suelto');
@@ -1955,15 +1961,109 @@
 
   // ---------- Panel: agregar un equipo suelto del catálogo ----------
 
-  function poblarSelectEquipoSuelto() {
-    const tipoId = selectTipoSuelto.value || null;
-    const equipos = (window.equiposCache || []).filter(eq => !tipoId || eq.tipoId === tipoId);
-    selectEquipoSuelto.innerHTML = '<option value="">Selecciona un equipo...</option>' +
-      equipos.map(eq => {
-        const icono = buscarTipoEquipo(eq.tipoId)?.icono || '';
-        return `<option value="${eq.id}">${icono ? icono + ' ' : ''}${escapeHtml(eq.nombre)}${sufijoVariante(eq)}</option>`;
-      }).join('');
+  // Autocompletado genérico (mismo estilo .buscador-* del resto de la app).
+  // obtenerOpciones(termino) devuelve [{ id, texto, html }]; con el campo
+  // vacío muestra todas, para poder usarlo también como lista desplegable.
+  function crearAutocompletado({ input, hidden, resultados, obtenerOpciones, alElegir, alEditar }) {
+    let opcionesActuales = [];
+
+    function cerrar() { resultados.classList.remove('open'); }
+
+    function elegir(op) {
+      if (!op) return;
+      hidden.value = op.id;
+      input.value = op.texto;
+      cerrar();
+      if (alElegir) alElegir(op);
+    }
+
+    function render() {
+      opcionesActuales = obtenerOpciones(normalizar(input.value.trim()));
+      resultados.innerHTML = opcionesActuales.length
+        ? opcionesActuales.map(o => `<div class="buscador-item" data-id="${escapeAttr(o.id)}">${o.html}</div>`).join('')
+        : '<div class="buscador-item-vacio">Sin coincidencias</div>';
+      resultados.querySelectorAll('.buscador-item').forEach(el => {
+        el.addEventListener('click', () => elegir(opcionesActuales.find(o => String(o.id) === el.dataset.id)));
+      });
+      resultados.classList.add('open');
+    }
+
+    input.addEventListener('input', () => {
+      // Si escribe de nuevo, la selección anterior deja de valer.
+      if (hidden.value) { hidden.value = ''; if (alEditar) alEditar(); }
+      render();
+    });
+    input.addEventListener('focus', () => { input.select(); render(); });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (resultados.classList.contains('open') && opcionesActuales.length) elegir(opcionesActuales[0]);
+      } else if (e.key === 'Escape') {
+        cerrar();
+      }
+    });
+    document.addEventListener('click', (e) => {
+      if (input.contains(e.target) || resultados.contains(e.target)) return;
+      if (!resultados.classList.contains('open')) return;
+      cerrar();
+      // Texto suelto que no se eligió de la lista: se descarta.
+      if (!hidden.value && input.value.trim()) { input.value = ''; if (alEditar) alEditar(); }
+    });
+
+    return {
+      limpiar() { input.value = ''; hidden.value = ''; cerrar(); },
+    };
   }
+
+  function textoPlanoEquipo(eq) {
+    const icono = buscarTipoEquipo(eq.tipoId)?.icono || '';
+    return `${icono ? icono + ' ' : ''}${eq.nombre}${eq.variante ? ` (${eq.variante})` : ''}`;
+  }
+
+  const autoTipoSuelto = crearAutocompletado({
+    input: inputTipoSueltoTexto,
+    hidden: selectTipoSuelto,
+    resultados: resultadosTipoSuelto,
+    obtenerOpciones: (termino) => (window.tiposEquipoCache || [])
+      .filter(t => !termino || normalizar(t.nombre).includes(termino))
+      .map(t => ({
+        id: t.id,
+        texto: `${t.icono ? t.icono + ' ' : ''}${t.nombre}`,
+        html: `${t.icono ? t.icono + ' ' : ''}${escapeHtml(t.nombre)}`,
+      })),
+    alElegir: () => {
+      // Si el equipo ya elegido no es de este tipo, se limpia.
+      const eq = buscarEquipoCatalogo(selectEquipoSuelto.value);
+      if (eq && eq.tipoId !== selectTipoSuelto.value) autoEquipoSuelto.limpiar();
+    },
+  });
+
+  const autoEquipoSuelto = crearAutocompletado({
+    input: inputEquipoSueltoTexto,
+    hidden: selectEquipoSuelto,
+    resultados: resultadosEquipoSuelto,
+    obtenerOpciones: (termino) => {
+      const tipoId = selectTipoSuelto.value || null;
+      const palabras = termino.split(/\s+/).filter(Boolean);
+      return (window.equiposCache || [])
+        .filter(eq => !tipoId || eq.tipoId === tipoId)
+        .filter(eq => {
+          if (!palabras.length) return true;
+          const tipoNombre = buscarTipoEquipo(eq.tipoId)?.nombre || '';
+          const pajar = normalizar(`${eq.nombre} ${eq.variante || ''} ${tipoNombre}`);
+          return palabras.every(p => pajar.includes(p));
+        })
+        .map(eq => {
+          const icono = buscarTipoEquipo(eq.tipoId)?.icono || '';
+          return {
+            id: eq.id,
+            texto: textoPlanoEquipo(eq),
+            html: `${icono ? icono + ' ' : ''}${escapeHtml(eq.nombre)}${sufijoVariante(eq)}`,
+          };
+        });
+    },
+    alElegir: actualizarCantidadSueltoSegunEquipo,
+  });
 
   function actualizarCantidadSueltoSegunEquipo() {
     const equipo = buscarEquipoCatalogo(selectEquipoSuelto.value);
@@ -1977,20 +2077,18 @@
     const abierto = panelAgregarSuelto.style.display !== 'none';
     if (abierto) { panelAgregarSuelto.style.display = 'none'; return; }
 
-    selectTipoSuelto.innerHTML = '<option value="">Todos los tipos</option>' +
-      (window.tiposEquipoCache || []).map(t => `<option value="${t.id}">${t.icono ? t.icono + ' ' : ''}${escapeHtml(t.nombre)}</option>`).join('');
-    poblarSelectEquipoSuelto();
+    autoTipoSuelto.limpiar();
+    autoEquipoSuelto.limpiar();
+    actualizarCantidadSueltoSegunEquipo();
     inputCantidadSuelto.value = 1;
     panelAgregarSuelto.style.display = 'block';
   });
 
   btnCancelarAgregarSuelto.addEventListener('click', () => { panelAgregarSuelto.style.display = 'none'; });
-  selectTipoSuelto.addEventListener('change', poblarSelectEquipoSuelto);
-  selectEquipoSuelto.addEventListener('change', actualizarCantidadSueltoSegunEquipo);
 
   btnConfirmarAgregarSuelto.addEventListener('click', async () => {
     const equipoId = selectEquipoSuelto.value;
-    if (!equipoId) { alert('Elige un equipo primero.'); return; }
+    if (!equipoId) { alert('Elige un equipo de la lista de sugerencias.'); return; }
     const cantidad = parseFloat(inputCantidadSuelto.value);
     if (!cantidad || cantidad <= 0) { alert('Pon una cantidad mayor a 0.'); return; }
 

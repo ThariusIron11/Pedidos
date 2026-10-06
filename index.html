@@ -3685,12 +3685,20 @@
         <!-- Panel: agregar un equipo suelto del catálogo -->
         <div id="simulacion-panel-agregar-suelto" class="simulacion-panel-agregar" style="display:none;">
           <div class="form-group">
-            <label>Tipo</label>
-            <select id="simulacion-suelto-tipo-filtro"></select>
+            <label for="simulacion-suelto-tipo-input">Tipo</label>
+            <div class="buscador-equipo">
+              <input type="text" id="simulacion-suelto-tipo-input" class="buscador-input" placeholder="Todos los tipos (escribe para filtrar)..." autocomplete="off">
+              <input type="hidden" id="simulacion-suelto-tipo-filtro">
+              <div class="buscador-resultados" id="simulacion-suelto-tipo-resultados"></div>
+            </div>
           </div>
           <div class="form-group">
-            <label>Equipo</label>
-            <select id="simulacion-suelto-equipo"></select>
+            <label for="simulacion-suelto-equipo-input">Equipo</label>
+            <div class="buscador-equipo">
+              <input type="text" id="simulacion-suelto-equipo-input" class="buscador-input" placeholder="Escribe para buscar un equipo..." autocomplete="off">
+              <input type="hidden" id="simulacion-suelto-equipo">
+              <div class="buscador-resultados" id="simulacion-suelto-equipo-resultados"></div>
+            </div>
           </div>
           <div class="form-group">
             <label>Cantidad</label>
