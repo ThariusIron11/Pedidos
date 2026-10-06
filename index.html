@@ -566,6 +566,31 @@
   .modal.modal-ficha .modal-actions{ padding-bottom: 22px; }
   .ficha-envio-actions #btn-cancelar-envio{ margin-right: auto; }
 
+  /* Envíos / Simulaciones en PC: la ficha es una columna — encabezado y pie
+     fijos, y solo el contenido del medio se encoge/desliza. Así los botones
+     de abajo nunca quedan cortados cuando la pantalla es baja. */
+  #modal-ficha-envio .modal.modal-ficha,
+  #modal-ficha-simulacion .modal.modal-ficha{
+    display: flex;
+    flex-direction: column;
+  }
+  #modal-ficha-envio .ficha-header,
+  #modal-ficha-simulacion .ficha-header{ flex-shrink: 0; }
+  #modal-ficha-envio .ficha-envio-contenido-wrap,
+  #modal-ficha-simulacion .ficha-envio-contenido-wrap{
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+  #modal-ficha-envio .modal-actions,
+  #modal-ficha-simulacion .modal-actions{
+    flex-shrink: 0;
+    margin-top: 0;
+    background: #fff;
+  }
+  .ficha-envio-actions .btn{ white-space: nowrap; }
+  .ficha-envio-actions .btn .btn-icono{ margin-right: 5px; }
+
   .ficha-header{
     background: linear-gradient(135deg, var(--graphite) 0%, #30384a 100%);
     color: #fff;
@@ -2627,7 +2652,7 @@
 
         <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">
           <div class="form-group" style="max-width:300px; margin-bottom:0; flex:1; position:relative;">
-            <input type="text" id="buscador-pedidos" placeholder="Buscar por equipo, cliente, contacto o N° de pedido..." autocomplete="off">
+            <input type="text" id="buscador-pedidos" placeholder="Buscar por equipo, cliente, subsidiaria, contacto o N° de pedido..." autocomplete="off">
             <div class="buscador-resultados" id="resultados-buscador-pedidos"></div>
           </div>
           <div class="form-group" style="max-width:220px; margin-bottom:0; flex:1; position:relative;">
@@ -3629,12 +3654,12 @@
         <div id="ficha-envio-contenido"><!-- generado por envios.js --></div>
       </div>
       <div class="modal-actions ficha-envio-actions">
-        <button type="button" class="btn secondary danger-text" id="btn-cancelar-envio">Cancelar envío</button>
-        <button type="button" class="btn secondary" id="btn-descargar-remesa">📷 Descargar remesa</button>
-        <button type="button" class="btn secondary" id="btn-compartir-remesa-whatsapp">📲 Compartir por WhatsApp</button>
-        <button type="button" class="btn secondary" id="btn-cerrar-ficha-envio">Cerrar</button>
-        <button type="button" class="btn secondary" id="btn-guardar-envio">Guardar cambios</button>
-        <button type="button" class="btn" id="btn-despachar-envio">Marcar como despachado</button>
+        <button type="button" class="btn secondary danger-text" id="btn-cancelar-envio" title="Cancelar envío">🗑️ Cancelar envío</button>
+        <button type="button" class="btn secondary" id="btn-descargar-remesa" title="Descargar remesa como imagen">📷 Remesa</button>
+        <button type="button" class="btn secondary" id="btn-compartir-remesa-whatsapp" title="Compartir remesa por WhatsApp">📲 WhatsApp</button>
+        <button type="button" class="btn secondary" id="btn-cerrar-ficha-envio" title="Cerrar">✕ Cerrar</button>
+        <button type="button" class="btn secondary" id="btn-guardar-envio" title="Guardar cambios">💾 Guardar</button>
+        <button type="button" class="btn" id="btn-despachar-envio" title="Marcar como despachado">🚚 Despachar</button>
       </div>
     </div>
   </div>

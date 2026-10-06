@@ -3763,6 +3763,13 @@
     const compania = buscarCompania(pedido.companiaId);
     if (compania && normalizar(compania.nombre).includes(texto)) return true;
     if (pedido.contacto && normalizar(pedido.contacto).includes(texto)) return true;
+    // Envío a subsidiaria: también se busca por el nombre de la subsidiaria
+    // y por el contacto (encargado) de esa subsidiaria.
+    if (pedido.envioSubsidiaria) {
+      const subsidiaria = (window.clientesCache || []).find(c => c.id === pedido.subsidiariaId);
+      if (subsidiaria && normalizar(subsidiaria.nombre).includes(texto)) return true;
+      if (pedido.subsidiariaContacto && normalizar(pedido.subsidiariaContacto).includes(texto)) return true;
+    }
     if ((pedido.equipos || []).some(item => normalizar(nombreItemPedido(item)).includes(texto))) return true;
     // Remisiones: viven dentro de los envíos (un pedido puede tener varias,
     // repartidas en uno o más envíos), no en el propio documento del pedido.
@@ -3797,8 +3804,15 @@
   function etiquetaPedidoSugerencia(pedido) {
     const compania = buscarCompania(pedido.companiaId);
     const nombreCompania = compania ? compania.nombre : 'Compañía no encontrada';
-    const contacto = pedido.contacto ? ` · ${pedido.contacto}` : '';
-    return `${textoNumeroPedido(pedido)} — ${nombreCompania}${contacto}`;
+    let nombreMostrado = nombreCompania;
+    let contacto = pedido.contacto ? ` · ${pedido.contacto}` : '';
+    // Igual que en las tarjetas: "lo normal / lo de la subsidiaria".
+    if (pedido.envioSubsidiaria) {
+      const subsidiaria = (window.clientesCache || []).find(c => c.id === pedido.subsidiariaId);
+      nombreMostrado = `${nombreCompania} / ${subsidiaria ? subsidiaria.nombre : 'Subsidiaria no encontrada'}`;
+      if (pedido.subsidiariaContacto) contacto += `${pedido.contacto ? ' / ' : ' · '}${pedido.subsidiariaContacto}`;
+    }
+    return `${textoNumeroPedido(pedido)} — ${nombreMostrado}${contacto}`;
   }
 
   function irAPedidoDesdeSugerencia(pedido) {
