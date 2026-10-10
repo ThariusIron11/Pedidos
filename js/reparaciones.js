@@ -409,7 +409,7 @@
     const contacto = reparacion.contacto ? escapeHtml(reparacion.contacto) : '— (sin asignar)';
     const fecha = reparacion.fechaIngreso ? formatearFechaCorta(reparacion.fechaIngreso) : '—';
     const evidencia = reparacion.evidenciaFotografica
-      ? `<a href="${escapeAttr(reparacion.evidenciaFotografica)}" target="_blank" rel="noopener noreferrer">📷 Ver evidencia ↗</a>`
+      ? `<a href="${escapeAttr(reparacion.evidenciaFotografica)}" target="_blank" rel="noopener noreferrer">📷 Ver evidencia ↗</a><button type="button" class="btn-copiar-link" data-link="${encodeURIComponent(reparacion.evidenciaFotografica)}" title="Copiar el link de la evidencia">🔗 Copiar link</button>`
       : '— (sin evidencia)';
 
     fichaSeccionDatos.innerHTML = `

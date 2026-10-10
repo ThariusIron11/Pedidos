@@ -1690,7 +1690,7 @@
     }
 
     const evidenciaHtml = pedido.evidenciaFotografica
-      ? `<a href="${escapeAttr(pedido.evidenciaFotografica)}" target="_blank" rel="noopener noreferrer">📷 Ver evidencia ↗</a>`
+      ? `<a href="${escapeAttr(pedido.evidenciaFotografica)}" target="_blank" rel="noopener noreferrer">📷 Ver evidencia ↗</a><button type="button" class="btn-copiar-link" data-link="${encodeURIComponent(pedido.evidenciaFotografica)}" title="Copiar el link de la evidencia">🔗 Copiar link</button>`
       : '— (sin evidencia)';
 
     fichaSeccionCliente.innerHTML = `
