@@ -2506,31 +2506,35 @@
   .simulacion-pedido-item-row .nombre{ flex: 1; }
   .simulacion-pedido-item-row input{ width: 80px; }
 
-  /* ---------- Barra de búsqueda/filtros fija (Pedidos, Envíos, Reparaciones) ----------
-     El scroll ocurre dentro de #panels, así que la barra se queda pegada arriba
-     (justo bajo el encabezado) mientras se recorren las tarjetas. Los márgenes
-     negativos igualan el padding de #panels para que el fondo cubra todo el
+  /* ---------- Cabecera fija (Pedidos, Reparaciones) y filtros fijos (Envíos) ----------
+     El scroll ocurre dentro de #panels, así que todo el bloque de arriba
+     (título + botón "Nuevo" + búsqueda + filtros) se queda pegado bajo el
+     encabezado mientras se recorren las tarjetas. Los márgenes negativos
+     igualan el padding de #panels (24px) para que el fondo cubra todo el
      ancho y las tarjetas no se vean pasando por los costados. */
-  .barra-filtros-fija,
+  .cabecera-fija,
   .envios-filtros{
     position: sticky;
     top: 0;
     z-index: 30;
     background: var(--paper);
-    margin: 0 -24px 6px -24px;
+    margin: 0 -24px 8px -24px;
     padding: 10px 24px;
     border-bottom: 1px solid #e2e4e9;
   }
+  .cabecera-fija{ padding-top: 20px; margin-top: -24px; }
+  .cabecera-fija .panel-header{ margin-bottom: 12px; }
 
   @media (max-width: 760px){
     .ficha-campos{ grid-template-columns: 1fr; }
-    /* En celular la barra ocuparía demasiada pantalla: no se fija. */
-    .barra-filtros-fija, .envios-filtros{
+    /* En celular la cabecera ocuparía demasiada pantalla: no se fija. */
+    .cabecera-fija, .envios-filtros{
       position: static;
       margin: 0 0 16px 0;
       padding: 0;
       border-bottom: 0;
     }
+    .cabecera-fija{ margin-top: 0; }
     body{ flex-direction: column; }
     #sidebar{
       width: 100%;
@@ -2668,25 +2672,27 @@
 
     <div id="panels">
       <section class="panel active" id="panel-pedidos" data-title="Pedidos">
-        <div class="panel-header">
-          <h2>Pedidos</h2>
-          <button type="button" class="btn" id="btn-nuevo-pedido">+ Nuevo pedido</button>
-        </div>
+        <div class="cabecera-fija">
+          <div class="panel-header">
+            <h2>Pedidos</h2>
+            <button type="button" class="btn" id="btn-nuevo-pedido">+ Nuevo pedido</button>
+          </div>
 
-        <div class="barra-filtros-fija" style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
-          <div class="form-group" style="max-width:300px; margin-bottom:0; flex:1; position:relative;">
-            <input type="text" id="buscador-pedidos" placeholder="Buscar por equipo, cliente, subsidiaria, contacto o N° de pedido..." autocomplete="off">
-            <div class="buscador-resultados" id="resultados-buscador-pedidos"></div>
-          </div>
-          <div class="form-group" style="max-width:220px; margin-bottom:0; flex:1; position:relative;">
-            <input type="text" id="buscador-serial-pedidos" placeholder="Buscar por número de serial..." autocomplete="off">
-            <div class="buscador-resultados" id="resultados-buscador-serial-pedidos"></div>
-          </div>
-          <div class="filtros-pedidos" id="filtros-pedidos">
-            <div class="filtros-pedidos-activos" id="filtros-pedidos-activos"></div>
-            <div class="filtro-agregar-wrap">
-              <button type="button" class="chip-filtro-estado" id="btn-agregar-filtro-pedidos">＋ Filtro</button>
-              <div class="filtro-menu" id="menu-filtros-pedidos"></div>
+          <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+            <div class="form-group" style="max-width:300px; margin-bottom:0; flex:1; position:relative;">
+              <input type="text" id="buscador-pedidos" placeholder="Buscar por equipo, cliente, subsidiaria, contacto o N° de pedido..." autocomplete="off">
+              <div class="buscador-resultados" id="resultados-buscador-pedidos"></div>
+            </div>
+            <div class="form-group" style="max-width:220px; margin-bottom:0; flex:1; position:relative;">
+              <input type="text" id="buscador-serial-pedidos" placeholder="Buscar por número de serial..." autocomplete="off">
+              <div class="buscador-resultados" id="resultados-buscador-serial-pedidos"></div>
+            </div>
+            <div class="filtros-pedidos" id="filtros-pedidos">
+              <div class="filtros-pedidos-activos" id="filtros-pedidos-activos"></div>
+              <div class="filtro-agregar-wrap">
+                <button type="button" class="chip-filtro-estado" id="btn-agregar-filtro-pedidos">＋ Filtro</button>
+                <div class="filtro-menu" id="menu-filtros-pedidos"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -2763,23 +2769,25 @@
       </section>
 
       <section class="panel" id="panel-reparaciones" data-title="Reparaciones">
-        <div class="panel-header">
-          <h2>Reparaciones</h2>
-          <button type="button" class="btn" id="btn-nueva-reparacion">+ Nueva reparación</button>
-        </div>
+        <div class="cabecera-fija">
+          <div class="panel-header">
+            <h2>Reparaciones</h2>
+            <button type="button" class="btn" id="btn-nueva-reparacion">+ Nueva reparación</button>
+          </div>
 
-        <div class="barra-filtros-fija" style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
-          <div class="form-group" style="max-width:340px; margin-bottom:0; flex:1;">
-            <input type="text" id="buscador-reparaciones" placeholder="Buscar por compañía, equipo, serial o número...">
-          </div>
-          <div class="filtro-estado-pedidos" id="filtro-estado-reparaciones">
-            <button type="button" class="chip-filtro-estado" data-estado="en_proceso">En proceso</button>
-            <button type="button" class="chip-filtro-estado" data-estado="completado">Completado</button>
-            <button type="button" class="chip-filtro-estado" data-estado="devolucion">Devolución</button>
-            <button type="button" class="chip-filtro-estado" data-estado="todos">Todos</button>
-          </div>
-          <div class="filtro-estado-pedidos" id="filtro-tiene-pedido-reparaciones">
-            <button type="button" class="chip-filtro-estado" id="chip-tiene-pedido-reparaciones">🧾 Con pedido</button>
+          <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+            <div class="form-group" style="max-width:340px; margin-bottom:0; flex:1;">
+              <input type="text" id="buscador-reparaciones" placeholder="Buscar por compañía, equipo, serial o número...">
+            </div>
+            <div class="filtro-estado-pedidos" id="filtro-estado-reparaciones">
+              <button type="button" class="chip-filtro-estado" data-estado="en_proceso">En proceso</button>
+              <button type="button" class="chip-filtro-estado" data-estado="completado">Completado</button>
+              <button type="button" class="chip-filtro-estado" data-estado="devolucion">Devolución</button>
+              <button type="button" class="chip-filtro-estado" data-estado="todos">Todos</button>
+            </div>
+            <div class="filtro-estado-pedidos" id="filtro-tiene-pedido-reparaciones">
+              <button type="button" class="chip-filtro-estado" id="chip-tiene-pedido-reparaciones">🧾 Con pedido</button>
+            </div>
           </div>
         </div>
 
