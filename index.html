@@ -2522,8 +2522,7 @@
     padding: 10px 24px;
     border-bottom: 1px solid #e2e4e9;
   }
-  .cabecera-fija{ padding-top: 20px; margin-top: -24px; }
-  .cabecera-fija .panel-header{ margin-bottom: 12px; }
+  .cabecera-fija{ padding-top: 10px; margin-top: -24px; }
 
   @media (max-width: 760px){
     .ficha-campos{ grid-template-columns: 1fr; }
@@ -2673,11 +2672,6 @@
     <div id="panels">
       <section class="panel active" id="panel-pedidos" data-title="Pedidos">
         <div class="cabecera-fija">
-          <div class="panel-header">
-            <h2>Pedidos</h2>
-            <button type="button" class="btn" id="btn-nuevo-pedido">+ Nuevo pedido</button>
-          </div>
-
           <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
             <div class="form-group" style="max-width:300px; margin-bottom:0; flex:1; position:relative;">
               <input type="text" id="buscador-pedidos" placeholder="Buscar por equipo, cliente, subsidiaria, contacto o N° de pedido..." autocomplete="off">
@@ -2694,6 +2688,7 @@
                 <div class="filtro-menu" id="menu-filtros-pedidos"></div>
               </div>
             </div>
+            <button type="button" class="btn" id="btn-nuevo-pedido" style="margin-left:auto;">+ Nuevo pedido</button>
           </div>
         </div>
 
@@ -2770,11 +2765,6 @@
 
       <section class="panel" id="panel-reparaciones" data-title="Reparaciones">
         <div class="cabecera-fija">
-          <div class="panel-header">
-            <h2>Reparaciones</h2>
-            <button type="button" class="btn" id="btn-nueva-reparacion">+ Nueva reparación</button>
-          </div>
-
           <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
             <div class="form-group" style="max-width:340px; margin-bottom:0; flex:1;">
               <input type="text" id="buscador-reparaciones" placeholder="Buscar por compañía, equipo, serial o número...">
@@ -2788,6 +2778,7 @@
             <div class="filtro-estado-pedidos" id="filtro-tiene-pedido-reparaciones">
               <button type="button" class="chip-filtro-estado" id="chip-tiene-pedido-reparaciones">🧾 Con pedido</button>
             </div>
+            <button type="button" class="btn" id="btn-nueva-reparacion" style="margin-left:auto;">+ Nueva reparación</button>
           </div>
         </div>
 
