@@ -136,11 +136,15 @@
   #panels{
     flex: 1;
     overflow: auto;
-    padding: 24px;
+    /* Sin padding arriba: el espacio superior lo da cada .panel. Así una
+       barra "sticky" con top:0 queda realmente pegada al borde superior
+       y no se ven tarjetas pasando por encima de ella. */
+    padding: 0 24px 24px;
   }
 
   .panel{
     display: none;
+    padding-top: 24px;
   }
   .panel.active{
     display: block;
@@ -2510,7 +2514,7 @@
      El scroll ocurre dentro de #panels, así que todo el bloque de arriba
      (título + botón "Nuevo" + búsqueda + filtros) se queda pegado bajo el
      encabezado mientras se recorren las tarjetas. Los márgenes negativos
-     igualan el padding de #panels (24px) para que el fondo cubra todo el
+     igualan el padding lateral de #panels (24px) para que el fondo cubra todo el
      ancho y las tarjetas no se vean pasando por los costados. */
   .cabecera-fija,
   .envios-filtros{
@@ -2518,11 +2522,13 @@
     top: 0;
     z-index: 30;
     background: var(--paper);
-    margin: 0 -24px 8px -24px;
+    margin: 0 -24px 18px -24px;
     padding: 10px 24px;
     border-bottom: 1px solid #e2e4e9;
   }
-  .cabecera-fija{ padding-top: 10px; margin-top: -24px; }
+  /* El -10px compensa el padding superior para que, sin hacer scroll, el
+     contenido quede en la misma posición de siempre. */
+  .cabecera-fija{ margin-top: -10px; }
 
   @media (max-width: 760px){
     .ficha-campos{ grid-template-columns: 1fr; }
