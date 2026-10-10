@@ -2506,8 +2506,31 @@
   .simulacion-pedido-item-row .nombre{ flex: 1; }
   .simulacion-pedido-item-row input{ width: 80px; }
 
+  /* ---------- Barra de búsqueda/filtros fija (Pedidos, Envíos, Reparaciones) ----------
+     El scroll ocurre dentro de #panels, así que la barra se queda pegada arriba
+     (justo bajo el encabezado) mientras se recorren las tarjetas. Los márgenes
+     negativos igualan el padding de #panels para que el fondo cubra todo el
+     ancho y las tarjetas no se vean pasando por los costados. */
+  .barra-filtros-fija,
+  .envios-filtros{
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: var(--paper);
+    margin: 0 -24px 6px -24px;
+    padding: 10px 24px;
+    border-bottom: 1px solid #e2e4e9;
+  }
+
   @media (max-width: 760px){
     .ficha-campos{ grid-template-columns: 1fr; }
+    /* En celular la barra ocuparía demasiada pantalla: no se fija. */
+    .barra-filtros-fija, .envios-filtros{
+      position: static;
+      margin: 0 0 16px 0;
+      padding: 0;
+      border-bottom: 0;
+    }
     body{ flex-direction: column; }
     #sidebar{
       width: 100%;
@@ -2650,7 +2673,7 @@
           <button type="button" class="btn" id="btn-nuevo-pedido">+ Nuevo pedido</button>
         </div>
 
-        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">
+        <div class="barra-filtros-fija" style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
           <div class="form-group" style="max-width:300px; margin-bottom:0; flex:1; position:relative;">
             <input type="text" id="buscador-pedidos" placeholder="Buscar por equipo, cliente, subsidiaria, contacto o N° de pedido..." autocomplete="off">
             <div class="buscador-resultados" id="resultados-buscador-pedidos"></div>
@@ -2745,7 +2768,7 @@
           <button type="button" class="btn" id="btn-nueva-reparacion">+ Nueva reparación</button>
         </div>
 
-        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">
+        <div class="barra-filtros-fija" style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
           <div class="form-group" style="max-width:340px; margin-bottom:0; flex:1;">
             <input type="text" id="buscador-reparaciones" placeholder="Buscar por compañía, equipo, serial o número...">
           </div>
