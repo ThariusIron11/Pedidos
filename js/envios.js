@@ -236,6 +236,24 @@
     };
   }
 
+  // Sets con caja de cadena: se pueden despachar por PARTES ('sprockets' = los
+  // 2 sprockets, 'caja' = la caja de cadena). Una entrada de remisión (it) con
+  // it.partes lleva solo esa parte; sin it.partes lleva el set completo. (La
+  // misma lógica vive en pedidos.js, que es un archivo independiente.)
+  function setTienePartes(item) {
+    return item?.tipoLinea === 'set' && !!item.cajaEquipoId;
+  }
+
+  function textoPartesEntrada(it, item) {
+    if (!setTienePartes(item) || !it.partes || it.partes.length !== 1) return '';
+    return it.partes[0] === 'caja' ? 'solo caja de cadena' : 'solo sprockets';
+  }
+
+  function pesoParteSetUnitario(item, parte) {
+    const ids = parte === 'caja' ? [item.cajaEquipoId] : [item.sprocket1EquipoId, item.sprocket2EquipoId];
+    return ids.filter(Boolean).reduce((t, id) => t + pesoUnitarioEquipo(buscarEquipoCatalogo(id)), 0);
+  }
+
   // Equipo (del catálogo, o virtual si es un set) de un ítem de pedido
   // individual/set.
   function equipoDeItem(item) {
@@ -307,6 +325,9 @@
       const equipoMotor = buscarEquipoCatalogo(item.motorEquipoId);
       const equipoReductor = buscarEquipoCatalogo(item.reductorEquipoId);
       pesoUnitario = pesoUnitarioEquipo(equipoMotor) + pesoUnitarioEquipo(equipoReductor);
+    } else if (setTienePartes(item) && it.partes && it.partes.length === 1) {
+      // Set enviado por partes: pesa solo la parte que lleva.
+      pesoUnitario = pesoParteSetUnitario(item, it.partes[0]);
     } else {
       const equipo = equipoDeItem(item);
       pesoUnitario = pesoUnitarioEquipo(equipo);
@@ -697,6 +718,9 @@
             const icono = buscarTipoEquipo(equipo?.tipoId)?.icono || '';
             nombre = `${icono ? icono + ' ' : ''}${equipo?.nombre || 'Equipo no encontrado'}${extras}`;
           }
+
+          const parteTxt = textoPartesEntrada(it, item);
+          if (parteTxt) nombre += ` <span class="tag-parte-set">${parteTxt}</span>`;
 
           // Equipo CON serial: se sabe exactamente cuál unidad es cuál, así que
           // cada una se lista y se retira por separado.
@@ -1248,7 +1272,21 @@
               it.unidades.forEach(u => preparadas.add(u));
               item.unidadesPreparadas = Array.from(preparadas);
             } else {
-              const nuevoCompletado = Math.min(item.cantidad || 0, (item.cantidadCompletada || 0) + (it.cantidad || 0));
+              let nuevoCompletado;
+              if (setTienePartes(item)) {
+                // Set por partes: se cuenta cada parte por separado y el set
+                // solo queda COMPLETADO cuando salieron las dos.
+                const base = item.cantidadCompletada || 0;
+                const pc = item.partesCompletadas || { sprockets: base, caja: base };
+                const partesQueSalen = (it.partes && it.partes.length) ? it.partes : ['sprockets', 'caja'];
+                partesQueSalen.forEach(parte => {
+                  pc[parte] = Math.min(item.cantidad || 0, (pc[parte] || 0) + (it.cantidad || 0));
+                });
+                item.partesCompletadas = { sprockets: pc.sprockets || 0, caja: pc.caja || 0 };
+                nuevoCompletado = Math.min(item.partesCompletadas.sprockets, item.partesCompletadas.caja);
+              } else {
+                nuevoCompletado = Math.min(item.cantidad || 0, (item.cantidadCompletada || 0) + (it.cantidad || 0));
+              }
               item.cantidadCompletada = nuevoCompletado;
               // Equipo sin serial: no se sabe cuál unidad concreta salió, así
               // que se marcan como preparadas las unidades libres necesarias
@@ -1370,17 +1408,22 @@
 
       // Suma cantidades del mismo ítem si venía repartido en más de una
       // remisión dentro de este envío.
+      // (Un set enviado por partes se agrupa aparte por cada parte.)
       const cantidadPorItem = new Map();
       grupo.entradas.forEach(pInfo => {
         (pInfo.items || []).forEach(it => {
           const cantidad = (it.unidades && it.unidades.length) ? it.unidades.length : (it.cantidad || 0);
-          cantidadPorItem.set(it.itemIndex, (cantidadPorItem.get(it.itemIndex) || 0) + cantidad);
+          const clave = `${it.itemIndex}|${(it.partes && it.partes.length) ? [...it.partes].sort().join(',') : ''}`;
+          const previo = cantidadPorItem.get(clave) || { itemIndex: it.itemIndex, it, cantidad: 0 };
+          previo.cantidad += cantidad;
+          cantidadPorItem.set(clave, previo);
         });
       });
 
-      const itemsHtml = Array.from(cantidadPorItem.entries()).map(([itemIndex, cantidad]) => {
+      const itemsHtml = Array.from(cantidadPorItem.values()).map(({ itemIndex, it, cantidad }) => {
         const item = pedido?.equipos?.[itemIndex];
-        const nombre = item ? nombreItemParaRemesa(item) : '⚠️ Ítem no encontrado';
+        const parteTxt = item ? textoPartesEntrada(it, item) : '';
+        const nombre = item ? nombreItemParaRemesa(item) + (parteTxt ? ` (${parteTxt})` : '') : '⚠️ Ítem no encontrado';
         return `<div class="remesa-item-fila"><span class="nombre">${nombre}</span><span class="cantidad">${cantidad}</span></div>`;
       }).join('');
 

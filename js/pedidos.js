@@ -182,6 +182,66 @@
     return buscarEquipoCatalogo(item?.equipoId);
   }
 
+  // ---------- Sets: despacho por PARTES ----------
+  // Un set con caja de cadena se puede despachar en dos partes, que pueden
+  // salir en envíos distintos: 'sprockets' (los 2 sprockets) y 'caja' (la caja
+  // de cadena). Cada ítem de una remisión (it) puede traer it.partes =
+  // ['sprockets'] o ['caja']; si no trae it.partes se entiende que lleva
+  // TODO el set. En el pedido, item.partesCompletadas = { sprockets: n,
+  // caja: n } cuenta a cuántos sets ya se les despachó cada parte, e
+  // item.cantidadCompletada sigue siendo el nº de sets COMPLETOS (el menor de
+  // los dos), así el resto del programa (completado, bloqueos, pendientes)
+  // funciona igual que siempre.
+  function setTienePartes(item) {
+    return item?.tipoLinea === 'set' && !!item.cajaEquipoId;
+  }
+
+  function partesDeEntradaEnvio(it, item) {
+    if (!setTienePartes(item)) return null;
+    return (it.partes && it.partes.length) ? it.partes : ['sprockets', 'caja'];
+  }
+
+  // Texto corto de qué parte lleva una entrada de envío ('' si lleva todo).
+  function textoPartesEntrada(it, item) {
+    const partes = partesDeEntradaEnvio(it, item);
+    if (!partes || partes.length >= 2) return '';
+    return partes[0] === 'caja' ? 'solo caja de cadena' : 'solo sprockets';
+  }
+
+  // Cuántos sets tienen ya despachada cada parte (con respaldo para pedidos
+  // anteriores a esta función: ahí ambas partes salían siempre juntas).
+  function partesCompletadasSet(item) {
+    const base = item.cantidadCompletada || 0;
+    const pc = item.partesCompletadas;
+    return { sprockets: pc ? (pc.sprockets || 0) : base, caja: pc ? (pc.caja || 0) : base };
+  }
+
+  // Peso unitario (kg) de UNA parte del set.
+  function pesoParteSetUnitario(item, parte) {
+    const ids = parte === 'caja' ? [item.cajaEquipoId] : [item.sprocket1EquipoId, item.sprocket2EquipoId];
+    return ids.filter(Boolean).reduce((t, id) => t + pesoUnitarioEquipoEnvio(buscarEquipoCatalogo(id)), 0);
+  }
+
+  // ¿Ya salió algo de este ítem (aunque sea solo una parte de un set)?
+  function algoDespachadoItem(item) {
+    if (conteoCompletadoItem(item).hecho > 0) return true;
+    if (setTienePartes(item)) {
+      const pc = partesCompletadasSet(item);
+      return pc.sprockets > 0 || pc.caja > 0;
+    }
+    return false;
+  }
+
+  // Cantidad mínima a la que se puede bajar un ítem sin quedar por debajo de
+  // lo que ya salió (para un set por partes: la parte más adelantada).
+  function cantidadMinimaDespachada(item) {
+    if (setTienePartes(item)) {
+      const pc = partesCompletadasSet(item);
+      return Math.max(pc.sprockets, pc.caja);
+    }
+    return conteoCompletadoItem(item).hecho;
+  }
+
   // Un pedido es "traslado" (numeración T01, T02…) solo si no viene de una
   // reparación: los pedidos de reparación siempre usan la numeración R.
   function esPedidoTraslado(pedido) {
@@ -940,7 +1000,7 @@
 
     // Si el ítem ya tiene algo despachado (parcial o total), no se puede quitar
     // de la lista — no tiene lógica borrar algo que ya salió.
-    const yaDespachadoAlgo = item ? conteoCompletadoItem(item).hecho > 0 : false;
+    const yaDespachadoAlgo = item ? algoDespachadoItem(item) : false;
     if (yaDespachadoAlgo) {
       row.querySelectorAll('.remove-equipo-pedido').forEach(btn => {
         btn.disabled = true;
@@ -949,7 +1009,7 @@
         btn.style.cursor = 'not-allowed';
       });
       row.querySelectorAll('.equipo-pedido-cantidad, .equipo-pedido-cantidad-mr, .equipo-pedido-cantidad-set').forEach(inp => {
-        inp.min = String(conteoCompletadoItem(item).hecho);
+        inp.min = String(cantidadMinimaDespachada(item));
       });
     }
 
@@ -1739,15 +1799,28 @@
     return Math.round(((pesoBase || 0) + extras) * 100) / 100;
   }
 
+  // Candado que acompaña a un serial/unidad que ya salió en un envío
+  // despachado. Solo se muestra cuando el ítem tiene más de una unidad (con
+  // una sola, la tarjeta ya dice "Completado").
+  const CANDADO_DESPACHADO_HTML = ' <span class="candado-serial" title="Ya despachado">🔒</span>';
+
   function resumenSeriales(item, cantidad) {
-    const seriales = (item.seriales || []).filter(s => s && s.trim());
-    if (!seriales.length) {
+    // Se conserva el índice de cada serial (la unidad a la que pertenece)
+    // para saber cuáles ya fueron despachadas.
+    const conIndice = (item.seriales || [])
+      .map((s, i) => ({ s: (s || '').trim(), i }))
+      .filter(x => x.s);
+    const completadas = new Set(cantidad > 1 ? (item.unidadesCompletadas || []) : []);
+    const textoSeriales = conIndice
+      .map(x => escapeHtml(x.s) + (completadas.has(x.i) ? CANDADO_DESPACHADO_HTML : ''))
+      .join(', ');
+    if (!conIndice.length) {
       return `<span class="equipo-card-serial pendiente">🔴 Sin serial (0/${cantidad})</span>`;
     }
-    if (seriales.length >= cantidad) {
-      return `<span class="equipo-card-serial completo">🔢 ${seriales.map(escapeHtml).join(', ')}</span>`;
+    if (conIndice.length >= cantidad) {
+      return `<span class="equipo-card-serial completo">🔢 ${textoSeriales}</span>`;
     }
-    return `<span class="equipo-card-serial pendiente">🟡 ${seriales.map(escapeHtml).join(', ')} (${seriales.length}/${cantidad})</span>`;
+    return `<span class="equipo-card-serial pendiente">🟡 ${textoSeriales} (${conIndice.length}/${cantidad})</span>`;
   }
 
   // Para un Motoreductor: combina el serial del motor y del reductor de cada
@@ -1762,7 +1835,9 @@
       const icono = completa ? '🔢' : (vacia ? '🔴' : '🟡');
       const clase = completa ? 'completo' : 'pendiente';
       const prefijo = cantidad > 1 ? `Unidad ${i + 1}: ` : '';
-      return `<div class="equipo-card-serial ${clase}" style="display:block;">${icono} ${prefijo}${escapeHtml(sm || '—')} / ${escapeHtml(sr || '—')}</div>`;
+      // Un solo candado por unidad: motor y reductor se envían juntos.
+      const candado = (cantidad > 1 && (item.unidadesCompletadas || []).includes(i)) ? CANDADO_DESPACHADO_HTML : '';
+      return `<div class="equipo-card-serial ${clase}" style="display:block;">${icono} ${prefijo}${escapeHtml(sm || '—')} / ${escapeHtml(sr || '—')}${candado}</div>`;
     }).join('');
     return `<div class="serial-par-lista">${filas}</div>`;
   }
@@ -1878,7 +1953,7 @@
   // (parcial o totalmente) en algún envío despachado. No hace falta que el
   // pedido esté completo del todo: basta con que ya haya algo despachado.
   function pedidoTieneAlgoDespachado(pedido) {
-    return (pedido.equipos || []).some(item => conteoCompletadoItem(item).hecho > 0);
+    return (pedido.equipos || []).some(item => algoDespachadoItem(item));
   }
   window.pedidoTieneAlgoDespachado = pedidoTieneAlgoDespachado;
 
@@ -2211,7 +2286,15 @@
     const chipParcial = (hecho > 0 && hecho < total) ? `<span class="meta-chip" title="Ya se despachó parte de este ítem">🔒 ${hecho}/${total} despachado</span>` : '';
     const cantDevueltas = devueltasCountItem(item);
     const chipDevuelto = cantDevueltas ? `<span class="meta-chip chip-devuelto" title="Unidad(es) devuelta(s)">🔵 ${cantDevueltas} devuelta${cantDevueltas > 1 ? 's' : ''}</span>` : '';
-    const metaChips = `<span class="meta-chip">${formatearPesoFicha(pesoConExtrasFicha(calcularPesoEquipo(equipo), item))}</span>${chipParcial}${chipDevuelto}`;
+    // Set con caja de cadena: si ya salió alguna parte, se muestra cuál.
+    let chipPartes = '';
+    if (setTienePartes(item) && !completado) {
+      const pc = partesCompletadasSet(item);
+      if (pc.sprockets > 0 || pc.caja > 0) {
+        chipPartes = `<span class="meta-chip" title="Cuántos sets tienen ya despachada cada parte">📦 Sprockets ${pc.sprockets}/${total} · Caja de cadena ${pc.caja}/${total} despachado</span>`;
+      }
+    }
+    const metaChips = `<span class="meta-chip">${formatearPesoFicha(pesoConExtrasFicha(calcularPesoEquipo(equipo), item))}</span>${chipParcial}${chipPartes}${chipDevuelto}`;
 
     return `
       <div class="equipo-card clicable ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''} ${cantDevueltas ? 'devuelto' : ''}" data-index="${index}" style="border-color:${color};">
@@ -2814,6 +2897,14 @@
     const itemActualizado = { ...item };
     itemActualizado.cantidadCompletada = Math.max(0, completadas - 1);
     itemActualizado.cantidadDevuelta = devueltasActuales + 1;
+    // Set por partes: un set devuelto era un set COMPLETO, así que ambas
+    // partes bajan una unidad.
+    if (setTienePartes(item) && item.partesCompletadas) {
+      itemActualizado.partesCompletadas = {
+        sprockets: Math.max(0, (item.partesCompletadas.sprockets || 0) - 1),
+        caja: Math.max(0, (item.partesCompletadas.caja || 0) - 1)
+      };
+    }
     // Libera una unidad "preparada" (la de índice más alto disponible), ya
     // que la que se devolvió deja de estar lista para despacho.
     const preparadas = [...(item.unidadesPreparadas || [])].sort((a, b) => a - b);
@@ -2978,14 +3069,19 @@
     return equipo ? equipo.nombre + (equipo.variante ? ` (${equipo.variante})` : '') : 'Equipo no encontrado';
   }
 
-  function cantidadReservadaEnEnvios(pedidoId, itemIndex, excluirEnvioId) {
+  // `parte` (solo sets con caja): cuenta únicamente lo reservado de esa
+  // parte ('sprockets' o 'caja'); una entrada sin it.partes lleva el set
+  // completo, o sea ambas partes.
+  function cantidadReservadaEnEnvios(pedidoId, itemIndex, excluirEnvioId, parte) {
     let total = 0;
     (window.enviosCache || []).forEach(envio => {
       if (excluirEnvioId && envio.id === excluirEnvioId) return;
       (envio.pedidos || []).forEach(pInfo => {
         if (pInfo.pedidoId !== pedidoId) return;
         (pInfo.items || []).forEach(it => {
-          if (it.itemIndex === itemIndex) total += it.cantidad || 0;
+          if (it.itemIndex !== itemIndex) return;
+          if (parte && it.partes && it.partes.length && !it.partes.includes(parte)) return;
+          total += it.cantidad || 0;
         });
       });
     });
@@ -3100,6 +3196,9 @@
       const equipoMotor = buscarEquipoCatalogo(item.motorEquipoId);
       const equipoReductor = buscarEquipoCatalogo(item.reductorEquipoId);
       pesoUnitario = pesoUnitarioEquipoEnvio(equipoMotor) + pesoUnitarioEquipoEnvio(equipoReductor);
+    } else if (setTienePartes(item) && it.partes && it.partes.length === 1) {
+      // Set enviado por partes: pesa solo la parte que lleva.
+      pesoUnitario = pesoParteSetUnitario(item, it.partes[0]);
     } else {
       const equipo = equipoDeItem(item);
       pesoUnitario = pesoUnitarioEquipoEnvio(equipo);
@@ -3157,7 +3256,8 @@
       const remisionesHtml = entradas.map(pInfo => {
         const itemsHtml = (pInfo.items || []).map(it => {
           const item = pedido.equipos?.[it.itemIndex];
-          return item ? `<div class="item-linea"><span>${escapeHtml(nombreItemPedido(item))}</span><span>${it.unidades ? `unidad(es): ${it.unidades.map(u => u + 1).join(', ')}` : `cant. ${it.cantidad}`}</span></div>` : '';
+          const parteTxt = item ? textoPartesEntrada(it, item) : '';
+          return item ? `<div class="item-linea"><span>${escapeHtml(nombreItemPedido(item))}${parteTxt ? ` <span class="tag-parte-set">${parteTxt}</span>` : ''}</span><span>${it.unidades ? `unidad(es): ${it.unidades.map(u => u + 1).join(', ')}` : `cant. ${it.cantidad}`}</span></div>` : '';
         }).join('');
         return `
           <div class="remision-card">
@@ -3372,6 +3472,33 @@
         `;
       }
 
+      // Set con caja de cadena: se puede enviar por partes (sprockets / caja).
+      if (setTienePartes(item)) {
+        const filaParte = (parte, icono, etiqueta) => {
+          const disp = Math.max(0, total - cantidadReservadaEnEnvios(pedido.id, index, null, parte));
+          return `
+            <div class="equipo-envio-row ${disp <= 0 ? 'sin-disponible' : ''}" data-index="${index}" data-parte="${parte}">
+              <input type="checkbox" class="equipo-envio-check" ${disp <= 0 ? 'disabled' : ''}>
+              <label>
+                ${icono} ${etiqueta}
+                <span class="disponible-nota">Disponible: ${disp} de ${total}</span>
+              </label>
+              <input type="number" class="equipo-envio-cantidad" min="1" step="1" max="${disp}" value="${disp}" ${disp <= 0 ? 'disabled' : ''}>
+            </div>
+          `;
+        };
+        return `
+          <div class="equipo-envio-group equipo-envio-set" data-index="${index}">
+            <div class="equipo-envio-group-titulo equipo-envio-set-titulo">
+              <span>${escapeHtml(nombreItemPedido(item))} — elige qué parte(s) envías</span>
+              <button type="button" class="btn secondary btn-set-todo" data-index="${index}" title="Marcar sprockets y caja de cadena">✔ Todo</button>
+            </div>
+            ${filaParte('sprockets', '⚙️', 'Sprockets (los 2)')}
+            ${filaParte('caja', '⛓️', 'Caja de cadena')}
+          </div>
+        `;
+      }
+
       const reservado = cantidadReservadaEnEnvios(pedido.id, index);
       // Se redondea a 2 decimales para que 2.5 - 0.3 no quede en
       // 2.1999999999999997 y el input lo rechace por no cuadrar con el step.
@@ -3409,6 +3536,22 @@
     modalAgregarEnvio.classList.remove('open');
   }
 
+  // Botón "✔ Todo" de un set: marca sprockets + caja de cadena (cada parte con
+  // todo lo que tenga disponible; una parte ya asignada a otro envío se omite).
+  equiposEnvioList.addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-set-todo');
+    if (!btn) return;
+    const grupo = btn.closest('.equipo-envio-set');
+    if (!grupo) return;
+    grupo.querySelectorAll('.equipo-envio-row').forEach(fila => {
+      const chk = fila.querySelector('.equipo-envio-check');
+      if (chk.disabled) return;
+      chk.checked = true;
+      const inp = fila.querySelector('.equipo-envio-cantidad');
+      inp.value = inp.max;
+    });
+  });
+
   btnAgregarAEnvio.addEventListener('click', abrirModalAgregarEnvio);
   btnCancelarAgregarEnvio.addEventListener('click', cerrarModalAgregarEnvio);
   modalAgregarEnvio.addEventListener('click', (e) => {
@@ -3442,6 +3585,7 @@
 
     const filas = equiposEnvioList.querySelectorAll('.equipo-envio-row');
     const items = [];
+    const partesPorIndice = {};
     filas.forEach(fila => {
       const chk = fila.querySelector('.equipo-envio-check');
       if (!chk.checked) return;
@@ -3453,7 +3597,23 @@
         ? redondear2(parseFloat(inputCantidad.value) || 0)
         : (parseInt(inputCantidad.value, 10) || 0);
       if (cantidad <= 0) return;
-      items.push({ itemIndex: parseInt(fila.dataset.index, 10), cantidad });
+      const indiceFila = parseInt(fila.dataset.index, 10);
+      // Filas de un set por partes: se juntan abajo para decidir si va todo
+      // el set o solo una parte.
+      if (fila.dataset.parte) {
+        if (!partesPorIndice[indiceFila]) partesPorIndice[indiceFila] = [];
+        partesPorIndice[indiceFila].push({ parte: fila.dataset.parte, cantidad });
+        return;
+      }
+      items.push({ itemIndex: indiceFila, cantidad });
+    });
+    Object.entries(partesPorIndice).forEach(([idx, lista]) => {
+      const indice = parseInt(idx, 10);
+      if (lista.length === 2 && lista[0].cantidad === lista[1].cantidad) {
+        items.push({ itemIndex: indice, cantidad: lista[0].cantidad }); // set completo
+      } else {
+        lista.forEach(({ parte, cantidad }) => items.push({ itemIndex: indice, cantidad, partes: [parte] }));
+      }
     });
 
     // Ítems con serial: se agrupan las unidades marcadas por índice de ítem.
@@ -3493,7 +3653,8 @@
             if (i !== idxRemision) return p;
             const itemsCombinados = [...(p.items || [])];
             items.forEach(nuevo => {
-              const existente = itemsCombinados.find(it => it.itemIndex === nuevo.itemIndex && !!it.unidades === !!nuevo.unidades);
+              const clavePartes = (x) => (x.partes && x.partes.length) ? [...x.partes].sort().join(',') : '';
+              const existente = itemsCombinados.find(it => it.itemIndex === nuevo.itemIndex && !!it.unidades === !!nuevo.unidades && clavePartes(it) === clavePartes(nuevo));
               if (existente) {
                 if (nuevo.unidades) {
                   existente.unidades = Array.from(new Set([...(existente.unidades || []), ...nuevo.unidades]));
@@ -3673,6 +3834,26 @@
   function pedidoTieneEquiposSinEnvioArmado(pedido) {
     const enviosArmados = (window.enviosCache || []).filter(en => en.estado === 'armado');
     return (pedido.equipos || []).some((item, itemIndex) => {
+      // Set por partes: cada parte (sprockets / caja) se revisa por separado.
+      if (setTienePartes(item)) {
+        const completadas = partesCompletadasSet(item);
+        return ['sprockets', 'caja'].some(parte => {
+          const pend = redondear2((item.cantidad || 0) - completadas[parte] - devueltasCountItem(item));
+          if (pend <= 0) return false;
+          let reservado = 0;
+          enviosArmados.forEach(en => {
+            (en.pedidos || []).forEach(pInfo => {
+              if (pInfo.pedidoId !== pedido.id) return;
+              (pInfo.items || []).forEach(it => {
+                if (it.itemIndex !== itemIndex) return;
+                if (it.partes && it.partes.length && !it.partes.includes(parte)) return;
+                reservado += it.cantidad || 0;
+              });
+            });
+          });
+          return redondear2(reservado) < pend;
+        });
+      }
       const pendiente = redondear2((item.cantidad || 0) - conteoCompletadoItem(item).hecho - devueltasCountItem(item));
       if (pendiente <= 0) return false;
       let reservadoArmado = 0;
