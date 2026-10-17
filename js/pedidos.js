@@ -1803,8 +1803,35 @@
   // despachado. Solo se muestra cuando el ítem tiene más de una unidad (con
   // una sola, la tarjeta ya dice "Completado").
   const CANDADO_DESPACHADO_HTML = ' <span class="candado-serial" title="Ya despachado">🔒</span>';
+  // Documento: la unidad ya está en un envío ARMADO (remisión hecha, todavía
+  // sin despachar). Al despacharse pasa a candado.
+  const DOCUMENTO_ARMADO_HTML = ' <span class="documento-serial" title="En un envío armado, aún sin despachar">📄</span>';
 
-  function resumenSeriales(item, cantidad) {
+  // Índices de unidad (con serial) de este ítem que están en un envío armado.
+  function unidadesEnEnvioArmado(pedidoId, itemIndex) {
+    const set = new Set();
+    (window.enviosCache || []).forEach(envio => {
+      if (envio.estado !== 'armado') return;
+      (envio.pedidos || []).forEach(pInfo => {
+        if (pInfo.pedidoId !== pedidoId) return;
+        (pInfo.items || []).forEach(it => {
+          if (it.itemIndex !== itemIndex) return;
+          (it.unidades || []).forEach(u => set.add(u));
+        });
+      });
+    });
+    return set;
+  }
+
+  // Marca de una unidad: candado si ya salió, documento si está en un envío
+  // armado, nada en otro caso. (El candado solo se muestra con cantidad > 1.)
+  function marcaEnvioUnidad(i, completadas, enArmado) {
+    if (completadas.has(i)) return CANDADO_DESPACHADO_HTML;
+    if (enArmado.has(i)) return DOCUMENTO_ARMADO_HTML;
+    return '';
+  }
+
+  function resumenSeriales(item, cantidad, enArmado = new Set()) {
     // Se conserva el índice de cada serial (la unidad a la que pertenece)
     // para saber cuáles ya fueron despachadas.
     const conIndice = (item.seriales || [])
@@ -1812,7 +1839,7 @@
       .filter(x => x.s);
     const completadas = new Set(cantidad > 1 ? (item.unidadesCompletadas || []) : []);
     const textoSeriales = conIndice
-      .map(x => escapeHtml(x.s) + (completadas.has(x.i) ? CANDADO_DESPACHADO_HTML : ''))
+      .map(x => escapeHtml(x.s) + marcaEnvioUnidad(x.i, completadas, enArmado))
       .join(', ');
     if (!conIndice.length) {
       return `<span class="equipo-card-serial pendiente">🔴 Sin serial (0/${cantidad})</span>`;
@@ -1826,7 +1853,7 @@
   // Para un Motoreductor: combina el serial del motor y del reductor de cada
   // unidad en una sola línea "motor / reductor". Con cantidad > 1 se enumera
   // por unidad, para saber cuál motor va emparejado con cuál reductor.
-  function resumenSerialesMotoreductor(item, cantidad) {
+  function resumenSerialesMotoreductor(item, cantidad, enArmado = new Set()) {
     const filas = Array.from({ length: cantidad }).map((_, i) => {
       const sm = (item.serialesMotor?.[i] || '').trim();
       const sr = (item.serialesReductor?.[i] || '').trim();
@@ -1835,8 +1862,10 @@
       const icono = completa ? '🔢' : (vacia ? '🔴' : '🟡');
       const clase = completa ? 'completo' : 'pendiente';
       const prefijo = cantidad > 1 ? `Unidad ${i + 1}: ` : '';
-      // Un solo candado por unidad: motor y reductor se envían juntos.
-      const candado = (cantidad > 1 && (item.unidadesCompletadas || []).includes(i)) ? CANDADO_DESPACHADO_HTML : '';
+      // Una sola marca por unidad (candado o documento): motor y reductor se
+      // envían juntos.
+      const completadasMr = new Set(cantidad > 1 ? (item.unidadesCompletadas || []) : []);
+      const candado = marcaEnvioUnidad(i, completadasMr, enArmado);
       return `<div class="equipo-card-serial ${clase}" style="display:block;">${icono} ${prefijo}${escapeHtml(sm || '—')} / ${escapeHtml(sr || '—')}${candado}</div>`;
     }).join('');
     return `<div class="serial-par-lista">${filas}</div>`;
@@ -2309,7 +2338,7 @@
             <div class="equipo-card-meta">${metaChips}</div>
             ${reemplazoHtml}
           </div>
-          ${(usaSerial && !reemplazo) ? resumenSeriales(item, item.cantidad) : ''}
+          ${(usaSerial && !reemplazo) ? resumenSeriales(item, item.cantidad, unidadesEnEnvioArmado(pedido.id, index)) : ''}
         </div>
         <div class="equipo-card-preparado-toggle">
           ${textoResumenPreparado(item)} <span style="opacity:.6;">(clic para gestionar)</span>
@@ -2413,7 +2442,7 @@
           ${((usaSerialMotor || usaSerialReductor) && !reemplazoMotor && !reemplazoReductor) ? `
             <div class="motoreductor-subitem" style="border-bottom:none;">
               <div class="equipo-card-nombre" style="font-size:12px; color:var(--ink-soft); margin-bottom:4px;">Serial motor / Serial reductor</div>
-              ${resumenSerialesMotoreductor(item, item.cantidad)}
+              ${resumenSerialesMotoreductor(item, item.cantidad, unidadesEnEnvioArmado(pedido.id, index))}
             </div>
           ` : ''}
         </div>
