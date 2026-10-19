@@ -32,7 +32,7 @@
     '.tab-btn', '.subtab-btn', '#btn-cerrar-sesion',
     // Filtros y búsqueda
     '.chip-filtro-estado', '.filtro-menu-item', '.filtro-chip-quitar', '.filtro-limpiar',
-    '[id^="buscador-"]', 'input[placeholder^="Buscar"]',
+    '[id^="buscador-"]', 'input[placeholder^="Buscar"]', 'select[id^="filtro-"]',
     // Abrir fichas / navegar entre ellas
     '.chip-ver-pedido', '.btn-ver-pedido', '.btn-expandir-equipos',
     '#btn-ver-ficha-reparacion-header', '#btn-ver-pedido-desde-reparacion',
