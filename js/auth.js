@@ -41,14 +41,21 @@
   // persona es quien dice ser — no que tenga permiso de usar el sistema.
   // Eso se verifica aparte, leyendo su documento en /usuarios/{uid}, que es
   // exactamente lo mismo que exige la regla de seguridad de Firestore. Si
-  // no existe (o no tiene rol "normal"), esta lectura la rechaza Firestore
+  // no existe (o no tiene un rol válido), esta lectura la rechaza Firestore
   // con "permission-denied" — eso es justo la señal de "no autorizado".
-  async function tieneAccesoAutorizado(user) {
+  //
+  // Roles válidos en /usuarios/{uid}.rol:
+  //   'normal'  → puede ver y editar (el de siempre).
+  //   'lectura' → solo puede observar (ver roles.js).
+  // Devuelve el rol, o null si la cuenta no tiene acceso.
+  async function obtenerRolDeAcceso(user) {
     try {
       const doc = await db.collection('usuarios').doc(user.uid).get();
-      return doc.exists && doc.data().rol === 'normal';
+      if (!doc.exists) return null;
+      const rol = doc.data().rol;
+      return (rol === 'normal' || rol === 'lectura') ? rol : null;
     } catch (err) {
-      return false;
+      return null;
     }
   }
 
@@ -67,9 +74,9 @@
     loginCargando.textContent = 'Verificando acceso...';
     loginCargando.style.display = 'block';
 
-    const autorizado = await tieneAccesoAutorizado(user);
+    const rolAcceso = await obtenerRolDeAcceso(user);
 
-    if (!autorizado) {
+    if (!rolAcceso) {
       await firebase.auth().signOut();
       loginCargando.style.display = 'none';
       loginMetodos.style.display = 'block';
@@ -84,7 +91,7 @@
 
     if (!yaDisparado) {
       yaDisparado = true;
-      document.dispatchEvent(new CustomEvent('auth:listo', { detail: { user } }));
+      document.dispatchEvent(new CustomEvent('auth:listo', { detail: { user, rol: rolAcceso } }));
     }
   });
 

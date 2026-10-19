@@ -1475,6 +1475,42 @@
   }
   .equipo-envio-row input[type="checkbox"]{ accent-color: var(--copper); }
 
+  /* ---------- Roles (js/roles.js) ---------- */
+  .lectura-oculto{ display: none !important; }
+  body.rol-pendiente #panels{ visibility: hidden; }
+  .badge-rol{
+    margin: 0 auto 0 14px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #7a5a00;
+    background: #fff4cc;
+    border: 1px solid #f0d77a;
+    padding: 3px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+    cursor: help;
+  }
+  input:disabled[data-lectura-deshabilitado],
+  select:disabled[data-lectura-deshabilitado],
+  textarea:disabled[data-lectura-deshabilitado]{ cursor: not-allowed; }
+  #aviso-solo-lectura{
+    position: fixed;
+    bottom: 22px;
+    left: 50%;
+    transform: translate(-50%, 20px);
+    background: #2b2f36;
+    color: #fff;
+    font-size: 13px;
+    padding: 10px 18px;
+    border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.25);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s, transform .2s;
+    z-index: 400;
+  }
+  #aviso-solo-lectura.visible{ opacity: 1; transform: translate(-50%, 0); }
+
   /* Set por partes (sprockets / caja de cadena) */
   .tag-parte-set{
     display: inline-block;
@@ -3957,7 +3993,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="js/firebase-init.js?v=19"></script>
-  <script src="js/auth.js?v=19"></script>
+  <script src="js/auth.js?v=20"></script>
+  <script src="js/roles.js?v=2"></script>
 
   <!-- Un archivo JS por pestaña -->
   <script src="js/config.js?v=20"></script>
