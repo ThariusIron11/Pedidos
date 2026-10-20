@@ -37,6 +37,7 @@
   const inputTipoTexto = document.getElementById('equipo-tipo-input');
   const resultadosTipo = document.getElementById('equipo-tipo-resultados');
   const inputVariante = document.getElementById('equipo-variante');
+  const avisoExistente = document.getElementById('aviso-equipo-existente');
   const inputPeso     = document.getElementById('equipo-peso');
   const inputUsaSerial = document.getElementById('equipo-usa-serial');
   const grupoBrazoEje = document.getElementById('grupo-brazo-eje');
@@ -384,7 +385,90 @@
       }
     }
     actualizarPesoCompuesto();
+    actualizarAvisoEquipoExistente();
   }
+
+  // ---------- Aviso en vivo: ¿este equipo ya existe en el catálogo? ----------
+  // Mientras se escribe el nombre (y al elegir tipo o variante) se revisa el
+  // catálogo. Dos equipos son EL MISMO solo si coinciden nombre + tipo +
+  // variante (misma referencia con otra variante, ej. D3 vs D4, es otro equipo).
+
+  // Para comparar: sin tildes, mayúsculas, espacios ni guiones
+  // ("TR67 IEC 132" = "tr67-iec-132"). El punto decimal SÍ se conserva (y la
+  // coma cuenta como punto): "TR 67 18.6" y "TR 67 186" son equipos distintos.
+  function claveEquipo(texto) {
+    return normalizar(texto)
+      .replace(/,/g, '.')
+      .replace(/[^a-z0-9.]/g, '')
+      .replace(/^\.+|\.+$/g, '');
+  }
+
+  function textoEquipoCatalogo(eq, conHtml) {
+    const tipo = buscarTipo(eq.tipoId);
+    const nombre = conHtml ? `<b>${escapeHtml(eq.nombre)}</b>` : eq.nombre;
+    const variante = eq.variante ? ` (${conHtml ? escapeHtml(eq.variante) : eq.variante})` : '';
+    const tipoTxt = tipo ? ` · ${conHtml ? escapeHtml(tipo.nombre) : tipo.nombre}` : '';
+    return `${conHtml && tipo?.icono ? tipo.icono + ' ' : ''}${nombre}${variante}${tipoTxt}`;
+  }
+
+  // Equipo del catálogo que sea idéntico (nombre + tipo + variante). Si aún
+  // no se ha elegido tipo, se compara solo nombre + variante.
+  function buscarEquipoDuplicado(nombre, tipoId, variante, idActual) {
+    const n = claveEquipo(nombre);
+    const v = claveEquipo(variante);
+    if (!n) return null;
+    return equiposCache.find(eq =>
+      eq.id !== idActual &&
+      claveEquipo(eq.nombre) === n &&
+      claveEquipo(eq.variante) === v &&
+      (!tipoId || eq.tipoId === tipoId)
+    ) || null;
+  }
+
+  function actualizarAvisoEquipoExistente() {
+    const nombre = inputNombre.value.trim();
+    const n = claveEquipo(nombre);
+    if (nombre.length < 2 || !n) {
+      avisoExistente.style.display = 'none';
+      return;
+    }
+    const idActual = inputId.value;
+
+    const duplicado = buscarEquipoDuplicado(nombre, inputTipo.value, inputVariante.value, idActual);
+    if (duplicado) {
+      avisoExistente.className = 'aviso-equipo-existente exacto';
+      avisoExistente.innerHTML = `⛔ Este equipo <b>ya existe</b> en el catálogo:<div class="aviso-linea">${textoEquipoCatalogo(duplicado, true)}</div>` +
+        '<div class="aviso-linea">No se puede duplicar: si es otro, cambia el tipo o la variante.</div>';
+      avisoExistente.style.display = 'block';
+      return;
+    }
+
+    // Parecidos: el nombre escrito está dentro de uno del catálogo, o al revés
+    // (se ignoran nombres de 1-2 caracteres para no marcar todo).
+    const parecidos = equiposCache.filter(eq => {
+      if (eq.id === idActual) return false;
+      const c = claveEquipo(eq.nombre);
+      return c.includes(n) || (c.length >= 3 && n.includes(c));
+    });
+    if (parecidos.length) {
+      const MAX = 6;
+      const lineas = parecidos.slice(0, MAX).map(eq => `<div class="aviso-linea">• ${textoEquipoCatalogo(eq, true)}</div>`).join('');
+      const mas = parecidos.length > MAX ? `<div class="aviso-linea">… y ${parecidos.length - MAX} más</div>` : '';
+      avisoExistente.className = 'aviso-equipo-existente parecidos';
+      avisoExistente.innerHTML = `ℹ️ Ya hay ${parecidos.length === 1 ? '1 equipo parecido' : parecidos.length + ' equipos parecidos'} en el catálogo:${lineas}${mas}` +
+        '<div class="aviso-linea">Si el tuyo es distinto, diferéncialo con la variante o el tipo.</div>';
+      avisoExistente.style.display = 'block';
+      return;
+    }
+
+    avisoExistente.className = 'aviso-equipo-existente libre';
+    avisoExistente.innerHTML = '✅ No hay ningún equipo con ese nombre en el catálogo.';
+    avisoExistente.style.display = 'block';
+  }
+
+  inputNombre.addEventListener('input', actualizarAvisoEquipoExistente);
+  inputVariante.addEventListener('input', actualizarAvisoEquipoExistente);
+  inputTipo.addEventListener('change', actualizarAvisoEquipoExistente);
 
   // ---------- Abrir / cerrar modal ----------
 
@@ -460,6 +544,25 @@
     if (!datos.tipoId) {
       inputTipoTexto.focus();
       return;
+    }
+
+    // Equipo idéntico (nombre + tipo + variante) ya existente: no se duplica.
+    // Solo se revisa en equipos nuevos o si se cambió alguno de esos tres
+    // datos (así se puede seguir editando el peso, etc. de un equipo que
+    // ya estuviera repetido de antes).
+    const idEdicion = inputId.value;
+    const original = idEdicion ? equiposCache.find(eq => eq.id === idEdicion) : null;
+    const cambioIdentidad = !original ||
+      claveEquipo(original.nombre) !== claveEquipo(datos.nombre) ||
+      original.tipoId !== datos.tipoId ||
+      claveEquipo(original.variante) !== claveEquipo(datos.variante);
+    if (cambioIdentidad) {
+      const duplicado = buscarEquipoDuplicado(datos.nombre, datos.tipoId, datos.variante, idEdicion);
+      if (duplicado) {
+        alert(`Este equipo ya existe en el catálogo: ${textoEquipoCatalogo(duplicado, false)}.\n\nCambia el nombre, el tipo o la variante.`);
+        inputNombre.focus();
+        return;
+      }
     }
 
     const id = inputId.value;
@@ -672,6 +775,7 @@
         equiposCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         window.equiposCache = equiposCache;
         renderTabla();
+        actualizarAvisoEquipoExistente(); // por si el modal está abierto
         document.dispatchEvent(new CustomEvent('equipos-catalogo:cambio', { detail: { equipos: equiposCache } }));
       },
       (err) => {

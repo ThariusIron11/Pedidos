@@ -814,6 +814,20 @@
   }
   .hint-peso-calculado.incompleto{ color: var(--warn); }
 
+  /* Aviso en vivo de "este equipo ya existe" mientras se escribe el nombre */
+  .aviso-equipo-existente{
+    font-size: 12.5px;
+    line-height: 1.5;
+    margin-top: 6px;
+    padding: 8px 11px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+  }
+  .aviso-equipo-existente.exacto{ background: #fdecea; color: #a52a22; border-color: #f0c4c0; }
+  .aviso-equipo-existente.parecidos{ background: #fff7e6; color: #7a5a00; border-color: #f0d77a; }
+  .aviso-equipo-existente.libre{ background: #e8f6ee; color: #1f6b43; border-color: #bfe3cf; }
+  .aviso-equipo-existente .aviso-linea{ margin-top: 2px; }
+
   .piezas-compuesto-list{
     display: flex;
     flex-direction: column;
@@ -3396,7 +3410,8 @@
 
         <div class="form-group">
           <label for="equipo-nombre">Nombre / Referencia</label>
-          <input type="text" id="equipo-nombre" required placeholder="Ej: TR67 IEC 132">
+          <input type="text" id="equipo-nombre" required placeholder="Ej: TR67 IEC 132" autocomplete="off">
+          <div class="aviso-equipo-existente" id="aviso-equipo-existente" style="display:none;"></div>
         </div>
 
         <div class="form-group">
@@ -4004,7 +4019,7 @@
   <!-- Un archivo JS por pestaña -->
   <script src="js/config.js?v=21"></script>
   <script src="js/clientes.js?v=22"></script>
-  <script src="js/equipos.js?v=23"></script>
+  <script src="js/equipos.js?v=25"></script>
   <script src="js/pedidos.js?v=39"></script>
   <script src="js/envios.js?v=24"></script>
   <script src="js/reparaciones.js?v=26"></script>
