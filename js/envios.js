@@ -1300,7 +1300,10 @@
             }
           });
         });
-        await pedidoRef.update({ equipos });
+        // Si con este despacho el pedido quedó completo, se retira su
+        // prioridad (ya se cumplió el despacho y vuelve a verse normal).
+        const pedidoQuedoCompleto = window.pedidoEstaCompletado && window.pedidoEstaCompletado({ equipos });
+        await pedidoRef.update(pedidoQuedoCompleto ? { equipos, prioridad: false } : { equipos });
       }
 
       cerrarFicha();

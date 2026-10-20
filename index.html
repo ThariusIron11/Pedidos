@@ -1717,7 +1717,24 @@
   }
   .pedido-card.completado{ background: #e7e8ec; }              /* gris: completado (normal) */
   .pedido-card.completado.reparacion{ background: #f7e2cd; }   /* naranja bajo: completado + reparación */
-  .pedido-card.devolucion{ background: #dfebf5; }               /* azul claro: devolución (siempre manda) */
+  .pedido-card.devolucion{ background: #dfebf5; }               /* azul claro: devolución */
+  .pedido-card.prioritario{                                     /* amarillo fuerte: prioridad (manda sobre los demás) */
+    background: #ffdf4d;
+    border-color: #e0b400;
+  }
+  .pedido-card.prioritario:hover{ border-color: #b38f00; }
+  .pedido-card-actions .btn-prioridad{
+    font-size: 17px;
+    font-weight: 800;
+    color: #b45309;
+    border-color: #e3b341;
+  }
+  .pedido-card-actions .btn-prioridad:hover{ background: #fff3c4; }
+  .pedido-card-actions .btn-prioridad.activa{
+    background: #d97706;
+    border-color: #b45309;
+    color: #fff;
+  }
   .pedido-card-header{
     display: flex;
     align-items: center;
@@ -4020,8 +4037,8 @@
   <script src="js/config.js?v=21"></script>
   <script src="js/clientes.js?v=22"></script>
   <script src="js/equipos.js?v=25"></script>
-  <script src="js/pedidos.js?v=39"></script>
-  <script src="js/envios.js?v=24"></script>
+  <script src="js/pedidos.js?v=40"></script>
+  <script src="js/envios.js?v=25"></script>
   <script src="js/reparaciones.js?v=26"></script>
   <script src="js/historial.js?v=21"></script>
 

@@ -1974,6 +1974,14 @@
   }
   window.pedidoEstaCompletado = pedidoEstaCompletado;
 
+  // Prioridad: el pedido guarda prioridad: true/false (el botón ❗ de la
+  // tarjeta). Solo cuenta mientras el pedido NO esté despachado por completo:
+  // al completarse, la prioridad se retira sola (envios.js además borra la
+  // marca en la base de datos al despachar).
+  function esPrioritario(pedido) {
+    return !!pedido.prioridad && !pedidoEstaCompletado(pedido);
+  }
+
   function pedidoTieneDevolucion(pedido) {
     return (pedido.equipos || []).some(item => devueltasCountItem(item) > 0);
   }
@@ -4202,7 +4210,11 @@
     }
     tablaEmpty.style.display = 'none';
 
-    const ordenados = [...filtrados].sort(compararPedidosPorNumero);
+    // Los pedidos con prioridad van primero (entre ellos, por número); luego
+    // el resto, también por número.
+    const ordenados = [...filtrados].sort((a, b) =>
+      (esPrioritario(b) - esPrioritario(a)) || compararPedidosPorNumero(a, b)
+    );
 
     listaContenedor.innerHTML = ordenados.map(pedido => {
       const compania = buscarCompania(pedido.companiaId);
@@ -4213,13 +4225,15 @@
       const iconoTipo = esReparacion ? '🔧' : '🪛';
       const completado = pedidoEstaCompletado(pedido);
       const conDevolucion = pedidoTieneDevolucion(pedido);
+      const prioritario = esPrioritario(pedido);
 
       // Fondo de la tarjeta: devolución manda sobre completado; completado
       // de una reparación queda naranja bajo en vez del gris normal.
       const clasesEstado = [
         completado ? 'completado' : '',
         completado && esReparacion ? 'reparacion' : '',
-        conDevolucion ? 'devolucion' : ''
+        conDevolucion ? 'devolucion' : '',
+        prioritario ? 'prioritario' : ''
       ].filter(Boolean).join(' ');
 
       // Si se envía a una Subsidiaria, tanto el nombre de la compañía como
@@ -4244,6 +4258,7 @@
             ${completado ? '<span class="tag-pedido-completado">COMPLETADO</span>' : ''}
             ${conDevolucion ? '<span class="tag-pedido-devolucion">DEVOLUCIÓN</span>' : ''}
             <div class="pedido-card-actions">
+              ${completado ? '' : `<button type="button" class="btn-prioridad ${prioritario ? 'activa' : ''}" data-id="${pedido.id}" aria-pressed="${prioritario}" title="${prioritario ? 'Quitar prioridad' : 'Marcar como prioridad'}">!</button>`}
               <button type="button" class="btn-editar" data-id="${pedido.id}" title="${completado ? 'Pedido completado: solo se puede editar la evidencia fotográfica' : 'Editar'}">✏️</button>
               ${pedidoTieneAlgoDespachado(pedido) ? '' : `<button type="button" class="btn-eliminar danger" data-id="${pedido.id}" title="Eliminar">🗑️</button>`}
             </div>
@@ -4277,6 +4292,23 @@
     listaContenedor.querySelectorAll('.btn-expandir-equipos').forEach(btn => {
       btn.addEventListener('click', () => {
         btn.closest('.pedido-card').classList.toggle('expandido');
+      });
+    });
+
+    // ❗ Prioridad: un clic la activa (tarjeta amarilla y sube al inicio de la
+    // lista); otro clic la quita.
+    listaContenedor.querySelectorAll('.btn-prioridad').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const pedido = pedidosCache.find(p => p.id === btn.dataset.id);
+        if (!pedido) return;
+        btn.disabled = true;
+        try {
+          await db.collection(COLECCION).doc(pedido.id).update({ prioridad: !esPrioritario(pedido) });
+        } catch (err) {
+          console.error('Error cambiando la prioridad:', err);
+          alert('No se pudo cambiar la prioridad. Revisa la consola.');
+          btn.disabled = false;
+        }
       });
     });
 
