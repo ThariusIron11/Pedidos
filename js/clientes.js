@@ -86,13 +86,48 @@
       .filter(p => p.length > 2 && !PALABRAS_IGNORADAS.has(p));
   }
 
-  // "Contegral Cartago" y "Contegral Envigado" son empresas DISTINTAS (dos
-  // sedes) que comparten la palabra "Contegral" — eso las hace "parecidas"
-  // para efectos de un aviso informativo, pero no un duplicado real.
+  // Distancia de edición (cuántas letras hay que cambiar, agregar o quitar
+  // para convertir un texto en el otro).
+  function distanciaEdicion(a, b) {
+    const fila = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      let anterior = fila[0];
+      fila[0] = i;
+      for (let j = 1; j <= b.length; j++) {
+        const temp = fila[j];
+        fila[j] = Math.min(
+          fila[j] + 1,
+          fila[j - 1] + 1,
+          anterior + (a[i - 1] === b[j - 1] ? 0 : 1)
+        );
+        anterior = temp;
+      }
+    }
+    return fila[b.length];
+  }
+
+  // Dos nombres son "parecidos" (posible duplicado por error) solo si:
+  //  - tienen las mismas palabras clave, sin importar el orden, los S.A.S,
+  //    Ltda., tildes ni signos ("Contegral S.A.S Envigado" = "Envigado Contegral"), o
+  //  - son casi iguales letra por letra (un error de digitación:
+  //    "Contegral Envigado" vs "Contegral Envigad").
+  // Compartir solo UNA palabra NO basta: "Contegral Envigado" y "Contegral
+  // Cartagena" son sedes distintas de la misma empresa, no un duplicado.
   function nombresSimilares(a, b) {
     const palabrasA = palabrasClave(a);
     const palabrasB = palabrasClave(b);
-    return palabrasA.some(p => palabrasB.includes(p));
+    if (!palabrasA.length || !palabrasB.length) return false;
+
+    const mismasPalabras = palabrasA.length === palabrasB.length &&
+      palabrasA.every(p => palabrasB.includes(p)) &&
+      palabrasB.every(p => palabrasA.includes(p));
+    if (mismasPalabras) return true;
+
+    const textoA = palabrasA.join(' ');
+    const textoB = palabrasB.join(' ');
+    const largo = Math.max(textoA.length, textoB.length);
+    const umbral = Math.max(1, Math.floor(largo / 8)); // ~1 error cada 8 letras
+    return distanciaEdicion(textoA, textoB) <= umbral;
   }
 
   // Coincidencia EXACTA de nombre (ignorando mayúsculas/tildes) — esto sí es
@@ -104,9 +139,9 @@
     return clientesCache.find(c => c.id !== idActual && normalizar(c.nombre) === nombreNorm);
   }
 
-  // Nombres parecidos pero NO idénticos — esto es solo un aviso para que
-  // confirmes que en verdad es una empresa distinta (ej. otra sede), nunca
-  // bloquea el guardado.
+  // Nombres casi idénticos pero NO exactos (posible duplicado por error de
+  // digitación) — esto es solo un aviso para que confirmes que en verdad es
+  // una empresa distinta, nunca bloquea el guardado.
   function buscarClientesParecidos(datos, idActual) {
     const nombreNorm = normalizar(datos.nombre);
     return clientesCache.filter(c =>
@@ -295,7 +330,12 @@
       return;
     }
 
-    const parecidos = buscarClientesParecidos(datos, id);
+    // El aviso de nombres parecidos es solo para compañías nuevas o cuando se
+    // le CAMBIA el nombre a una existente. Si ya estaba guardada y el nombre
+    // no cambió, no tiene sentido volver a preguntar cada vez que se edita.
+    const original = id ? clientesCache.find(c => c.id === id) : null;
+    const nombreCambio = !original || normalizar(original.nombre) !== normalizar(datos.nombre);
+    const parecidos = nombreCambio ? buscarClientesParecidos(datos, id) : [];
     if (parecidos.length) {
       const lista = parecidos.map(c => `• ${c.nombre}`).join('\n');
       const continuar = confirm(

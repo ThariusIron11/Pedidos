@@ -2920,11 +2920,13 @@
           <div class="form-group" style="max-width:280px; margin-bottom:0; flex:1;">
             <input type="text" id="buscador-equipos" placeholder="Buscar equipo por nombre...">
           </div>
-          <div class="form-group" style="max-width:220px; margin-bottom:0;">
-            <select id="filtro-tipo-equipos">
-              <option value="">Todos los tipos</option>
-            </select>
+          <div class="form-group" style="max-width:240px; margin-bottom:0; flex:1;">
+            <div class="buscador-equipo">
+              <input type="text" id="buscador-tipo-equipos" class="buscador-input" placeholder="Filtrar por tipo (escribe)..." autocomplete="off">
+              <div class="buscador-resultados" id="resultados-buscador-tipo-equipos"></div>
+            </div>
           </div>
+          <div class="filtros-pedidos-activos" id="filtros-tipo-equipos-activos"></div>
         </div>
 
         <table class="data-table" id="tabla-equipos">
@@ -4001,8 +4003,8 @@
 
   <!-- Un archivo JS por pestaña -->
   <script src="js/config.js?v=21"></script>
-  <script src="js/clientes.js?v=21"></script>
-  <script src="js/equipos.js?v=22"></script>
+  <script src="js/clientes.js?v=22"></script>
+  <script src="js/equipos.js?v=23"></script>
   <script src="js/pedidos.js?v=39"></script>
   <script src="js/envios.js?v=24"></script>
   <script src="js/reparaciones.js?v=26"></script>

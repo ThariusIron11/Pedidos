@@ -24,7 +24,12 @@
   const modalTitulo = document.getElementById('modal-equipo-titulo');
   const form         = document.getElementById('form-equipo');
   const buscador      = document.getElementById('buscador-equipos');
-  const filtroTipoSelect = document.getElementById('filtro-tipo-equipos');
+  // Filtro por tipo: se escribe, aparecen sugerencias, y cada tipo elegido
+  // queda como una pastilla con ✕ (igual que los filtros de Pedidos). Sin
+  // ninguna pastilla se muestran todos los equipos.
+  const inputTipoFiltro = document.getElementById('buscador-tipo-equipos');
+  const resultadosTipoFiltro = document.getElementById('resultados-buscador-tipo-equipos');
+  const contenedorTiposActivos = document.getElementById('filtros-tipo-equipos-activos');
 
   const inputId       = document.getElementById('equipo-id');
   const inputNombre   = document.getElementById('equipo-nombre');
@@ -51,7 +56,7 @@
 
   let equiposCache = []; // [{id, ...datos}] — también expuesto en window.equiposCache
   let filtroTexto = '';
-  let filtroTipoId = '';
+  const filtroTiposIds = new Set(); // vacío = todos los tipos
   let borradorId = null;
 
   // ---------- Helpers ----------
@@ -100,12 +105,9 @@
   // ---------- Sincronizar filtro (select) y buscador del modal con el catálogo de tipos ----------
 
   function poblarSelectsDeTipo() {
-    const tipos = window.tiposEquipoCache || [];
-
-    const tipoActualFiltro = filtroTipoSelect.value;
-    filtroTipoSelect.innerHTML = '<option value="">Todos los tipos</option>' +
-      tipos.map(t => `<option value="${t.id}">${t.icono ? t.icono + ' ' : ''}${escapeHtml(t.nombre)}</option>`).join('');
-    filtroTipoSelect.value = tipoActualFiltro;
+    // Las pastillas del filtro se redibujan por si cambió el nombre/ícono de
+    // un tipo (o si se borró alguno que estaba filtrando).
+    renderFiltroTipos();
 
     // El buscador del modal lee window.tiposEquipoCache en vivo al escribir,
     // así que no hace falta repoblar nada ahí — solo re-sincronizar el TEXTO
@@ -504,13 +506,86 @@
     renderTabla();
   });
 
-  filtroTipoSelect.addEventListener('change', () => {
-    filtroTipoId = filtroTipoSelect.value;
+  function renderFiltroTipos() {
+    // Un tipo borrado del catálogo deja de filtrar.
+    filtroTiposIds.forEach(id => { if (!buscarTipo(id)) filtroTiposIds.delete(id); });
+
+    const pastillas = Array.from(filtroTiposIds).map(id => {
+      const tipo = buscarTipo(id);
+      return `
+        <span class="filtro-chip-activo">
+          ${tipo.icono ? `<span>${tipo.icono}</span>` : ''}<span>${escapeHtml(tipo.nombre)}</span>
+          <button type="button" class="filtro-chip-quitar" data-id="${tipo.id}" aria-label="Quitar filtro ${escapeHtml(tipo.nombre)}" title="Quitar filtro">×</button>
+        </span>`;
+    }).join('');
+    contenedorTiposActivos.innerHTML = pastillas +
+      (filtroTiposIds.size > 1 ? '<button type="button" class="filtro-limpiar" id="btn-limpiar-filtro-tipos-equipos">Limpiar todo</button>' : '');
+
+    contenedorTiposActivos.querySelectorAll('.filtro-chip-quitar').forEach(btn => {
+      btn.addEventListener('click', () => {
+        filtroTiposIds.delete(btn.dataset.id);
+        renderFiltroTipos();
+        renderTabla();
+      });
+    });
+    const btnLimpiar = document.getElementById('btn-limpiar-filtro-tipos-equipos');
+    if (btnLimpiar) {
+      btnLimpiar.addEventListener('click', () => {
+        filtroTiposIds.clear();
+        renderFiltroTipos();
+        renderTabla();
+      });
+    }
+  }
+
+  function agregarFiltroTipo(tipoId) {
+    filtroTiposIds.add(tipoId);
+    inputTipoFiltro.value = '';
+    resultadosTipoFiltro.classList.remove('open');
+    renderFiltroTipos();
     renderTabla();
+  }
+
+  // Sugerencias: los tipos que coinciden con lo escrito y que todavía no
+  // están como pastilla (con el campo vacío se ofrecen todos).
+  function tiposSugeridosFiltro() {
+    const termino = normalizar(inputTipoFiltro.value.trim());
+    return (window.tiposEquipoCache || []).filter(t =>
+      !filtroTiposIds.has(t.id) && (!termino || normalizar(t.nombre).includes(termino))
+    );
+  }
+
+  function mostrarSugerenciasTipoFiltro() {
+    const tipos = tiposSugeridosFiltro();
+    resultadosTipoFiltro.innerHTML = tipos.length
+      ? tipos.map(t => `<div class="buscador-item" data-id="${t.id}">${t.icono ? t.icono + ' ' : ''}${escapeHtml(t.nombre)}</div>`).join('')
+      : '<div class="buscador-item-vacio">Sin coincidencias</div>';
+    resultadosTipoFiltro.querySelectorAll('.buscador-item').forEach(el => {
+      el.addEventListener('click', () => agregarFiltroTipo(el.dataset.id));
+    });
+    resultadosTipoFiltro.classList.add('open');
+  }
+
+  inputTipoFiltro.addEventListener('input', mostrarSugerenciasTipoFiltro);
+  inputTipoFiltro.addEventListener('focus', mostrarSugerenciasTipoFiltro);
+  inputTipoFiltro.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      const primero = tiposSugeridosFiltro()[0];
+      if (primero) agregarFiltroTipo(primero.id);
+    } else if (ev.key === 'Escape') {
+      resultadosTipoFiltro.classList.remove('open');
+    }
+  });
+  document.addEventListener('click', (ev) => {
+    if (inputTipoFiltro.contains(ev.target) || resultadosTipoFiltro.contains(ev.target)) return;
+    if (!resultadosTipoFiltro.classList.contains('open')) return;
+    resultadosTipoFiltro.classList.remove('open');
+    inputTipoFiltro.value = ''; // lo escrito sin elegir de la lista se descarta
   });
 
   function equipoCoincideConFiltros(equipo) {
-    if (filtroTipoId && equipo.tipoId !== filtroTipoId) return false;
+    if (filtroTiposIds.size && !filtroTiposIds.has(equipo.tipoId)) return false;
     if (filtroTexto && !normalizar(equipo.nombre).includes(filtroTexto)) return false;
     return true;
   }
