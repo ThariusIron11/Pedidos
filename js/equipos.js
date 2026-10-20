@@ -583,9 +583,14 @@
 
   // ---------- Suscripción en tiempo real ----------
 
+  // Se suscribe solo cuando auth.js confirma la sesión ('auth:listo'). Si se
+  // suscribiera al cargar la página, en un computador sin sesión guardada
+  // Firestore rechazaría la lectura (permission-denied), la suscripción
+  // moriría y los equipos no aparecerían hasta recargar.
   let suscrito = false;
+  let sesionLista = false;
   function iniciarSuscripcion() {
-    if (suscrito) return;
+    if (!sesionLista || suscrito) return;
     suscrito = true;
     db.collection(COLECCION).orderBy('nombre').onSnapshot(
       (snapshot) => {
@@ -600,7 +605,10 @@
     );
   }
 
-  iniciarSuscripcion();
+  document.addEventListener('auth:listo', () => {
+    sesionLista = true;
+    iniciarSuscripcion();
+  });
 
   document.addEventListener('tab:activada', (e) => {
     if (e.detail.tab !== 'equipos') return;

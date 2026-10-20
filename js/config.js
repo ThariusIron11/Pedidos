@@ -313,18 +313,22 @@ window.iconoTipoHtml = function (tipo, iconoRespaldo) {
   // Arranca de inmediato (no solo al entrar a la pestaña Config), porque
   // Equipos depende de este catálogo para su selector y su filtro.
 
-  db.collection(COLECCION).orderBy('nombre').onSnapshot(
-    (snapshot) => {
-      window.tiposEquipoCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      renderTabla();
-      difundirCambio();
-    },
-    (err) => {
-      console.error('Error escuchando tipos de equipo:', err);
-    }
-  );
+  // Espera a 'auth:listo': antes de tener sesión Firestore rechaza la lectura
+  // y la suscripción moriría (los tipos no aparecerían hasta recargar).
+  document.addEventListener('auth:listo', () => {
+    db.collection(COLECCION).orderBy('nombre').onSnapshot(
+      (snapshot) => {
+        window.tiposEquipoCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderTabla();
+        difundirCambio();
+      },
+      (err) => {
+        console.error('Error escuchando tipos de equipo:', err);
+      }
+    );
 
-  sembrarTiposPorDefecto();
+    sembrarTiposPorDefecto();
+  });
 })();
 
 // ================== Sección: Empresas de envío ==================
@@ -498,14 +502,17 @@ window.iconoTipoHtml = function (tipo, iconoRespaldo) {
 
   // Arranca de inmediato (no solo al entrar a Config), porque Pedidos/Envíos
   // dependen de este catálogo para elegir quién se encarga del envío.
-  db.collection(COLECCION).orderBy('nombre').onSnapshot(
-    (snapshot) => {
-      window.empresasEnvioCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      renderTabla();
-      difundirCambio();
-    },
-    (err) => {
-      console.error('Error escuchando empresas de envío:', err);
-    }
-  );
+  // Espera a 'auth:listo' (ver nota en la sección de tipos de equipo).
+  document.addEventListener('auth:listo', () => {
+    db.collection(COLECCION).orderBy('nombre').onSnapshot(
+      (snapshot) => {
+        window.empresasEnvioCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderTabla();
+        difundirCambio();
+      },
+      (err) => {
+        console.error('Error escuchando empresas de envío:', err);
+      }
+    );
+  });
 })();

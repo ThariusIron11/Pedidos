@@ -1785,8 +1785,11 @@
   // no cargar esta colección si nunca se visita.
 
   let suscrito = false;
+  let sesionLista = false;   // true cuando auth.js confirma la sesión
+  let tabVisitada = false;   // true si ya se entró a esta pestaña
   function iniciarSuscripcion() {
-    if (suscrito) return;
+    // Sin sesión Firestore rechazaría la lectura y la suscripción moriría.
+    if (!sesionLista || suscrito) return;
     suscrito = true;
     db.collection(COLECCION).orderBy('numero').onSnapshot(
       (snapshot) => {
@@ -1841,8 +1844,14 @@
     if (reparacionActual) abrirFicha(reparacionActual, subtabFichaActiva());
   });
 
+  document.addEventListener('auth:listo', () => {
+    sesionLista = true;
+    if (tabVisitada) iniciarSuscripcion();
+  });
+
   document.addEventListener('tab:activada', (e) => {
     if (e.detail.tab !== 'reparaciones') return;
+    tabVisitada = true;
     iniciarSuscripcion();
   });
 })();

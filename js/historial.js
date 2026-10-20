@@ -564,8 +564,11 @@
   // Firestore mientras nadie la está viendo).
 
   let suscrito = false;
+  let sesionLista = false;   // true cuando auth.js confirma la sesión
+  let tabVisitada = false;   // true si ya se entró a esta pestaña
   function iniciarSuscripcion() {
-    if (suscrito) return;
+    // Sin sesión Firestore rechazaría la lectura y la suscripción moriría.
+    if (!sesionLista || suscrito) return;
     suscrito = true;
     db.collection(COLECCION).onSnapshot(
       (snapshot) => {
@@ -579,8 +582,14 @@
     );
   }
 
+  document.addEventListener('auth:listo', () => {
+    sesionLista = true;
+    if (tabVisitada) iniciarSuscripcion();
+  });
+
   document.addEventListener('tab:activada', (e) => {
     if (e.detail.tab !== 'historial') return;
+    tabVisitada = true;
     poblarSelectSubsidiarias();
     iniciarSuscripcion();
   });
