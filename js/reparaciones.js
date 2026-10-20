@@ -592,9 +592,35 @@
   const inputCompaniaTexto = document.getElementById('reparacion-compania-input');
   const resultadosCompania = document.getElementById('reparacion-compania-resultados');
 
+  // Encargados de reparaciones de una compañía (las antiguas solo tenían un
+  // nombre en contactoReparaciones).
+  function contactosReparacionesDeCliente(compania) {
+    if (Array.isArray(compania?.contactosReparaciones)) return compania.contactosReparaciones.filter(Boolean);
+    return compania?.contactoReparaciones ? [compania.contactoReparaciones] : [];
+  }
+
+  // Llena la lista desplegable del encargado con los de la compañía. Si la
+  // reparación ya tenía uno que ya no está en la lista (o es un texto libre
+  // de antes), se conserva como opción para no perderlo. Con un solo
+  // encargado en la lista, se elige solo.
+  function poblarContactosReparacion(compania, valorActual) {
+    const lista = contactosReparacionesDeCliente(compania);
+    const actual = (valorActual || '').trim();
+    const opciones = lista.slice();
+    if (actual && !opciones.some(n => normalizar(n) === normalizar(actual))) opciones.push(actual);
+    const textoVacio = !compania
+      ? 'Primero elige la compañía...'
+      : (opciones.length ? 'Selecciona un encargado...' : 'Sin encargados registrados para esta compañía');
+    inputContacto.innerHTML = `<option value="">${escapeHtml(textoVacio)}</option>` +
+      opciones.map(n => `<option value="${escapeAttr(n)}">${escapeHtml(n)}</option>`).join('');
+    if (actual) inputContacto.value = opciones.find(n => normalizar(n) === normalizar(actual));
+    else if (lista.length === 1) inputContacto.value = lista[0];
+    else inputContacto.value = '';
+  }
+
   function alCambiarCompania() {
     const compania = buscarCompania(selectCompania.value);
-    inputContacto.value = compania?.contactoReparaciones || '';
+    poblarContactosReparacion(compania, '');
     headerNumero.textContent = textoHeader(inputId.value ? { numero: inputNumero.value } : null);
   }
 
@@ -1075,9 +1101,8 @@
     inputNumero.value = reparacion ? reparacion.numero : '';
     selectCompania.value = reparacion?.companiaId || '';
     sincronizarTextoCompaniaDesdeId();
-    inputContacto.value = reparacion
-      ? (reparacion.contacto || '')
-      : ''; // en una reparación nueva se llena solo al elegir la compañía
+    // En una reparación nueva la lista se llena al elegir la compañía.
+    poblarContactosReparacion(reparacion ? buscarCompania(reparacion.companiaId) : null, reparacion?.contacto || '');
     inputFechaIngreso.value = reparacion?.fechaIngreso || fechaHoyISO();
     inputEvidencia.value = reparacion?.evidenciaFotografica || '';
     ocultarEdicionEvidencia();

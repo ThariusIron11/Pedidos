@@ -6,8 +6,11 @@
 //   nombre, tipo: 'normal' | 'subsidiaria' | 'subsidiaria_edisatech',
 //   nit, direccion, direccionRemision, contraentrega: boolean,
 //   contactosPedidos: ['nombre1', 'nombre2', ...],
-//   contactoReparaciones: 'nombre'
+//   contactosReparaciones: ['nombre1', 'nombre2', ...],
+//   contactoReparaciones: 'nombre'   // (compatibilidad) = el primero de la lista
 // }
+// Las compañías antiguas solo tienen contactoReparaciones (un nombre); se
+// leen como una lista de uno hasta que se vuelvan a guardar.
 //
 // Comportamiento del modal (igual al de Pedidos/Reparación en App Repuestos):
 // - Clic por fuera (backdrop) cierra PERO conserva lo digitado (borrador).
@@ -43,7 +46,7 @@
   const inputContraentrega     = document.getElementById('cliente-contraentrega');
   const contactosPedidosList   = document.getElementById('contactos-pedidos-list');
   const grupoContactoReparaciones = document.getElementById('cliente-grupo-contacto-reparaciones');
-  const inputContactoRepNombre = document.getElementById('cliente-contacto-reparaciones-nombre');
+  const contactosReparacionesList = document.getElementById('contactos-reparaciones-list');
 
   let clientesCache = []; // [{id, ...datos}] — también expuesto en window.clientesCache
   let filtroTexto = '';
@@ -138,6 +141,37 @@
 
   document.getElementById('btn-add-contacto-pedidos').addEventListener('click', () => nuevaFilaContactoPedido());
 
+  // ---------- Lista dinámica de contactos de reparaciones ----------
+
+  // Lista de encargados de reparaciones de una compañía (las antiguas solo
+  // tenían un nombre en contactoReparaciones).
+  function contactosReparacionesDeCliente(cliente) {
+    if (Array.isArray(cliente?.contactosReparaciones)) return cliente.contactosReparaciones.filter(Boolean);
+    return cliente?.contactoReparaciones ? [cliente.contactoReparaciones] : [];
+  }
+
+  function nuevaFilaContactoRep(nombre) {
+    const row = document.createElement('div');
+    row.className = 'contacto-simple-row';
+    row.innerHTML = `
+      <input type="text" class="contacto-rep-nombre" placeholder="Nombre" value="${escapeAttr(nombre || '')}">
+      <button type="button" class="remove-contacto" title="Quitar contacto">✕</button>
+    `;
+    row.querySelector('.remove-contacto').addEventListener('click', () => row.remove());
+    contactosReparacionesList.appendChild(row);
+  }
+
+  function leerContactosRepDelFormulario() {
+    const contactos = [];
+    contactosReparacionesList.querySelectorAll('.contacto-rep-nombre').forEach(input => {
+      const nombre = input.value.trim();
+      if (nombre && !contactos.some(n => normalizar(n) === normalizar(nombre))) contactos.push(nombre);
+    });
+    return contactos;
+  }
+
+  document.getElementById('btn-add-contacto-reparaciones').addEventListener('click', () => nuevaFilaContactoRep());
+
   // ---------- Contacto de reparaciones: no aplica a subsidiarias ----------
   // (ni "Subsidiaria" ni "Subsidiaria de Edisatech" reciben pedidos de
   // reparaciones directamente, así que ese campo no tiene sentido para ellas).
@@ -149,7 +183,8 @@
   function actualizarVisibilidadContactoReparaciones() {
     const oculto = esTipoSubsidiaria(inputTipo.value);
     grupoContactoReparaciones.style.display = oculto ? 'none' : 'block';
-    if (oculto) inputContactoRepNombre.value = '';
+    if (oculto) contactosReparacionesList.innerHTML = '';
+    else if (!contactosReparacionesList.children.length) nuevaFilaContactoRep();
   }
 
   inputTipo.addEventListener('change', actualizarVisibilidadContactoReparaciones);
@@ -165,7 +200,8 @@
     inputDireccion.value = cliente?.direccion || '';
     inputDireccionRemision.value = cliente?.direccionRemision || '';
     inputContraentrega.checked = !!cliente?.contraentrega;
-    inputContactoRepNombre.value = cliente?.contactoReparaciones || '';
+    contactosReparacionesList.innerHTML = '';
+    contactosReparacionesDeCliente(cliente).forEach(nombre => nuevaFilaContactoRep(nombre));
     actualizarVisibilidadContactoReparaciones();
 
     contactosPedidosList.innerHTML = '';
@@ -217,6 +253,7 @@
   function cancelarYLimpiar() {
     form.reset();
     contactosPedidosList.innerHTML = '';
+    contactosReparacionesList.innerHTML = '';
     borradorId = null;
     modal.classList.remove('open');
   }
@@ -240,8 +277,9 @@
       direccionRemision: inputDireccionRemision.value.trim(),
       contraentrega: inputContraentrega.checked,
       contactosPedidos: leerContactosPedidosDelFormulario(),
-      contactoReparaciones: esTipoSubsidiaria(inputTipo.value) ? '' : inputContactoRepNombre.value.trim()
+      contactosReparaciones: esTipoSubsidiaria(inputTipo.value) ? [] : leerContactosRepDelFormulario()
     };
+    datos.contactoReparaciones = datos.contactosReparaciones[0] || ''; // compatibilidad
 
     if (!datos.nombre) {
       inputNombre.focus();
@@ -284,6 +322,7 @@
       // Guardado con éxito: ya no queda borrador pendiente.
       form.reset();
       contactosPedidosList.innerHTML = '';
+      contactosReparacionesList.innerHTML = '';
       borradorId = null;
       modal.classList.remove('open');
     } catch (err) {
@@ -324,7 +363,7 @@
     if (filtroTipoValor && (cliente.tipo || 'normal') !== filtroTipoValor) return false;
     if (!filtroTexto) return true;
     if (normalizar(cliente.nombre).includes(filtroTexto)) return true;
-    const contactos = cliente.contactosPedidos || [];
+    const contactos = [...(cliente.contactosPedidos || []), ...contactosReparacionesDeCliente(cliente)];
     return contactos.some(nombre => normalizar(nombre).includes(filtroTexto));
   }
 
@@ -360,8 +399,9 @@
       const contactosPedidosHtml = contactosPedidos.length
         ? contactosPedidos.map(escapeHtml).join(', ')
         : '<span style="color:var(--ink-soft);">—</span>';
-      const contactoRepHtml = cliente.contactoReparaciones
-        ? escapeHtml(cliente.contactoReparaciones)
+      const contactosRep = contactosReparacionesDeCliente(cliente);
+      const contactoRepHtml = contactosRep.length
+        ? contactosRep.map(escapeHtml).join(', ')
         : '<span style="color:var(--ink-soft);">—</span>';
 
       // Las subsidiarias no reciben pedidos de reparaciones, así que esa
