@@ -2302,6 +2302,30 @@
     '<svg class="ojo-cerrado" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>' +
     '<svg class="ojo-abierto" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" fill="none"/><circle cx="12" cy="12" r="3.6"/></svg>';
 
+  // Tamaño de letra de la vista del ojo: 5 niveles con TOPE (el más grande es
+  // 1.75 veces el base; más allá los seriales largos se desbordarían). Es el
+  // mismo para todas las tarjetas y se recuerda en este navegador.
+  const ESCALAS_OJO = [0.85, 1, 1.25, 1.5, 1.75];
+  const CLAVE_TAMANO_OJO = 'pedidos_ojo_tamano';
+  let nivelTamanoOjo = (function () {
+    try {
+      const n = parseInt(localStorage.getItem(CLAVE_TAMANO_OJO), 10);
+      return (n >= 0 && n < ESCALAS_OJO.length) ? n : 1;
+    } catch (e) { return 1; }
+  })();
+
+  function aplicarTamanoOjo() {
+    fichaEquiposContenido.style.setProperty('--ojo-escala', ESCALAS_OJO[nivelTamanoOjo]);
+    fichaEquiposContenido.querySelectorAll('[data-ojo-tamano="menos"]').forEach(b => { b.disabled = nivelTamanoOjo <= 0; });
+    fichaEquiposContenido.querySelectorAll('[data-ojo-tamano="mas"]').forEach(b => { b.disabled = nivelTamanoOjo >= ESCALAS_OJO.length - 1; });
+  }
+
+  function cambiarTamanoOjo(delta) {
+    nivelTamanoOjo = Math.max(0, Math.min(ESCALAS_OJO.length - 1, nivelTamanoOjo + delta));
+    try { localStorage.setItem(CLAVE_TAMANO_OJO, String(nivelTamanoOjo)); } catch (e) { /* sin almacenamiento: queda solo en esta sesión */ }
+    aplicarTamanoOjo();
+  }
+
   function botonOjoHtml(index, abierto) {
     return `<button type="button" class="btn-ojo-equipo" data-ojo data-index="${index}" aria-pressed="${abierto}" title="${abierto ? 'Volver a la vista normal' : 'Ver solo seriales y OC'}">${ICONO_OJO_HTML}</button>`;
   }
@@ -2335,6 +2359,10 @@
     }
     return `
       <div class="vista-grande">
+        <div class="ojo-tamano-barra" role="group" aria-label="Tamaño de letra">
+          <button type="button" class="btn-ojo-tamano" data-ojo-tamano="menos" title="Letra más pequeña" aria-label="Letra más pequeña" ${nivelTamanoOjo <= 0 ? 'disabled' : ''}>A−</button>
+          <button type="button" class="btn-ojo-tamano" data-ojo-tamano="mas" title="Letra más grande" aria-label="Letra más grande" ${nivelTamanoOjo >= ESCALAS_OJO.length - 1 ? 'disabled' : ''}>A+</button>
+        </div>
         ${oc ? `<div class="oc-grande"><small>Orden de compra</small>${escapeHtml(oc)}</div>` : ''}
         ${filas}
       </div>`;
@@ -2584,6 +2612,13 @@
         btn.title = abierto ? 'Volver a la vista normal' : 'Ver solo seriales y OC';
       });
     });
+    fichaEquiposContenido.querySelectorAll('[data-ojo-tamano]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation(); // que no abra el modal de seriales
+        cambiarTamanoOjo(btn.dataset.ojoTamano === 'mas' ? 1 : -1);
+      });
+    });
+    aplicarTamanoOjo();
     fichaEquiposContenido.querySelectorAll('[data-reemplazar]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();

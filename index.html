@@ -1198,13 +1198,24 @@
   .equipo-card.vista-seriales .vista-normal{ display: none; }
   .equipo-card.vista-seriales .vista-grande{ display: block; }
   .equipo-card.vista-seriales .equipo-card-preparado-toggle{ display: none; }
+  /* Todo se multiplica por --ojo-escala (la fija el botón A− / A+, con tope). */
+  .vista-grande{ overflow-wrap: anywhere; }
+  .ojo-tamano-barra{ display: flex; justify-content: flex-end; gap: 4px; margin-bottom: 4px; }
+  .btn-ojo-tamano{
+    min-width: 30px; height: 26px; padding: 0 8px;
+    font-family: inherit; font-size: 12px; font-weight: 700; line-height: 1;
+    background: #fff; color: var(--ink);
+    border: 1px solid #d4d7dc; border-radius: 6px; cursor: pointer;
+  }
+  .btn-ojo-tamano:hover:not(:disabled){ background: #f0f1f4; }
+  .btn-ojo-tamano:disabled{ opacity: .35; cursor: not-allowed; }
   .vista-grande .oc-grande{
-    font-size: 17px; font-weight: 800;
+    font-size: calc(17px * var(--ojo-escala, 1)); font-weight: 800;
     padding-bottom: 8px; margin-bottom: 4px;
     border-bottom: 1px dashed #d4d7dc;
   }
   .vista-grande .oc-grande small{
-    display: block; font-size: 11px; font-weight: 600;
+    display: block; font-size: calc(11px * var(--ojo-escala, 1)); font-weight: 600;
     color: var(--ink-soft); text-transform: uppercase;
   }
   .fila-serial-grande{
@@ -1212,10 +1223,15 @@
     padding: 5px 0; border-bottom: 1px solid #e2e4e9;
   }
   .fila-serial-grande:last-child{ border-bottom: 0; }
-  .fila-serial-grande .u{ font-size: 11.5px; color: var(--ink-soft); min-width: 56px; }
-  .fila-serial-grande .sn{ font: 700 17px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-  .fila-serial-grande .sn.falta{ font-family: inherit; font-size: 13px; font-weight: 600; color: var(--warn); }
-  .fila-serial-grande .est{ margin-left: auto; font-size: 15px; }
+  .fila-serial-grande .u{ font-size: calc(11.5px * var(--ojo-escala, 1)); color: var(--ink-soft); min-width: calc(56px * var(--ojo-escala, 1)); }
+  .fila-serial-grande .sn{
+    flex: 1; min-width: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 700; line-height: 1.3;
+    font-size: calc(17px * var(--ojo-escala, 1));
+  }
+  .fila-serial-grande .sn.falta{ font-family: inherit; font-size: calc(13px * var(--ojo-escala, 1)); font-weight: 600; color: var(--warn); }
+  .fila-serial-grande .est{ margin-left: auto; font-size: calc(15px * var(--ojo-escala, 1)); }
 
   .equipo-card-preparado-tag{
     margin-left: auto;
@@ -4074,13 +4090,13 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="js/firebase-init.js?v=19"></script>
   <script src="js/auth.js?v=21"></script>
-  <script src="js/roles.js?v=4"></script>
+  <script src="js/roles.js?v=5"></script>
 
   <!-- Un archivo JS por pestaña -->
   <script src="js/config.js?v=21"></script>
   <script src="js/clientes.js?v=22"></script>
   <script src="js/equipos.js?v=25"></script>
-  <script src="js/pedidos.js?v=41"></script>
+  <script src="js/pedidos.js?v=42"></script>
   <script src="js/envios.js?v=25"></script>
   <script src="js/reparaciones.js?v=26"></script>
   <script src="js/historial.js?v=21"></script>
