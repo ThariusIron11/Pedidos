@@ -2290,6 +2290,56 @@
     `;
   }
 
+  // ---------- Botón 👁 de las tarjetas de equipo ----------
+  // Un clic en el ojo cambia la tarjeta a "solo seriales y OC" (en grande);
+  // otro clic la devuelve a la vista normal. El estado NO se recuerda: vive
+  // solo mientras la ficha está abierta (se borra al cerrarla o al abrir
+  // otro pedido) y sirve para que la tarjeta no se vuelva a cerrar si la
+  // ficha se redibuja por un cambio en vivo.
+  const indicesVistaSeriales = new Set();
+
+  const ICONO_OJO_HTML =
+    '<svg class="ojo-cerrado" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>' +
+    '<svg class="ojo-abierto" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" fill="none"/><circle cx="12" cy="12" r="3.6"/></svg>';
+
+  function botonOjoHtml(index, abierto) {
+    return `<button type="button" class="btn-ojo-equipo" data-ojo data-index="${index}" aria-pressed="${abierto}" title="${abierto ? 'Volver a la vista normal' : 'Ver solo seriales y OC'}">${ICONO_OJO_HTML}</button>`;
+  }
+
+  // El ojo solo aparece si el ítem tiene algo que mostrar: OC o algún serial.
+  function itemTieneOCOSerial(item) {
+    const llena = (lista) => (lista || []).some(s => s && String(s).trim());
+    return !!(item.ordenCompra || '').trim() ||
+      llena(item.seriales) || llena(item.serialesMotor) || llena(item.serialesReductor);
+  }
+
+  // Vista grande: OC arriba y una fila por unidad con su(s) serial(es) y su
+  // marca (🔒 despachada / 📄 en envío armado). `partes(i)` devuelve los
+  // textos de serial de la unidad i (uno, o motor y reductor).
+  function vistaSerialesHtml(item, index, pedido, partes) {
+    const oc = (item.ordenCompra || '').trim();
+    const completadas = new Set(item.cantidad > 1 ? (item.unidadesCompletadas || []) : []);
+    const enArmado = unidadesEnEnvioArmado(pedido.id, index);
+    let filas = '';
+    if (partes) {
+      for (let i = 0; i < Math.floor(item.cantidad || 0); i++) {
+        const textos = partes(i);
+        const hayFalta = textos.every(t => !t);
+        filas += `
+          <div class="fila-serial-grande">
+            <span class="u">${item.cantidad > 1 ? 'Unidad ' + (i + 1) : 'Serial'}</span>
+            <span class="sn ${hayFalta ? 'falta' : ''}">${hayFalta ? 'Falta serial' : textos.map(t => escapeHtml(t || '—')).join(' / ')}</span>
+            <span class="est">${marcaEnvioUnidad(i, completadas, enArmado)}</span>
+          </div>`;
+      }
+    }
+    return `
+      <div class="vista-grande">
+        ${oc ? `<div class="oc-grande"><small>Orden de compra</small>${escapeHtml(oc)}</div>` : ''}
+        ${filas}
+      </div>`;
+  }
+
   function renderTarjetaIndividual(item, index, pedido) {
     const equipo = equipoDeItem(item);
     const tipo = equipo ? buscarTipoEquipo(equipo.tipoId) : null;
@@ -2316,6 +2366,8 @@
       : (puedeReemplazarEquipo(pedido, item) ? `<button type="button" class="btn-reemplazar-equipo" data-reemplazar data-index="${index}" data-parte="individual">🔁 Reemplazar equipo</button>` : '');
 
     const usaSerial = !!equipo?.usaSerial;
+    const tieneOjo = !reemplazo && itemTieneOCOSerial(item);
+    const ojoAbierto = tieneOjo && indicesVistaSeriales.has(index);
     const ocHtml = item.ordenCompra
       ? `<div class="equipo-card-oc">📄 OC: ${escapeHtml(item.ordenCompra)}</div>`
       : '';
@@ -2334,19 +2386,23 @@
     const metaChips = `<span class="meta-chip">${formatearPesoFicha(pesoConExtrasFicha(calcularPesoEquipo(equipo), item))}</span>${chipParcial}${chipPartes}${chipDevuelto}`;
 
     return `
-      <div class="equipo-card clicable ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''} ${cantDevueltas ? 'devuelto' : ''}" data-index="${index}" style="border-color:${color};">
+      <div class="equipo-card clicable ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''} ${cantDevueltas ? 'devuelto' : ''} ${ojoAbierto ? 'vista-seriales' : ''}" data-index="${index}" style="border-color:${color};">
         <div class="equipo-card-header" style="background:${color};">
           <span>${icono}</span><span>${escapeHtml(nombreTipo)} x ${item.cantidad}${itemEsPorMedida(item) ? ' m' : ''}</span>
           ${estadoPrincipal.tag ? `<span class="equipo-card-preparado-tag">${estadoPrincipal.tag}</span>` : ''}
+          ${tieneOjo ? botonOjoHtml(index, ojoAbierto) : ''}
         </div>
         <div class="equipo-card-body" style="background:${color}15;">
-          <div>
-            ${reemplazo ? '' : `<div class="equipo-card-nombre">${nombreEquipo}</div>`}
-            ${ocHtml}
-            <div class="equipo-card-meta">${metaChips}</div>
-            ${reemplazoHtml}
+          <div class="vista-normal">
+            <div>
+              ${reemplazo ? '' : `<div class="equipo-card-nombre">${nombreEquipo}</div>`}
+              ${ocHtml}
+              <div class="equipo-card-meta">${metaChips}</div>
+              ${reemplazoHtml}
+            </div>
+            ${(usaSerial && !reemplazo) ? resumenSeriales(item, item.cantidad, unidadesEnEnvioArmado(pedido.id, index)) : ''}
           </div>
-          ${(usaSerial && !reemplazo) ? resumenSeriales(item, item.cantidad, unidadesEnEnvioArmado(pedido.id, index)) : ''}
+          ${tieneOjo ? vistaSerialesHtml(item, index, pedido, usaSerial ? (i) => [((item.seriales || [])[i] || '').trim()] : null) : ''}
         </div>
         <div class="equipo-card-preparado-toggle">
           ${textoResumenPreparado(item)} <span style="opacity:.6;">(clic para gestionar)</span>
@@ -2380,6 +2436,8 @@
 
     const usaSerialMotor = !!motor?.usaSerial;
     const usaSerialReductor = !!reductor?.usaSerial;
+    const tieneOjo = !reemplazoDeParte(item, 'motor') && !reemplazoDeParte(item, 'reductor') && itemTieneOCOSerial(item);
+    const ojoAbierto = tieneOjo && indicesVistaSeriales.has(index);
 
     const ocHtml = item.ordenCompra
       ? `<div class="equipo-card-oc">📄 OC: ${escapeHtml(item.ordenCompra)}</div>`
@@ -2437,13 +2495,15 @@
       `;
 
     return `
-      <div class="equipo-card clicable ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''} ${cantDevueltas ? 'devuelto' : ''}" data-index="${index}" style="border-color:${color};">
+      <div class="equipo-card clicable ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''} ${cantDevueltas ? 'devuelto' : ''} ${ojoAbierto ? 'vista-seriales' : ''}" data-index="${index}" style="border-color:${color};">
         <div class="equipo-card-header" style="background:${color};">
           <span>${icono}</span><span>Motoreductor x ${item.cantidad}</span>
           ${estadoPrincipal.tag ? `<span class="equipo-card-preparado-tag">${estadoPrincipal.tag}</span>` : ''}
           ${chipParcial}${chipDevuelto}
+          ${tieneOjo ? botonOjoHtml(index, ojoAbierto) : ''}
         </div>
         <div class="equipo-card-body" style="background:${color}15; flex-direction:column; align-items:stretch;">
+          <div class="vista-normal">
           ${ocHtml}
           ${filaMotorHtml}
           ${filaReductorHtml}
@@ -2453,6 +2513,11 @@
               ${resumenSerialesMotoreductor(item, item.cantidad, unidadesEnEnvioArmado(pedido.id, index))}
             </div>
           ` : ''}
+          </div>
+          ${tieneOjo ? vistaSerialesHtml(item, index, pedido, (usaSerialMotor || usaSerialReductor) ? (i) => [
+            usaSerialMotor ? ((item.serialesMotor || [])[i] || '').trim() : null,
+            usaSerialReductor ? ((item.serialesReductor || [])[i] || '').trim() : null
+          ].filter(t => t !== null) : null) : ''}
         </div>
         <div class="equipo-card-preparado-toggle">
           ${textoResumenPreparado(item)} <span style="opacity:.6;">(clic para gestionar)</span>
@@ -2506,6 +2571,17 @@
     fichaEquiposContenido.querySelectorAll('.equipo-card.clicable').forEach(card => {
       card.addEventListener('click', () => {
         abrirModalSeriales(parseInt(card.dataset.index, 10));
+      });
+    });
+    fichaEquiposContenido.querySelectorAll('[data-ojo]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation(); // que no abra el modal de seriales
+        const idx = parseInt(btn.dataset.index, 10);
+        const abierto = !indicesVistaSeriales.has(idx);
+        if (abierto) indicesVistaSeriales.add(idx); else indicesVistaSeriales.delete(idx);
+        btn.closest('.equipo-card').classList.toggle('vista-seriales', abierto);
+        btn.setAttribute('aria-pressed', String(abierto));
+        btn.title = abierto ? 'Volver a la vista normal' : 'Ver solo seriales y OC';
       });
     });
     fichaEquiposContenido.querySelectorAll('[data-reemplazar]').forEach(btn => {
@@ -2595,6 +2671,7 @@
   }
 
   function abrirFicha(pedido, subtabInicial) {
+    if (pedidoIdEnFicha !== pedido.id) indicesVistaSeriales.clear(); // otro pedido: ojos cerrados
     pedidoIdEnFicha = pedido.id;
     const tipoInfo = TIPO_PEDIDO_LABEL[pedido.tipo] || TIPO_PEDIDO_LABEL.normal;
     const compania = buscarCompania(pedido.companiaId);
@@ -2650,6 +2727,7 @@
   // o saltar a un envío distinto) — en esos casos el volverAEnvioId debe
   // seguir intacto para cuando la ficha se cierre de verdad más adelante.
   function cerrarFicha(opciones) {
+    indicesVistaSeriales.clear(); // el ojo no se recuerda
     modalFicha.classList.remove('open');
     pedidoIdEnFicha = null;
     if (opciones?.mantenerVolver) return;

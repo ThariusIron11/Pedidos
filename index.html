@@ -1174,6 +1174,49 @@
     font-weight: 700;
     color: #fff;
   }
+  /* ---------- Ojo 👁: vista "solo seriales y OC" de la tarjeta de equipo ---------- */
+  .equipo-card-header .btn-ojo-equipo{
+    margin-left: auto;
+    width: 28px; height: 28px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.16);
+    border: 1px solid rgba(255,255,255,0.55);
+    border-radius: 6px;
+    color: #fff;
+    cursor: pointer;
+  }
+  .equipo-card-preparado-tag ~ .btn-ojo-equipo{ margin-left: 6px; }
+  .btn-ojo-equipo:hover{ background: rgba(255,255,255,0.32); }
+  .btn-ojo-equipo[aria-pressed="true"]{ background: #fff; color: #1c2128; }
+  .btn-ojo-equipo svg{ width: 17px; height: 17px; }
+  .btn-ojo-equipo .ojo-abierto{ display: none; }
+  .btn-ojo-equipo[aria-pressed="true"] .ojo-abierto{ display: block; }
+  .btn-ojo-equipo[aria-pressed="true"] .ojo-cerrado{ display: none; }
+
+  .equipo-card .vista-normal{ display: contents; }
+  .equipo-card .vista-grande{ display: none; width: 100%; }
+  .equipo-card.vista-seriales .vista-normal{ display: none; }
+  .equipo-card.vista-seriales .vista-grande{ display: block; }
+  .equipo-card.vista-seriales .equipo-card-preparado-toggle{ display: none; }
+  .vista-grande .oc-grande{
+    font-size: 17px; font-weight: 800;
+    padding-bottom: 8px; margin-bottom: 4px;
+    border-bottom: 1px dashed #d4d7dc;
+  }
+  .vista-grande .oc-grande small{
+    display: block; font-size: 11px; font-weight: 600;
+    color: var(--ink-soft); text-transform: uppercase;
+  }
+  .fila-serial-grande{
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 5px 0; border-bottom: 1px solid #e2e4e9;
+  }
+  .fila-serial-grande:last-child{ border-bottom: 0; }
+  .fila-serial-grande .u{ font-size: 11.5px; color: var(--ink-soft); min-width: 56px; }
+  .fila-serial-grande .sn{ font: 700 17px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .fila-serial-grande .sn.falta{ font-family: inherit; font-size: 13px; font-weight: 600; color: var(--warn); }
+  .fila-serial-grande .est{ margin-left: auto; font-size: 15px; }
+
   .equipo-card-preparado-tag{
     margin-left: auto;
     background: rgba(255,255,255,0.25);
@@ -4031,13 +4074,13 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="js/firebase-init.js?v=19"></script>
   <script src="js/auth.js?v=21"></script>
-  <script src="js/roles.js?v=3"></script>
+  <script src="js/roles.js?v=4"></script>
 
   <!-- Un archivo JS por pestaña -->
   <script src="js/config.js?v=21"></script>
   <script src="js/clientes.js?v=22"></script>
   <script src="js/equipos.js?v=25"></script>
-  <script src="js/pedidos.js?v=40"></script>
+  <script src="js/pedidos.js?v=41"></script>
   <script src="js/envios.js?v=25"></script>
   <script src="js/reparaciones.js?v=26"></script>
   <script src="js/historial.js?v=21"></script>

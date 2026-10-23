@@ -41,7 +41,7 @@
     // "Cancelar" de cualquier ventana solo la cierra (excepto cancelar un envío, que sí borra)
     '[id^="btn-cancelar-"]:not(#btn-cancelar-envio)',
     // Evidencia y remesa
-    '.btn-copiar-link', '#btn-descargar-remesa', '#btn-compartir-remesa-whatsapp',
+    '.btn-copiar-link', '.btn-ojo-equipo', '#btn-descargar-remesa', '#btn-compartir-remesa-whatsapp',
     '[data-lectura-ok]'
   ].join(',');
 
