@@ -1309,6 +1309,7 @@
           if (original.unidadesDevueltas) item.unidadesDevueltas = original.unidadesDevueltas;
           if (original.cantidadCompletada !== undefined) item.cantidadCompletada = original.cantidadCompletada;
           if (original.cantidadDevuelta !== undefined) item.cantidadDevuelta = original.cantidadDevuelta;
+          if (original.partesCompletadas) item.partesCompletadas = original.partesCompletadas; // set despachado por partes
           // El "preparado" por unidad se gestiona desde la Ficha, no desde
           // este formulario — siempre se preserva tal cual estaba.
           item.unidadesPreparadas = original.unidadesPreparadas || [];
@@ -2326,6 +2327,16 @@
     aplicarTamanoOjo();
   }
 
+  // Botón "?" con la sugerencia de remisión: solo aparece si el equipo está en
+  // alguna guía (Config → Guías de remisión). El clic lo maneja guias.js.
+  function botonGuiaHtml(item, pedido) {
+    const guia = window.guiaRemisionDeItem
+      ? window.guiaRemisionDeItem(item, { reparacion: !!pedido.reparacionId })
+      : null;
+    if (!guia) return '';
+    return `<button type="button" class="btn-guia-equipo" data-guia-id="${guia.id}" title="Sugerencia de remisión" aria-label="Sugerencia de remisión">?</button>`;
+  }
+
   function botonOjoHtml(index, abierto) {
     return `<button type="button" class="btn-ojo-equipo" data-ojo data-index="${index}" aria-pressed="${abierto}" title="${abierto ? 'Volver a la vista normal' : 'Ver solo seriales y OC'}">${ICONO_OJO_HTML}</button>`;
   }
@@ -2418,7 +2429,7 @@
         <div class="equipo-card-header" style="background:${color};">
           <span>${icono}</span><span>${escapeHtml(nombreTipo)} x ${item.cantidad}${itemEsPorMedida(item) ? ' m' : ''}</span>
           ${estadoPrincipal.tag ? `<span class="equipo-card-preparado-tag">${estadoPrincipal.tag}</span>` : ''}
-          ${tieneOjo ? botonOjoHtml(index, ojoAbierto) : ''}
+          ${botonGuiaHtml(item, pedido)}${tieneOjo ? botonOjoHtml(index, ojoAbierto) : ''}
         </div>
         <div class="equipo-card-body" style="background:${color}15;">
           <div class="vista-normal">
@@ -2528,7 +2539,7 @@
           <span>${icono}</span><span>Motoreductor x ${item.cantidad}</span>
           ${estadoPrincipal.tag ? `<span class="equipo-card-preparado-tag">${estadoPrincipal.tag}</span>` : ''}
           ${chipParcial}${chipDevuelto}
-          ${tieneOjo ? botonOjoHtml(index, ojoAbierto) : ''}
+          ${botonGuiaHtml(item, pedido)}${tieneOjo ? botonOjoHtml(index, ojoAbierto) : ''}
         </div>
         <div class="equipo-card-body" style="background:${color}15; flex-direction:column; align-items:stretch;">
           <div class="vista-normal">
@@ -2924,9 +2935,12 @@
 
     function revisarLista(pedido, item, indexItem, lista, campo) {
       if (categoriaDeUso(item, campo) !== categoriaActual) return; // categoría distinta: no es conflicto
+      // Unidades devueltas de este ítem (por unidad si lleva serial por
+      // unidad, o las últimas N si solo se contó cuántas se devolvieron).
+      const devueltas = indicesDevueltosItem(item);
       (lista || []).forEach((s, u) => {
         if (!s || s.trim() !== serial) return;
-        if ((item.unidadesDevueltas || []).includes(u)) return; // devuelto: el serial queda libre otra vez
+        if (devueltas.has(u)) return; // devuelto: el serial queda libre otra vez
         // Traslado ya despachado: el equipo se considera que YA llegó a la
         // otra sede, así que ese serial queda libre para usarse en
         // cualquier otro pedido — igual que una devolución. Mientras el
@@ -3484,6 +3498,13 @@
   // reabrirla. Al llegar el snapshot con los datos frescos, si esa ficha
   // sigue abierta, se refresca conservando el subtab en el que estaba.
   document.addEventListener('pedidos:cambio', () => {
+    if (!pedidoIdEnFicha) return;
+    const pedidoActual = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (pedidoActual) abrirFicha(pedidoActual, subtabFichaActiva());
+  });
+
+  // Si cambian las guías de remisión, la ficha abierta muestra/oculta su "?".
+  document.addEventListener('guias:cambio', () => {
     if (!pedidoIdEnFicha) return;
     const pedidoActual = pedidosCache.find(p => p.id === pedidoIdEnFicha);
     if (pedidoActual) abrirFicha(pedidoActual, subtabFichaActiva());

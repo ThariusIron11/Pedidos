@@ -1584,6 +1584,78 @@
   }
   #aviso-solo-lectura.visible{ opacity: 1; transform: translate(-50%, 0); }
 
+  /* ---------- Guías de remisión (Config) y el botón "?" ---------- */
+  .guia-ayuda{ font-size: 13px; color: var(--ink-soft); margin: 0 0 14px; max-width: 760px; }
+  .guia-card{
+    background: #fff; border: 1px solid #e2e4e9; border-radius: 10px;
+    padding: 14px; margin-bottom: 12px;
+  }
+  .guia-card-top{ display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+  .guia-nombre-input{ flex: 1; font-weight: 600; }
+  .guia-etiqueta{
+    display: block; margin: 10px 0 4px;
+    font-size: 11.5px; font-weight: 600; color: var(--ink-soft);
+    text-transform: uppercase; letter-spacing: .3px;
+  }
+  .guia-texto-input{ width: 100%; min-height: 70px; box-sizing: border-box; resize: vertical; }
+  .guia-pastillas{ display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .guia-pastilla{
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #2b2f36; color: #fff; border-radius: 999px;
+    padding: 3px 6px 3px 11px; font-size: 12.5px; font-weight: 600;
+  }
+  .guia-pastilla.especial{ background: #2f8f6b; }
+  .guia-pastilla.rota{ background: #a52a22; }
+  .guia-pastilla button{
+    background: rgba(255,255,255,.28); color: inherit; border: 0; border-radius: 50%;
+    width: 18px; height: 18px; line-height: 1; padding: 0; font-size: 11px; cursor: pointer;
+  }
+  .guia-sin-equipos{ color: var(--ink-soft); font-size: 12.5px; font-style: italic; }
+  .guia-sel-buscar{ width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+  .guia-sel-chips{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .guia-sel-chip{
+    font-family: inherit; font-size: 12.5px; background: #fff; color: var(--ink);
+    border: 1px solid #d4d7dc; border-radius: 999px; padding: 3px 11px; cursor: pointer;
+  }
+  .guia-sel-chip.on{ background: #2b2f36; color: #fff; border-color: #2b2f36; }
+  .guia-sel-esp{ border: 1px dashed #2f8f6b; border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; }
+  .guia-sel-sub{ font-size: 11.5px; color: var(--ink-soft); margin-bottom: 2px; }
+  .guia-sel-masiva{ display: flex; justify-content: space-between; font-size: 12.5px; margin: 2px 0 4px; }
+  .guia-sel-lista{ max-height: 34vh; overflow: auto; }
+  .guia-sel-fila{
+    display: flex; align-items: center; gap: 10px; padding: 7px 4px;
+    border-bottom: 1px solid #e2e4e9; font-size: 13.5px; cursor: pointer;
+  }
+  .guia-sel-fila:last-child{ border-bottom: 0; }
+  .guia-sel-tipo{ color: var(--ink-soft); font-size: 12px; }
+  .guia-sel-en{
+    margin-left: auto; font-size: 11px; background: #fff4cc; color: #7a5a00;
+    border-radius: 999px; padding: 1px 8px; white-space: nowrap;
+  }
+  .guia-remision-nombre{ font-size: 11.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .3px; }
+  .guia-remision-texto{ font-size: 22px; line-height: 1.4; font-weight: 600; white-space: pre-wrap; padding: 10px 0 6px; overflow-wrap: anywhere; }
+
+  /* Botón "?" (sugerencia de remisión) en el encabezado de la tarjeta de equipo */
+  .equipo-card-header .btn-guia-equipo{
+    margin-left: auto;
+    width: 28px; height: 28px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-family: inherit; font-size: 15px; font-weight: 800;
+    background: rgba(255,255,255,0.16);
+    border: 1px solid rgba(255,255,255,0.55);
+    border-radius: 6px; color: #fff; cursor: pointer;
+  }
+  .equipo-card-header .btn-guia-equipo:hover{ background: rgba(255,255,255,0.32); }
+  .equipo-card-preparado-tag ~ .btn-guia-equipo{ margin-left: 6px; }
+  .btn-guia-equipo ~ .btn-ojo-equipo{ margin-left: 6px; }
+  /* Versión dentro de la ficha de reparación (fondo claro) */
+  .reparacion-equipo-texto-view .btn-guia-equipo{
+    margin-left: 10px; width: 26px; height: 26px; padding: 0; vertical-align: middle;
+    font-family: inherit; font-size: 14px; font-weight: 800;
+    background: #fff; color: var(--ink); border: 1px solid #d4d7dc; border-radius: 6px; cursor: pointer;
+  }
+  .reparacion-equipo-texto-view .btn-guia-equipo:hover{ background: #f0f1f4; }
+
   /* Set por partes (sprockets / caja de cadena) */
   .tag-parte-set{
     display: inline-block;
@@ -3082,45 +3154,71 @@
 
       <section class="panel" id="panel-config" data-title="Config">
         <div class="panel-header">
-          <h2>Tipos de equipo</h2>
-          <button type="button" class="btn" id="btn-nuevo-tipo">+ Nuevo tipo</button>
+          <h2>Config</h2>
         </div>
 
-        <table class="data-table" id="tabla-tipos">
-          <thead>
-            <tr>
-              <th style="width:70px;"></th>
-              <th>Nombre</th>
-              <th style="width:110px;"></th>
-            </tr>
-          </thead>
-          <tbody id="tabla-tipos-body">
-            <!-- filas generadas por config.js -->
-          </tbody>
-        </table>
-        <div class="empty-state" id="tipos-empty" style="display:none;">
-          Todavía no hay tipos de equipo registrados.
+        <div class="subtabs" id="config-subtabs">
+          <button type="button" class="subtab-btn active" data-config-sub="tipos">🏷️ Tipos de equipo</button>
+          <button type="button" class="subtab-btn" data-config-sub="empresas">🚚 Empresas de envío</button>
+          <button type="button" class="subtab-btn" data-config-sub="guias">❓ Guías de remisión</button>
         </div>
 
-        <div class="panel-header" style="margin-top:32px;">
-          <h2>Empresas de envío</h2>
-          <button type="button" class="btn" id="btn-nueva-empresa-envio">+ Nueva empresa</button>
+        <div class="subtab-panel active" id="config-sub-tipos">
+          <div class="panel-header">
+            <h2>Tipos de equipo</h2>
+            <button type="button" class="btn" id="btn-nuevo-tipo">+ Nuevo tipo</button>
+          </div>
+
+          <table class="data-table" id="tabla-tipos">
+            <thead>
+              <tr>
+                <th style="width:70px;"></th>
+                <th>Nombre</th>
+                <th style="width:110px;"></th>
+              </tr>
+            </thead>
+            <tbody id="tabla-tipos-body">
+              <!-- filas generadas por config.js -->
+            </tbody>
+          </table>
+          <div class="empty-state" id="tipos-empty" style="display:none;">
+            Todavía no hay tipos de equipo registrados.
+          </div>
         </div>
 
-        <table class="data-table" id="tabla-empresas-envio">
-          <thead>
-            <tr>
-              <th>Nombre</th>
-              <th>¿Da recibo?</th>
-              <th style="width:110px;"></th>
-            </tr>
-          </thead>
-          <tbody id="tabla-empresas-envio-body">
-            <!-- filas generadas por config.js -->
-          </tbody>
-        </table>
-        <div class="empty-state" id="empresas-envio-empty" style="display:none;">
-          Todavía no hay empresas de envío registradas. (La opción "Interno" siempre está disponible sin necesidad de configurarla aquí.)
+        <div class="subtab-panel" id="config-sub-empresas">
+          <div class="panel-header">
+            <h2>Empresas de envío</h2>
+            <button type="button" class="btn" id="btn-nueva-empresa-envio">+ Nueva empresa</button>
+          </div>
+
+          <table class="data-table" id="tabla-empresas-envio">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>¿Da recibo?</th>
+                <th style="width:110px;"></th>
+              </tr>
+            </thead>
+            <tbody id="tabla-empresas-envio-body">
+              <!-- filas generadas por config.js -->
+            </tbody>
+          </table>
+          <div class="empty-state" id="empresas-envio-empty" style="display:none;">
+            Todavía no hay empresas de envío registradas. (La opción "Interno" siempre está disponible sin necesidad de configurarla aquí.)
+          </div>
+        </div>
+
+        <div class="subtab-panel" id="config-sub-guias">
+          <div class="panel-header">
+            <h2>Guías de remisión</h2>
+            <button type="button" class="btn" id="btn-nueva-guia">+ Nueva guía</button>
+          </div>
+          <p class="guia-ayuda">Cada guía es un ejemplo de qué escribir en la remisión. Los equipos que agregues a una guía mostrarán un <b>?</b> en Pedidos y en la ficha de Reparaciones.</p>
+          <div id="guias-lista"><!-- generado por guias.js --></div>
+          <div class="empty-state" id="guias-empty" style="display:none;">
+            Todavía no hay guías de remisión. Crea la primera con «+ Nueva guía».
+          </div>
         </div>
       </section>
     </div>
@@ -4085,20 +4183,59 @@
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
   <!-- Usado por envios.js para armar la remesa y "fotografiarla" con
        html2canvas — nunca se ve, vive fuera de la pantalla (ver CSS). -->
+  <!-- Guía de remisión: el "?" -->
+  <div class="modal-backdrop" id="modal-guia-remision">
+    <div class="modal" style="max-width:560px;" role="dialog" aria-modal="true" aria-labelledby="guia-remision-titulo">
+      <h3 id="guia-remision-titulo" style="margin:0 0 6px; font-size:15px;">❓ Sugerencia de remisión</h3>
+      <div class="guia-remision-nombre" id="guia-remision-nombre"></div>
+      <div class="guia-remision-texto" id="guia-remision-texto"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" id="btn-cerrar-ficha-guia">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Guías de remisión: agregar equipos a una guía -->
+  <div class="modal-backdrop" id="modal-guias-equipos">
+    <div class="modal" style="max-width:580px;" role="dialog" aria-modal="true" aria-labelledby="guias-sel-titulo">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px;">
+        <h3 id="guias-sel-titulo" style="margin:0; font-size:15px;">Agregar equipos a la guía</h3>
+        <button type="button" class="btn secondary" id="btn-guias-sel-x" aria-label="Cerrar">✕</button>
+      </div>
+      <input type="text" class="guia-sel-buscar" id="guias-sel-buscar" placeholder="Buscar equipo por nombre…" autocomplete="off">
+      <div class="guia-sel-chips" id="guias-sel-tipos"></div>
+      <div class="guia-sel-esp" id="guias-sel-esp"></div>
+      <div class="guia-sel-masiva">
+        <span id="guias-sel-cont"></span>
+        <span>
+          <button type="button" class="btn-link" id="btn-guias-sel-todos">Seleccionar todos los visibles</button> ·
+          <button type="button" class="btn-link" id="btn-guias-sel-ninguno">Quitar visibles</button>
+        </span>
+      </div>
+      <div class="guia-sel-lista" id="guias-sel-lista"></div>
+      <div class="modal-actions" style="align-items:center;">
+        <span id="guias-sel-resumen" style="margin-right:auto; font-size:12.5px; color:var(--ink-soft);"></span>
+        <button type="button" class="btn secondary" id="btn-guias-sel-cancelar">Cancelar</button>
+        <button type="button" class="btn" id="btn-guias-sel-guardar">Guardar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="remesa-export-host"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="js/firebase-init.js?v=19"></script>
   <script src="js/auth.js?v=21"></script>
-  <script src="js/roles.js?v=5"></script>
+  <script src="js/roles.js?v=6"></script>
 
   <!-- Un archivo JS por pestaña -->
-  <script src="js/config.js?v=21"></script>
+  <script src="js/config.js?v=22"></script>
+  <script src="js/guias.js?v=1"></script>
   <script src="js/clientes.js?v=22"></script>
   <script src="js/equipos.js?v=25"></script>
-  <script src="js/pedidos.js?v=42"></script>
+  <script src="js/pedidos.js?v=44"></script>
   <script src="js/envios.js?v=25"></script>
-  <script src="js/reparaciones.js?v=26"></script>
+  <script src="js/reparaciones.js?v=27"></script>
   <script src="js/historial.js?v=21"></script>
 
 </body>

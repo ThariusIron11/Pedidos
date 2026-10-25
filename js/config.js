@@ -516,3 +516,15 @@ window.iconoTipoHtml = function (tipo, iconoRespaldo) {
     );
   });
 })();
+
+// ---------- Pestañas internas de Config (Tipos / Empresas / Guías) ----------
+(function () {
+  const botones = document.querySelectorAll('#config-subtabs .subtab-btn');
+  const paneles = document.querySelectorAll('#panel-config > .subtab-panel');
+  botones.forEach(btn => {
+    btn.addEventListener('click', () => {
+      botones.forEach(b => b.classList.toggle('active', b === btn));
+      paneles.forEach(p => p.classList.toggle('active', p.id === 'config-sub-' + btn.dataset.configSub));
+    });
+  });
+})();

@@ -483,8 +483,20 @@
     return filas ? `<div style="margin-top:14px;">${filas}</div>` : '';
   }
 
+  // Botón "?" de la sugerencia de remisión. Si la reparación ya tiene pedido,
+  // se usa el equipo de ese pedido, porque ahí vive el reemplazo de motor o
+  // de reductor (que cambia qué guía corresponde).
+  function botonGuiaReparacionHtml(reparacion) {
+    if (!window.guiaRemisionDeItem || !reparacion.equipo) return '';
+    const pedido = reparacion.pedidoId ? (window.pedidosCache || []).find(p => p.id === reparacion.pedidoId) : null;
+    const item = (pedido && (pedido.equipos || [])[0]) || reparacion.equipo;
+    const guia = window.guiaRemisionDeItem(item, { reparacion: true });
+    if (!guia) return '';
+    return `<button type="button" class="btn-guia-equipo" data-guia-id="${guia.id}" title="Sugerencia de remisión" aria-label="Sugerencia de remisión">?</button>`;
+  }
+
   function renderFichaEquipos(reparacion) {
-    fichaEquipoTexto.innerHTML = htmlEquipoTarjeta(reparacion) + htmlReemplazoFichaReparacion(reparacion);
+    fichaEquipoTexto.innerHTML = htmlEquipoTarjeta(reparacion) + botonGuiaReparacionHtml(reparacion) + htmlReemplazoFichaReparacion(reparacion);
 
     const observaciones = reparacion.observacionesIniciales;
     fichaObservacionesTexto.innerHTML = htmlObservacionesEstaVacio(observaciones)
@@ -1856,6 +1868,13 @@
         renderFichaEquipos(reparacionAbierta); // el reemplazo de equipo vive en el pedido, no acá
       }
     }
+  });
+
+  // Si cambian las guías de remisión, la ficha abierta muestra/oculta su "?".
+  document.addEventListener('guias:cambio', () => {
+    if (!modalFicha.classList.contains('open')) return;
+    const reparacionAbierta = reparacionesCache.find(r => r.id === btnEditarDesdeFicha.dataset.id);
+    if (reparacionAbierta) renderFichaEquipos(reparacionAbierta);
   });
 
   // Acciones como marcar devuelta actualizan Firestore directamente (sin
