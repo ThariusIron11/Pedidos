@@ -1323,6 +1323,7 @@
           if (original.cantidadCompletada !== undefined) item.cantidadCompletada = original.cantidadCompletada;
           if (original.cantidadDevuelta !== undefined) item.cantidadDevuelta = original.cantidadDevuelta;
           if (original.partesCompletadas) item.partesCompletadas = original.partesCompletadas; // set despachado por partes
+          if (original.observacion !== undefined) item.observacion = original.observacion; // observación del equipo
           // El "preparado" por unidad se gestiona desde la Ficha, no desde
           // este formulario — siempre se preserva tal cual estaba.
           item.unidadesPreparadas = original.unidadesPreparadas || [];
@@ -2344,6 +2345,52 @@
     aplicarTamanoOjo();
   }
 
+  // ---------- Observación por equipo ----------
+  // Cada equipo del pedido puede tener una observación (texto con formato:
+  // negrilla, cursiva y listas). Se guarda en item.observacion como HTML
+  // saneado. No existe en pedidos tipo reparación (ahí manda la observación
+  // de la reparación) y se bloquea cuando el equipo ya salió completo.
+  const ETIQUETAS_RTE_OBS = new Set(['B', 'STRONG', 'I', 'EM', 'UL', 'OL', 'LI', 'BR', 'DIV', 'P']);
+
+  // Deja solo negrilla/cursiva/listas/saltos de línea; cualquier otra etiqueta
+  // se "desenvuelve" y se borran los atributos (style, onclick…).
+  function sanearHtmlObservacion(html) {
+    const temp = document.createElement('div');
+    temp.innerHTML = html || '';
+    (function limpiar(nodo) {
+      Array.from(nodo.childNodes).forEach(hijo => {
+        if (hijo.nodeType === Node.ELEMENT_NODE) {
+          limpiar(hijo);
+          if (!ETIQUETAS_RTE_OBS.has(hijo.tagName)) {
+            while (hijo.firstChild) nodo.insertBefore(hijo.firstChild, hijo);
+            nodo.removeChild(hijo);
+          } else {
+            while (hijo.attributes.length) hijo.removeAttribute(hijo.attributes[0].name);
+          }
+        } else if (hijo.nodeType !== Node.TEXT_NODE) {
+          nodo.removeChild(hijo);
+        }
+      });
+    })(temp);
+    return temp.innerHTML;
+  }
+
+  function observacionVacia(html) {
+    const temp = document.createElement('div');
+    temp.innerHTML = html || '';
+    return temp.textContent.trim() === '';
+  }
+
+  function pedidoPermiteObservaciones(pedido) {
+    return tipoEfectivoPedido(pedido) !== 'reparacion';
+  }
+
+  // 📄 junto al nombre del equipo: solo si tiene observación.
+  function botonObservacionHtml(item, index, pedido) {
+    if (!pedidoPermiteObservaciones(pedido) || observacionVacia(item.observacion)) return '';
+    return `<button type="button" class="btn-obs-equipo" data-obs-index="${index}" title="Ver observación" aria-label="Ver observación">📄</button>`;
+  }
+
   // Botón "?" con la sugerencia de remisión: solo aparece si el equipo está en
   // alguna guía (Config → Guías de remisión). El clic lo maneja guias.js.
   function botonGuiaHtml(item, pedido) {
@@ -2444,7 +2491,7 @@
     return `
       <div class="equipo-card clicable ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''} ${cantDevueltas ? 'devuelto' : ''} ${ojoAbierto ? 'vista-seriales' : ''}" data-index="${index}" style="border-color:${color};">
         <div class="equipo-card-header" style="background:${color};">
-          <span>${icono}</span><span>${escapeHtml(nombreTipo)} x ${item.cantidad}${itemEsPorMedida(item) ? ' m' : ''}</span>
+          <span>${icono}</span><span>${escapeHtml(nombreTipo)} x ${item.cantidad}${itemEsPorMedida(item) ? ' m' : ''}</span>${botonObservacionHtml(item, index, pedido)}
           ${estadoPrincipal.tag ? `<span class="equipo-card-preparado-tag">${estadoPrincipal.tag}</span>` : ''}
           ${botonGuiaHtml(item, pedido)}${tieneOjo ? botonOjoHtml(index, ojoAbierto) : ''}
         </div>
@@ -2553,7 +2600,7 @@
     return `
       <div class="equipo-card clicable ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''} ${cantDevueltas ? 'devuelto' : ''} ${ojoAbierto ? 'vista-seriales' : ''}" data-index="${index}" style="border-color:${color};">
         <div class="equipo-card-header" style="background:${color};">
-          <span>${icono}</span><span>Motoreductor x ${item.cantidad}</span>
+          <span>${icono}</span><span>Motoreductor x ${item.cantidad}</span>${botonObservacionHtml(item, index, pedido)}
           ${estadoPrincipal.tag ? `<span class="equipo-card-preparado-tag">${estadoPrincipal.tag}</span>` : ''}
           ${chipParcial}${chipDevuelto}
           ${botonGuiaHtml(item, pedido)}${tieneOjo ? botonOjoHtml(index, ojoAbierto) : ''}
@@ -2627,6 +2674,18 @@
     fichaEquiposContenido.querySelectorAll('.equipo-card.clicable').forEach(card => {
       card.addEventListener('click', () => {
         abrirModalSeriales(parseInt(card.dataset.index, 10));
+      });
+    });
+    fichaEquiposContenido.querySelectorAll('.btn-obs-equipo').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const pedidoVisor = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+        const itemVisor = pedidoVisor && (pedidoVisor.equipos || [])[parseInt(btn.dataset.obsIndex, 10)];
+        if (!itemVisor) return;
+        const equipoVisor = itemVisor.tipoLinea === 'motoreductor' ? null : equipoDeItem(itemVisor);
+        document.getElementById('obs-equipo-visor-nombre').textContent = itemVisor.tipoLinea === 'motoreductor' ? 'Motoreductor' : (equipoVisor ? equipoVisor.nombre : 'Equipo');
+        document.getElementById('obs-equipo-visor-texto').innerHTML = sanearHtmlObservacion(itemVisor.observacion);
+        document.getElementById('modal-observacion-equipo').classList.add('open');
       });
     });
     fichaEquiposContenido.querySelectorAll('[data-ojo]').forEach(btn => {
@@ -3104,6 +3163,95 @@
     }
   }
 
+  // ---------- Observación dentro de la ventana del equipo ----------
+  const seccionObservacion = document.getElementById('seriales-observacion');
+  const modalObsVisor = document.getElementById('modal-observacion-equipo');
+  document.getElementById('btn-cerrar-ficha-observacion').addEventListener('click', () => modalObsVisor.classList.remove('open'));
+  modalObsVisor.addEventListener('mousedown', (e) => { if (e.target === modalObsVisor) modalObsVisor.classList.remove('open'); });
+  let obsEdicionIndex = null; // equipo cuya observación se está editando
+
+  function renderObservacionEquipo(pedido, index) {
+    const item = (pedido.equipos || [])[index];
+    if (!item || !pedidoPermiteObservaciones(pedido)) { seccionObservacion.innerHTML = ''; return; }
+    const html = sanearHtmlObservacion(item.observacion);
+    const hay = !observacionVacia(html);
+    const bloqueada = estaItemCompletado(item);
+
+    let contenido = '<div class="obs-equipo-titulo">📄 Observación</div>';
+    if (obsEdicionIndex === index && !bloqueada) {
+      contenido += `
+        <div class="rte-toolbar" id="obs-equipo-toolbar">
+          <button type="button" class="rte-btn" data-cmd="bold" title="Negrilla (Ctrl+B)"><b>N</b></button>
+          <button type="button" class="rte-btn" data-cmd="italic" title="Cursiva (Ctrl+I)"><i>K</i></button>
+          <span class="rte-sep"></span>
+          <button type="button" class="rte-btn" data-cmd="insertUnorderedList" title="Lista con viñetas">☰ •</button>
+          <button type="button" class="rte-btn" data-cmd="insertOrderedList" title="Lista numerada">☰ 1.</button>
+        </div>
+        <div id="obs-equipo-editor" class="rte-editable" contenteditable="true" data-placeholder="Escribe la observación de este equipo…"></div>
+        <div class="obs-equipo-acciones">
+          <button type="button" class="btn secondary" id="btn-obs-cancelar">Cancelar</button>
+          <button type="button" class="btn" id="btn-obs-guardar">Guardar observación</button>
+        </div>`;
+    } else if (hay) {
+      contenido += `<div class="obs-equipo-texto">${html}</div>` +
+        (bloqueada ? '' : '<button type="button" class="btn secondary" id="btn-obs-editar">✏️ Editar observación</button>');
+    } else if (bloqueada) {
+      contenido += '<div class="obs-equipo-vacia">Sin observación.</div>';
+    } else {
+      contenido += '<button type="button" class="btn secondary" id="btn-obs-agregar">＋ Agregar observación</button>';
+    }
+    if (bloqueada) {
+      contenido += `<div class="obs-equipo-aviso">🔒 Este equipo ya salió completo (${item.cantidad} de ${item.cantidad}): la observación no se puede agregar ni cambiar.</div>`;
+    }
+    seccionObservacion.innerHTML = contenido;
+
+    const editor = seccionObservacion.querySelector('#obs-equipo-editor');
+    if (editor) {
+      editor.innerHTML = html;
+      editor.focus();
+      seccionObservacion.querySelectorAll('#obs-equipo-toolbar .rte-btn').forEach(btn => {
+        btn.addEventListener('mousedown', (e) => e.preventDefault()); // no perder la selección
+        btn.addEventListener('click', () => { document.execCommand(btn.dataset.cmd, false, null); editor.focus(); });
+      });
+    }
+    const abrirEdicion = () => { obsEdicionIndex = index; renderObservacionEquipo(pedido, index); };
+    const btnAgregar = seccionObservacion.querySelector('#btn-obs-agregar');
+    const btnEditar = seccionObservacion.querySelector('#btn-obs-editar');
+    if (btnAgregar) btnAgregar.addEventListener('click', abrirEdicion);
+    if (btnEditar) btnEditar.addEventListener('click', abrirEdicion);
+    const btnCancelar = seccionObservacion.querySelector('#btn-obs-cancelar');
+    if (btnCancelar) btnCancelar.addEventListener('click', () => { obsEdicionIndex = null; renderObservacionEquipo(pedido, index); });
+    const btnGuardar = seccionObservacion.querySelector('#btn-obs-guardar');
+    if (btnGuardar) btnGuardar.addEventListener('click', () => guardarObservacionEquipo(index));
+  }
+
+  async function guardarObservacionEquipo(index) {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    const item = pedido && (pedido.equipos || [])[index];
+    if (!item || !pedidoPermiteObservaciones(pedido) || estaItemCompletado(item)) return;
+
+    const editor = document.getElementById('obs-equipo-editor');
+    const limpio = sanearHtmlObservacion(editor.innerHTML);
+    const observacion = observacionVacia(limpio) ? '' : limpio;
+    const equiposActualizados = (pedido.equipos || []).map((it, i) => i === index ? { ...it, observacion } : it);
+
+    const btn = document.getElementById('btn-obs-guardar');
+    btn.disabled = true;
+    btn.textContent = 'Guardando...';
+    try {
+      await db.collection(COLECCION).doc(pedido.id).update({ equipos: equiposActualizados });
+      obsEdicionIndex = null;
+      const pedidoNuevo = { ...pedido, equipos: equiposActualizados };
+      renderObservacionEquipo(pedidoNuevo, index);
+      renderSeccionEquipos(pedidoNuevo); // el 📄 aparece/desaparece en la tarjeta
+    } catch (err) {
+      console.error('Error guardando la observación:', err);
+      alert('No se pudo guardar la observación. Revisa la consola.');
+      btn.disabled = false;
+      btn.textContent = 'Guardar observación';
+    }
+  }
+
   function abrirModalSeriales(index) {
     const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
     if (!pedido) return;
@@ -3154,15 +3302,21 @@
     const btnDevCantidad = serialesCampos.querySelector('#btn-devolucion-cantidad');
     if (btnDevCantidad) btnDevCantidad.addEventListener('click', () => registrarDevolucionCantidad(pedido.id, index));
 
+    // La observación vive aparte de los campos de serial; si se está
+    // editando (y esta ventana se refresca por otra acción), no se pisa.
+    if (obsEdicionIndex !== index) { obsEdicionIndex = null; renderObservacionEquipo(pedido, index); }
+
     modalSeriales.classList.add('open');
   }
 
   function cerrarModalSeriales() {
     modalSeriales.classList.remove('open');
     indexEquipoEnSeriales = null;
+    obsEdicionIndex = null;
   }
 
   btnCancelarSeriales.addEventListener('click', cerrarModalSeriales);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') modalObsVisor.classList.remove('open'); });
   modalSeriales.addEventListener('click', (e) => {
     if (e.target === modalSeriales) cerrarModalSeriales();
   });

@@ -1666,6 +1666,29 @@
   }
   .reparacion-equipo-texto-view .btn-guia-equipo:hover{ background: #f0f1f4; }
 
+  /* ---------- Observación por equipo (Pedidos) ---------- */
+  .equipo-card-header .btn-obs-equipo{
+    width: 26px; height: 26px; padding: 0; margin-left: 2px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    background: rgba(255,255,255,0.16);
+    border: 1px solid rgba(255,255,255,0.55);
+    border-radius: 6px; color: #fff; cursor: pointer;
+  }
+  .equipo-card-header .btn-obs-equipo:hover{ background: rgba(255,255,255,0.32); }
+  #seriales-observacion{ margin-top: 14px; padding-top: 12px; border-top: 1px dashed #d4d7dc; }
+  #seriales-observacion:empty{ display: none; }
+  .obs-equipo-titulo{
+    font-size: 11.5px; font-weight: 600; color: var(--ink-soft);
+    text-transform: uppercase; letter-spacing: .3px; margin-bottom: 6px;
+  }
+  .obs-equipo-texto{ font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; margin-bottom: 8px; }
+  .obs-equipo-texto-grande{ font-size: 20px; font-weight: 600; padding: 8px 0 4px; }
+  .obs-equipo-texto ul, .obs-equipo-texto ol{ margin: 4px 0 4px 20px; padding: 0; }
+  .obs-equipo-vacia{ color: var(--ink-soft); font-size: 13px; font-style: italic; margin-bottom: 8px; }
+  .obs-equipo-aviso{ background: #fff4cc; color: #7a5a00; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; }
+  .obs-equipo-acciones{ display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+
   /* Set por partes (sprockets / caja de cadena) */
   .tag-parte-set{
     display: inline-block;
@@ -3930,6 +3953,7 @@
     <div class="modal">
       <h3 id="modal-seriales-titulo">Números de serial</h3>
       <div id="seriales-campos"><!-- generado por pedidos.js --></div>
+      <div id="seriales-observacion"><!-- observación del equipo: generado por pedidos.js --></div>
       <div class="modal-actions">
         <button type="button" class="btn secondary" id="btn-cancelar-seriales">Cancelar</button>
         <button type="button" class="btn" id="btn-guardar-seriales">Guardar</button>
@@ -4245,19 +4269,31 @@
     </div>
   </div>
 
+  <!-- Pedidos: leer la observación de un equipo (el 📄) -->
+  <div class="modal-backdrop" id="modal-observacion-equipo">
+    <div class="modal" style="max-width:560px;" role="dialog" aria-modal="true" aria-labelledby="obs-equipo-visor-titulo">
+      <h3 id="obs-equipo-visor-titulo" style="margin:0 0 4px; font-size:15px;">📄 Observación</h3>
+      <div class="guia-remision-nombre" id="obs-equipo-visor-nombre"></div>
+      <div class="obs-equipo-texto obs-equipo-texto-grande" id="obs-equipo-visor-texto"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" id="btn-cerrar-ficha-observacion">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="remesa-export-host"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="js/firebase-init.js?v=19"></script>
   <script src="js/auth.js?v=21"></script>
-  <script src="js/roles.js?v=6"></script>
+  <script src="js/roles.js?v=7"></script>
 
   <!-- Un archivo JS por pestaña -->
   <script src="js/config.js?v=22"></script>
   <script src="js/guias.js?v=1"></script>
   <script src="js/clientes.js?v=22"></script>
   <script src="js/equipos.js?v=25"></script>
-  <script src="js/pedidos.js?v=45"></script>
+  <script src="js/pedidos.js?v=46"></script>
   <script src="js/envios.js?v=25"></script>
   <script src="js/reparaciones.js?v=27"></script>
   <script src="js/historial.js?v=21"></script>
