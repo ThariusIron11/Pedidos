@@ -39,6 +39,7 @@
 
   const inputId               = document.getElementById('cliente-id');
   const inputNombre           = document.getElementById('cliente-nombre');
+  const avisoExistente        = document.getElementById('aviso-cliente-existente');
   const inputTipo             = document.getElementById('cliente-tipo');
   const inputNit               = document.getElementById('cliente-nit');
   const inputDireccion         = document.getElementById('cliente-direccion');
@@ -139,17 +140,79 @@
     return clientesCache.find(c => c.id !== idActual && normalizar(c.nombre) === nombreNorm);
   }
 
-  // Nombres casi idénticos pero NO exactos (posible duplicado por error de
-  // digitación) — esto es solo un aviso para que confirmes que en verdad es
-  // una empresa distinta, nunca bloquea el guardado.
-  function buscarClientesParecidos(datos, idActual) {
-    const nombreNorm = normalizar(datos.nombre);
-    return clientesCache.filter(c =>
-      c.id !== idActual &&
-      normalizar(c.nombre) !== nombreNorm &&
-      nombresSimilares(c.nombre, datos.nombre)
-    );
+  // ---------- Aviso en vivo: ¿esta compañía ya existe? ----------
+  // Mientras se escribe el nombre (y al cambiar el tipo) se revisa la lista de
+  // compañías, igual que el aviso de Equipos:
+  //  - rojo:     ya existe una con exactamente ese nombre (no deja guardar)
+  //  - amarillo: hay nombres parecidos (solo aviso, nunca bloquea)
+  //  - verde:    el nombre está libre
+
+  // Para comparar mientras se escribe: sin tildes, mayúsculas, espacios ni signos.
+  function claveNombre(texto) {
+    return normalizar(texto).replace(/[^a-z0-9]/g, '');
   }
+
+  // Parecido "en vivo": el criterio estricto de nombresSimilares (mismas
+  // palabras u error de digitación) o que lo escrito esté dentro de un
+  // nombre existente (o al revés), para avisar desde las primeras letras.
+  function nombreParecidoEnVivo(existente, escrito) {
+    if (nombresSimilares(existente, escrito)) return true;
+    const e = claveNombre(existente);
+    const n = claveNombre(escrito);
+    if (n.length < 3) return false;
+    return e.includes(n) || (e.length >= 3 && n.includes(e));
+  }
+
+  function textoClienteLista(cliente) {
+    const info = TIPO_INFO[cliente.tipo] || TIPO_INFO.normal;
+    const tipoTxt = info.label ? ` · ${escapeHtml(info.label)}` : '';
+    return `${info.icono} <b>${escapeHtml(cliente.nombre)}</b>${tipoTxt}`;
+  }
+
+  function actualizarAvisoClienteExistente() {
+    const nombre = inputNombre.value.trim();
+    if (nombre.length < 2 || !claveNombre(nombre)) {
+      avisoExistente.style.display = 'none';
+      return;
+    }
+    const idActual = inputId.value;
+
+    // Editando y el nombre no cambió: no hay nada que avisar.
+    const original = idActual ? clientesCache.find(c => c.id === idActual) : null;
+    if (original && normalizar(original.nombre) === normalizar(nombre)) {
+      avisoExistente.style.display = 'none';
+      return;
+    }
+
+    const exacto = buscarClienteExacto({ nombre }, idActual);
+    if (exacto) {
+      avisoExistente.className = 'aviso-equipo-existente exacto';
+      avisoExistente.innerHTML = `⛔ Esta compañía <b>ya existe</b>:<div class="aviso-linea">${textoClienteLista(exacto)}</div>` +
+        '<div class="aviso-linea">No se puede duplicar: si es otra sede, agrégale la ciudad o algo que la distinga.</div>';
+      avisoExistente.style.display = 'block';
+      return;
+    }
+
+    const parecidos = clientesCache.filter(c =>
+      c.id !== idActual && nombreParecidoEnVivo(c.nombre, nombre)
+    );
+    if (parecidos.length) {
+      const MAX = 6;
+      const lineas = parecidos.slice(0, MAX).map(c => `<div class="aviso-linea">• ${textoClienteLista(c)}</div>`).join('');
+      const mas = parecidos.length > MAX ? `<div class="aviso-linea">… y ${parecidos.length - MAX} más</div>` : '';
+      avisoExistente.className = 'aviso-equipo-existente parecidos';
+      avisoExistente.innerHTML = `ℹ️ Ya ${parecidos.length === 1 ? 'hay 1 compañía parecida' : 'hay ' + parecidos.length + ' compañías parecidas'}:${lineas}${mas}` +
+        '<div class="aviso-linea">Si la tuya es distinta (ej. otra sede), puedes guardarla igual.</div>';
+      avisoExistente.style.display = 'block';
+      return;
+    }
+
+    avisoExistente.className = 'aviso-equipo-existente libre';
+    avisoExistente.innerHTML = '✅ No hay ninguna compañía con ese nombre.';
+    avisoExistente.style.display = 'block';
+  }
+
+  inputNombre.addEventListener('input', actualizarAvisoClienteExistente);
 
   // ---------- Lista dinámica de contactos de pedidos ----------
 
@@ -238,6 +301,7 @@
     contactosReparacionesList.innerHTML = '';
     contactosReparacionesDeCliente(cliente).forEach(nombre => nuevaFilaContactoRep(nombre));
     actualizarVisibilidadContactoReparaciones();
+    actualizarAvisoClienteExistente();
 
     contactosPedidosList.innerHTML = '';
     const contactos = cliente?.contactosPedidos || [];
@@ -287,6 +351,7 @@
 
   function cancelarYLimpiar() {
     form.reset();
+    avisoExistente.style.display = 'none';
     contactosPedidosList.innerHTML = '';
     contactosReparacionesList.innerHTML = '';
     borradorId = null;
@@ -330,24 +395,6 @@
       return;
     }
 
-    // El aviso de nombres parecidos es solo para compañías nuevas o cuando se
-    // le CAMBIA el nombre a una existente. Si ya estaba guardada y el nombre
-    // no cambió, no tiene sentido volver a preguntar cada vez que se edita.
-    const original = id ? clientesCache.find(c => c.id === id) : null;
-    const nombreCambio = !original || normalizar(original.nombre) !== normalizar(datos.nombre);
-    const parecidos = nombreCambio ? buscarClientesParecidos(datos, id) : [];
-    if (parecidos.length) {
-      const lista = parecidos.map(c => `• ${c.nombre}`).join('\n');
-      const continuar = confirm(
-        `Ya existen compañías con nombres parecidos:\n${lista}\n\n` +
-        `¿"${datos.nombre}" es una compañía distinta (ej. otra sede)? Aceptar para guardarla igual.`
-      );
-      if (!continuar) {
-        inputNombre.focus();
-        return;
-      }
-    }
-
     const btnGuardar = form.querySelector('button[type="submit"]');
     btnGuardar.disabled = true;
     btnGuardar.textContent = 'Guardando...';
@@ -361,6 +408,7 @@
       }
       // Guardado con éxito: ya no queda borrador pendiente.
       form.reset();
+      avisoExistente.style.display = 'none';
       contactosPedidosList.innerHTML = '';
       contactosReparacionesList.innerHTML = '';
       borradorId = null;
@@ -495,6 +543,7 @@
         clientesCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         window.clientesCache = clientesCache;
         renderTabla();
+        actualizarAvisoClienteExistente(); // por si el modal está abierto
         document.dispatchEvent(new CustomEvent('clientes:cambio', { detail: { clientes: clientesCache } }));
       },
       (err) => {
