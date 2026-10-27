@@ -1042,6 +1042,16 @@
     padding: 2px 8px;
     border-radius: 999px;
   }
+  /* Planta de cumplimiento: Envigado (negro, letra blanca) / Mosquera (rojo, letra negra) */
+  .tag-planta-envigado, .tag-planta-mosquera{
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .tag-planta-envigado{ background: #111; color: #fff; }
+  .tag-planta-mosquera{ background: #e53935; color: #000; }
   .tag-pedido-reparacion{
     display: inline-block;
     font-size: 11px;
@@ -3814,6 +3824,20 @@
           </div>
 
           <div class="form-group">
+            <label>Planta de cumplimiento</label>
+            <div class="tipo-pedido-toggle">
+              <label class="tipo-pedido-opcion">
+                <input type="radio" name="planta-pedido" value="envigado" checked>
+                Envigado
+              </label>
+              <label class="tipo-pedido-opcion">
+                <input type="radio" name="planta-pedido" value="mosquera">
+                Mosquera
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
             <label for="pedido-evidencia" style="display:flex; align-items:center; justify-content:space-between;">
               <span>📷 Evidencia fotográfica</span>
               <button type="button" class="btn-icon-inline" id="btn-editar-evidencia-pedido" title="Agregar o editar el link">✏️</button>
@@ -4233,7 +4257,7 @@
   <script src="js/guias.js?v=1"></script>
   <script src="js/clientes.js?v=22"></script>
   <script src="js/equipos.js?v=25"></script>
-  <script src="js/pedidos.js?v=44"></script>
+  <script src="js/pedidos.js?v=45"></script>
   <script src="js/envios.js?v=25"></script>
   <script src="js/reparaciones.js?v=27"></script>
   <script src="js/historial.js?v=21"></script>

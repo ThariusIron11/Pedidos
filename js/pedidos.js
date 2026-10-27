@@ -51,6 +51,7 @@
   const resultadosSubsidiariaContacto = document.getElementById('pedido-subsidiaria-contacto-resultados');
   const equiposPedidoList = document.getElementById('equipos-pedido-list');
   const radiosTipoPedido = form.querySelectorAll('input[name="tipo-pedido"]');
+  const radiosPlantaPedido = form.querySelectorAll('input[name="planta-pedido"]');
   const btnAddEquipoPedido = document.getElementById('btn-add-equipo-pedido');
   const btnAddContenedorPedido = document.getElementById('btn-add-contenedor-pedido');
   const inputEvidenciaPedido = document.getElementById('pedido-evidencia');
@@ -116,6 +117,18 @@
   let origenEdicion = null; // 'ficha' cuando se edita desde dentro de la Ficha, null si es desde la tabla
 
   // ---------- Helpers ----------
+
+  // Planta de cumplimiento: 'envigado' (por defecto) o 'mosquera'. Los pedidos
+  // anteriores a este campo se consideran de Envigado.
+  function plantaDePedido(pedido) {
+    return pedido && pedido.planta === 'mosquera' ? 'mosquera' : 'envigado';
+  }
+
+  function tagPlantaHtml(pedido) {
+    return plantaDePedido(pedido) === 'mosquera'
+      ? '<span class="tag-planta-mosquera" title="Planta de cumplimiento">Mosquera</span>'
+      : '<span class="tag-planta-envigado" title="Planta de cumplimiento">Envigado</span>';
+  }
 
   function escapeHtml(str) {
     return String(str ?? '')
@@ -1441,6 +1454,7 @@
     selectContacto.disabled = bloqueoTotal;
     inputContactoTexto.disabled = inputContactoTexto.disabled || bloqueoTotal;
     radiosTipoPedido.forEach(r => { r.disabled = bloqueoTotal; });
+    radiosPlantaPedido.forEach(r => { r.disabled = pedidoCompletadoBloqueado; });
     checkboxEnvioSubsidiaria.disabled = pedidoCompletadoBloqueado;
     selectSubsidiaria.disabled = pedidoCompletadoBloqueado;
     inputSubsidiariaTexto.disabled = pedidoCompletadoBloqueado;
@@ -1480,6 +1494,8 @@
 
     const tipoActual = pedido?.tipo || 'normal';
     radiosTipoPedido.forEach(r => { r.checked = (r.value === tipoActual); });
+    const plantaActual = plantaDePedido(pedido);
+    radiosPlantaPedido.forEach(r => { r.checked = (r.value === plantaActual); });
 
     inputEvidenciaPedido.value = pedido?.evidenciaFotografica || '';
     ocultarEdicionEvidenciaPedido();
@@ -1594,6 +1610,7 @@
       companiaId,
       contacto: selectContacto.value,
       tipo: Array.from(radiosTipoPedido).find(r => r.checked)?.value || 'normal',
+      planta: Array.from(radiosPlantaPedido).find(r => r.checked)?.value || 'envigado',
       equipos: leerEquiposDelFormulario(),
       contenedores: leerContenedoresDelFormulario(),
       envioSubsidiaria: checkboxEnvioSubsidiaria.checked,
@@ -2724,7 +2741,7 @@
     const nombreCompania = compania ? compania.nombre : 'Compañía no encontrada';
 
     fichaHeaderNumero.textContent = `${textoNumeroPedido(pedido)} - ${nombreCompania}`;
-    fichaHeaderTags.innerHTML = `<span class="${tipoInfo.clase}">${tipoInfo.texto}</span>` +
+    fichaHeaderTags.innerHTML = `<span class="${tipoInfo.clase}">${tipoInfo.texto}</span>` + tagPlantaHtml(pedido) +
       (pedidoEstaCompletado(pedido) ? '<span class="tag-pedido-completado">COMPLETADO</span>' : '') +
       (pedidoTieneDevolucion(pedido) ? '<span class="tag-pedido-devolucion">DEVOLUCIÓN</span>' : '') +
       (pedido.reparacionId ? '<button type="button" class="btn-pill-header" id="btn-ver-ficha-reparacion-header">🔧 Ver ficha de reparación ↗</button>' : '');
@@ -3888,17 +3905,19 @@
     { grupo: 'tipo',   clave: 'traslado',    icono: '🚚', texto: 'Traslado' },
     { grupo: 'envio',  clave: 'armado',      icono: '🛠️', texto: 'Envío armado' },
     { grupo: 'envio',  clave: 'despachado',  icono: '📬', texto: 'Envío despachado' },
-    { grupo: 'envio',  clave: 'sin_armado',  icono: '📭', texto: 'Equipos sin envío armado' }
+    { grupo: 'envio',  clave: 'sin_armado',  icono: '📭', texto: 'Equipos sin envío armado' },
+    { grupo: 'planta', clave: 'envigado',    icono: '⚫', texto: 'Envigado' },
+    { grupo: 'planta', clave: 'mosquera',    icono: '🔴', texto: 'Mosquera' }
   ];
-  const TITULO_GRUPO_FILTRO = { estado: 'Estado', tipo: 'Tipo de pedido', envio: 'Envío' };
-  const filtrosActivosPedidos = { estado: new Set(['en_proceso']), tipo: new Set(), envio: new Set() }; // "En proceso" queda por defecto
+  const TITULO_GRUPO_FILTRO = { estado: 'Estado', tipo: 'Tipo de pedido', envio: 'Envío', planta: 'Planta de cumplimiento' };
+  const filtrosActivosPedidos = { estado: new Set(['en_proceso']), tipo: new Set(), envio: new Set(), planta: new Set() }; // "En proceso" queda por defecto
 
   const contenedorFiltrosActivos = document.getElementById('filtros-pedidos-activos');
   const btnAgregarFiltro = document.getElementById('btn-agregar-filtro-pedidos');
   const menuFiltros = document.getElementById('menu-filtros-pedidos');
 
   function hayFiltrosActivosPedidos() {
-    return filtrosActivosPedidos.estado.size > 0 || filtrosActivosPedidos.tipo.size > 0 || filtrosActivosPedidos.envio.size > 0;
+    return filtrosActivosPedidos.estado.size > 0 || filtrosActivosPedidos.tipo.size > 0 || filtrosActivosPedidos.envio.size > 0 || filtrosActivosPedidos.planta.size > 0;
   }
 
   // El aviso/ficha de devolución solo aplica cuando "Devolución" es el único
@@ -3943,6 +3962,7 @@
         filtrosActivosPedidos.estado.clear();
         filtrosActivosPedidos.tipo.clear();
         filtrosActivosPedidos.envio.clear();
+        filtrosActivosPedidos.planta.clear();
         refrescarPedidosPorFiltros();
       });
     }
@@ -3957,7 +3977,7 @@
       return;
     }
     let html = '';
-    ['estado', 'tipo', 'envio'].forEach(grupo => {
+    ['estado', 'tipo', 'envio', 'planta'].forEach(grupo => {
       const items = disponibles.filter(f => f.grupo === grupo);
       if (!items.length) return;
       html += `<div class="filtro-menu-titulo">${TITULO_GRUPO_FILTRO[grupo]}</div>` +
@@ -4053,9 +4073,11 @@
   // usan tanto la tabla como las sugerencias de autocompletar de los dos
   // buscadores, para que siempre queden "atadas" a los filtros visibles.
   function pedidosPorFiltroEstado(lista) {
-    const { estado, tipo, envio } = filtrosActivosPedidos;
+    const { estado, tipo, envio, planta } = filtrosActivosPedidos;
     return lista.filter(pedido => {
       if (tipo.size && !tipo.has(tipoEfectivoPedido(pedido))) return false;
+      // Planta: sin ninguna elegida se ven todos; con una o ambas, solo esas.
+      if (planta.size && !planta.has(plantaDePedido(pedido))) return false;
       // Envío: el pedido cumple si está en al menos un envío con alguno de los
       // estados elegidos (un pedido puede estar repartido en varios envíos).
       if (envio.size) {
@@ -4389,6 +4411,7 @@
             <span class="pedido-card-numero">${textoNumeroPedido(pedido)}</span>
             <span class="pedido-card-compania">${nombreCompania}</span>
             <span class="${tipoInfo.clase}">${tipoInfo.texto}</span>
+            ${tagPlantaHtml(pedido)}
             ${completado ? '<span class="tag-pedido-completado">COMPLETADO</span>' : ''}
             ${conDevolucion ? '<span class="tag-pedido-devolucion">DEVOLUCIÓN</span>' : ''}
             <div class="pedido-card-actions">
