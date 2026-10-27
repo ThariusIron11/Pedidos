@@ -6,7 +6,8 @@
 // {
 //   subsidiariaId,          // id de un cliente con tipo 'subsidiaria_edisatech'
 //   descripcion,            // qué se mandó a hacer (texto libre)
-//   fechaInicio,             // 'YYYY-MM-DD' — cuándo se envió
+//   remisionServicio,       // número/texto de la remisión de servicio (opcional, editable mientras esté pendiente)
+//   fechaInicio,            // 'YYYY-MM-DD' — cuándo se envió
 //   recogido: boolean,      // false = todavía en fabricación, true = ya se recogió
 //   fechaRecogido,           // 'YYYY-MM-DD' o null si sigue pendiente
 //   queSeRealizo             // texto libre, solo se llena al marcar como recogido
@@ -40,6 +41,7 @@
   const grupoContacto = document.getElementById('fabricacion-grupo-contacto');
   const selectContacto = document.getElementById('fabricacion-contacto');
   const inputDescripcion = document.getElementById('fabricacion-descripcion');
+  const inputRemisionServicio = document.getElementById('fabricacion-remision-servicio');
   const inputFechaInicio = document.getElementById('fabricacion-fecha-inicio');
   const inputCosto = document.getElementById('fabricacion-costo');
 
@@ -192,6 +194,7 @@
     selectSubsidiaria.value = pieza?.subsidiariaId || '';
     poblarSelectContacto(selectSubsidiaria.value, pieza?.contacto || null);
     inputDescripcion.value = pieza?.descripcion || '';
+    inputRemisionServicio.value = pieza?.remisionServicio || '';
     inputFechaInicio.value = pieza?.fechaInicio || fechaHoyISO();
     inputCosto.value = pieza?.costo != null ? Number(pieza.costo).toLocaleString('es-CO') : '';
   }
@@ -251,6 +254,7 @@
       subsidiariaId: selectSubsidiaria.value,
       contacto: grupoContacto.style.display !== 'none' ? (selectContacto.value || null) : null,
       descripcion: inputDescripcion.value.trim(),
+      remisionServicio: inputRemisionServicio.value.trim() || null,
       fechaInicio: inputFechaInicio.value || fechaHoyISO(),
       costo: parsearCosto(inputCosto.value)
     };
@@ -274,7 +278,7 @@
         await db.collection(COLECCION).doc(id).update(datos);
       } else {
         datos.recogido = false;
-        datos.fechaRecogido = null;
+        datos.fechaRecogido = null; // se asigna al marcar como recogido
         datos.queSeRealizo = '';
         datos.creadoEn = firebase.firestore.FieldValue.serverTimestamp();
         await db.collection(COLECCION).add(datos);
@@ -394,6 +398,123 @@
     }
   });
 
+  // ---------- Buscadores y filtros (Año / Mes) ----------
+  // Aplican a la vista que esté activa (En fabricación o Completados).
+  // La fecha usada para Año/Mes es fechaInicio en las pendientes y
+  // fechaRecogido en las completadas.
+
+  const MESES_LARGO = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+  const inputBuscaRemision = document.getElementById('buscador-remision-historial');
+  const inputBuscaSubsidiaria = document.getElementById('buscador-subsidiaria-historial');
+  const contenedorPastillas = document.getElementById('filtros-historial-activos');
+  const btnAgregarFiltro = document.getElementById('btn-agregar-filtro-historial');
+  const menuFiltros = document.getElementById('menu-filtros-historial');
+
+  const filtrosFecha = { anio: null, mes: null }; // anio: 2026 | null, mes: 1-12 | null
+
+  // Minúsculas y sin tildes, para que "Gomez" encuentre "Gómez".
+  function normalizar(texto) {
+    return String(texto ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  }
+
+  function fechaParaFiltro(pieza) {
+    return pieza.recogido ? pieza.fechaRecogido : pieza.fechaInicio;
+  }
+
+  function pasaFiltros(pieza) {
+    const qRemision = normalizar(inputBuscaRemision.value.trim());
+    if (qRemision && !normalizar(pieza.remisionServicio).includes(qRemision)) return false;
+
+    const qSubsidiaria = normalizar(inputBuscaSubsidiaria.value.trim());
+    if (qSubsidiaria && !normalizar(nombreSubsidiaria(pieza.subsidiariaId)).includes(qSubsidiaria)) return false;
+
+    if (filtrosFecha.anio !== null || filtrosFecha.mes !== null) {
+      const fecha = fechaParaFiltro(pieza);
+      if (!fecha) return false;
+      const [anio, mes] = fecha.split('-').map(n => parseInt(n, 10));
+      if (filtrosFecha.anio !== null && anio !== filtrosFecha.anio) return false;
+      if (filtrosFecha.mes !== null && mes !== filtrosFecha.mes) return false;
+    }
+    return true;
+  }
+
+  function renderPastillas() {
+    const pastillas = [];
+    if (filtrosFecha.anio !== null) {
+      pastillas.push(`<span class="filtro-chip-activo">📅 Año: ${filtrosFecha.anio}<button type="button" class="filtro-chip-quitar" data-quitar="anio" title="Quitar">×</button></span>`);
+    }
+    if (filtrosFecha.mes !== null) {
+      pastillas.push(`<span class="filtro-chip-activo">🗓️ Mes: ${MESES_LARGO[filtrosFecha.mes - 1]}<button type="button" class="filtro-chip-quitar" data-quitar="mes" title="Quitar">×</button></span>`);
+    }
+    if (pastillas.length > 1) {
+      pastillas.push('<button type="button" class="filtro-limpiar" data-quitar="todos">Limpiar</button>');
+    }
+    contenedorPastillas.innerHTML = pastillas.join('');
+  }
+
+  function renderMenuFiltros() {
+    // Los años que se ofrecen son los que realmente existen en la vista actual.
+    const anios = new Set();
+    historialCache
+      .filter(h => filtroEstado === 'completado' ? h.recogido : !h.recogido)
+      .forEach(h => {
+        const fecha = fechaParaFiltro(h);
+        if (fecha) anios.add(parseInt(fecha.split('-')[0], 10));
+      });
+    const listaAnios = Array.from(anios).sort((a, b) => b - a);
+
+    const itemsAnio = listaAnios.length
+      ? listaAnios.map(a => `<button type="button" class="filtro-menu-item" data-anio="${a}">${filtrosFecha.anio === a ? '✓ ' : ''}${a}</button>`).join('')
+      : '<div class="filtro-menu-vacio">Sin fechas registradas</div>';
+    const itemsMes = MESES_LARGO.map((nombre, i) =>
+      `<button type="button" class="filtro-menu-item" data-mes="${i + 1}">${filtrosFecha.mes === i + 1 ? '✓ ' : ''}${nombre}</button>`
+    ).join('');
+
+    menuFiltros.innerHTML =
+      `<div class="filtro-menu-titulo">Año</div>${itemsAnio}` +
+      `<div class="filtro-menu-titulo">Mes</div>${itemsMes}`;
+  }
+
+  btnAgregarFiltro.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (menuFiltros.classList.contains('open')) {
+      menuFiltros.classList.remove('open');
+      return;
+    }
+    renderMenuFiltros();
+    menuFiltros.classList.add('open');
+  });
+
+  menuFiltros.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const item = e.target.closest('.filtro-menu-item');
+    if (!item) return;
+    if (item.dataset.anio) {
+      const anio = parseInt(item.dataset.anio, 10);
+      filtrosFecha.anio = filtrosFecha.anio === anio ? null : anio; // clic de nuevo = quitar
+    }
+    if (item.dataset.mes) {
+      const mes = parseInt(item.dataset.mes, 10);
+      filtrosFecha.mes = filtrosFecha.mes === mes ? null : mes;
+    }
+    menuFiltros.classList.remove('open');
+    renderTodo();
+  });
+
+  document.addEventListener('click', () => menuFiltros.classList.remove('open'));
+
+  contenedorPastillas.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-quitar]');
+    if (!btn) return;
+    if (btn.dataset.quitar === 'anio' || btn.dataset.quitar === 'todos') filtrosFecha.anio = null;
+    if (btn.dataset.quitar === 'mes' || btn.dataset.quitar === 'todos') filtrosFecha.mes = null;
+    renderTodo();
+  });
+
+  inputBuscaRemision.addEventListener('input', () => renderTodo());
+  inputBuscaSubsidiaria.addEventListener('input', () => renderTodo());
+
   // ---------- Filtro Pendientes / Completados ----------
 
   chipsFiltro.forEach(chip => {
@@ -408,10 +529,14 @@
   // ---------- Render: "En fabricación" agrupado por subsidiaria ----------
 
   function renderPendientes() {
-    const pendientes = historialCache.filter(h => !h.recogido);
+    const todasPendientes = historialCache.filter(h => !h.recogido);
+    const pendientes = todasPendientes.filter(pasaFiltros);
 
     if (!pendientes.length) {
       contenedorPendientes.innerHTML = '';
+      pendientesVacio.textContent = todasPendientes.length
+        ? 'Ninguna pieza coincide con los filtros.'
+        : 'Todavía no hay piezas en fabricación.';
       pendientesVacio.style.display = 'block';
       return;
     }
@@ -449,11 +574,12 @@
         const costoTexto = formatearCosto(pieza.costo);
         const costoHtml = costoTexto ? ` · ${costoTexto}` : '';
         const contactoHtml = pieza.contacto ? ` · 👤 ${escapeHtml(pieza.contacto)}` : '';
+        const remisionHtml = pieza.remisionServicio ? ` · 🧾 Rem. servicio: ${escapeHtml(pieza.remisionServicio)}` : '';
         return `
           <div class="pieza-row" data-id="${pieza.id}">
             <div class="pieza-info">
               <div class="pieza-descripcion">${escapeHtml(pieza.descripcion)}</div>
-              <div class="pieza-fecha">Enviado: ${formatearFecha(pieza.fechaInicio)} ${diasHtml}${costoHtml}${contactoHtml}</div>
+              <div class="pieza-fecha">Enviado: ${formatearFecha(pieza.fechaInicio)} ${diasHtml}${costoHtml}${contactoHtml}${remisionHtml}</div>
             </div>
             <button type="button" class="btn-recoger" data-id="${pieza.id}">✔ Marcar recogido</button>
             <button type="button" class="btn-icon-inline btn-eliminar-pieza" data-id="${pieza.id}" title="Eliminar">🗑️</button>
@@ -508,12 +634,16 @@
   // ---------- Render: "Completados" — tabla plana, de solo lectura ----------
 
   function renderCompletados() {
-    const completados = historialCache
-      .filter(h => h.recogido)
+    const todosCompletados = historialCache.filter(h => h.recogido);
+    const completados = todosCompletados
+      .filter(pasaFiltros)
       .sort((a, b) => (b.fechaRecogido || '').localeCompare(a.fechaRecogido || '')); // más reciente primero
 
     if (!completados.length) {
       tablaCompletadosBody.innerHTML = '';
+      completadosVacio.textContent = todosCompletados.length
+        ? 'Ninguna pieza coincide con los filtros.'
+        : 'Todavía no hay piezas completadas.';
       completadosVacio.style.display = 'block';
       return;
     }
@@ -530,6 +660,7 @@
           <td>${nombreHtml}</td>
           <td>${pieza.contacto ? escapeHtml(pieza.contacto) : '<span style="color:var(--ink-soft);">—</span>'}</td>
           <td>${escapeHtml(pieza.descripcion)}</td>
+          <td>${pieza.remisionServicio ? escapeHtml(pieza.remisionServicio) : '<span style="color:var(--ink-soft);">—</span>'}</td>
           <td>${formatearFecha(pieza.fechaInicio)}</td>
           <td>${formatearFecha(pieza.fechaRecogido)}</td>
           <td>${escapeHtml(pieza.queSeRealizo || '—')}</td>
@@ -554,6 +685,7 @@
   function renderTodo() {
     seccionPendientes.style.display = filtroEstado === 'pendiente' ? '' : 'none';
     seccionCompletados.style.display = filtroEstado === 'completado' ? '' : 'none';
+    renderPastillas();
     renderPendientes();
     renderCompletados();
   }

@@ -3155,6 +3155,21 @@
             <button type="button" class="chip-filtro-estado" data-estado="pendiente">En fabricación</button>
             <button type="button" class="chip-filtro-estado" data-estado="completado">Completados</button>
           </div>
+
+          <div class="form-group" style="max-width:250px; margin-bottom:0; flex:1;">
+            <input type="text" id="buscador-remision-historial" placeholder="Buscar por remisión de servicio..." autocomplete="off">
+          </div>
+          <div class="form-group" style="max-width:250px; margin-bottom:0; flex:1;">
+            <input type="text" id="buscador-subsidiaria-historial" placeholder="Buscar por subsidiaria..." autocomplete="off">
+          </div>
+
+          <div class="filtros-pedidos">
+            <div class="filtros-pedidos-activos" id="filtros-historial-activos"></div>
+            <div class="filtro-agregar-wrap">
+              <button type="button" class="chip-filtro-estado" id="btn-agregar-filtro-historial">＋ Filtro</button>
+              <div class="filtro-menu" id="menu-filtros-historial"></div>
+            </div>
+          </div>
         </div>
 
         <div id="seccion-fabricacion-pendientes">
@@ -3171,6 +3186,7 @@
                 <th>Subsidiaria</th>
                 <th>Contacto</th>
                 <th>Qué se mandó a hacer</th>
+                <th>Remisión de servicio</th>
                 <th>Fecha inicio</th>
                 <th>Fecha recogido</th>
                 <th>Qué se realizó</th>
@@ -3341,6 +3357,12 @@
         <div class="form-group">
           <label for="fabricacion-descripcion">¿Qué se mandó a hacer?</label>
           <textarea id="fabricacion-descripcion" rows="2" placeholder="Ej: Estator motor 15HP — rebobinado" required></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="fabricacion-remision-servicio">Remisión de servicio (opcional)</label>
+          <input type="text" id="fabricacion-remision-servicio" placeholder="Número de remisión de servicio, si ya se tiene" autocomplete="off">
+          <div class="campo-ayuda">Puedes dejarla vacía y agregarla después, editando la pieza.</div>
         </div>
 
         <div class="form-group">
@@ -4296,7 +4318,7 @@
   <script src="js/pedidos.js?v=46"></script>
   <script src="js/envios.js?v=25"></script>
   <script src="js/reparaciones.js?v=27"></script>
-  <script src="js/historial.js?v=21"></script>
+  <script src="js/historial.js?v=23"></script>
 
 </body>
 </html>
