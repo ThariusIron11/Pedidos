@@ -2714,12 +2714,23 @@
     font-size: 16px; line-height: 1; padding: 5px 7px; border-radius: 6px;
   }
   .btn-eliminar-simulacion-card:hover{ background: rgba(180,35,24,0.14); }
-  /* Simulaciones creadas por un usuario "parcial": fondo rojo */
-  .simulacion-card.de-parcial{ background: #fbdcdc; border-color: #d98b8b; }
-  .simulacion-card.de-parcial:hover{ border-color: #c0504d; }
-  #modal-ficha-simulacion .modal.de-parcial{ background: #fdeaea; }
-  #modal-ficha-simulacion .modal.de-parcial .ficha-header{ background: linear-gradient(135deg, #a82424 0%, #c43c3c 100%); }
-  #modal-ficha-simulacion .modal.de-parcial .modal-actions{ background: #fdeaea; }
+  /* Simulaciones creadas por un usuario "parcial": todo en una misma familia
+     de rojos (tarjeta, encabezado, recuadros y panel) para que se lea como
+     una sola pieza y no como parches sobre fondo rosado. */
+  .simulacion-card.de-parcial{ background: #fde6e6; border-color: #eab0b0; border-left: 4px solid #c0392b; }
+  .simulacion-card.de-parcial:hover{ border-color: #d98080; border-left-color: #c0392b; }
+  .simulacion-card.de-parcial .resumen{ color: #7d4a4a; }
+  .simulacion-card.de-parcial .peso-pill{ background: rgba(255,255,255,0.8); color: #8f1d1d; }
+  .simulacion-card.de-parcial .peso-pill.advertencia{ background: #fdf0d5; color: #8a5a06; }
+  #modal-ficha-simulacion .modal.de-parcial{ background: #fff6f6; }
+  #modal-ficha-simulacion .modal.de-parcial .ficha-header{ background: linear-gradient(135deg, #8f1d1d 0%, #b32d2d 100%); }
+  #modal-ficha-simulacion .modal.de-parcial .modal-actions{ background: #fff6f6; border-top-color: #f0d0d0; }
+  #modal-ficha-simulacion .modal.de-parcial .simulacion-peso-resumen{ background: #fde6e6; border-color: #eab0b0; }
+  #modal-ficha-simulacion .modal.de-parcial .simulacion-peso-total .label{ color: #7d4a4a; }
+  #modal-ficha-simulacion .modal.de-parcial .simulacion-peso-total .valor{ color: #8f1d1d; }
+  #modal-ficha-simulacion .modal.de-parcial .simulacion-item-fila{ border-bottom-color: #f0d6d6; }
+  #modal-ficha-simulacion .modal.de-parcial .simulacion-panel-agregar{ background: #fdeeee; border-color: #efc4c4; }
+  #modal-ficha-simulacion .modal.de-parcial .simulacion-panel-agregar .modal-actions{ background: transparent; border-top-color: #efc4c4; }
 
   .simulacion-nombre-input{
     width: 100%;
@@ -2737,8 +2748,8 @@
   .simulacion-peso-resumen{
     text-align: center;
     padding: 14px;
-    background: #f7f8f9;
-    border: 1px dashed #d4d7dc;
+    background: #f1f4f8;
+    border: 1px solid #dde3ec;
     border-radius: 8px;
     margin-bottom: 10px;
   }
@@ -2778,11 +2789,19 @@
   .simulacion-agregar-bloque{ display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 
   .simulacion-panel-agregar{
-    background: #faf6f0;
-    border: 1px solid #e9e2d6;
+    background: #f5f7fa;
+    border: 1px solid #dde3ec;
     border-radius: 8px;
     padding: 14px;
     margin-bottom: 14px;
+  }
+  /* Los botones Cancelar/Agregar del panel van integrados al panel (antes
+     heredaban el fondo blanco y el relleno de los botones de la ficha). */
+  #modal-ficha-simulacion .simulacion-panel-agregar .modal-actions{
+    background: transparent;
+    padding: 12px 0 0;
+    margin-top: 12px;
+    border-top: 1px solid #dde3ec;
   }
   .simulacion-pedido-item-row{
     display: flex;
