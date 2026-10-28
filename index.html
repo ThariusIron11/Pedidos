@@ -2706,6 +2706,20 @@
     padding: 4px 10px; border-radius: 999px; white-space: nowrap;
   }
   .simulacion-card .peso-pill.advertencia{ background: #fdf0d5; color: #a5690c; }
+  .simulacion-card{ position: relative; }
+  .simulacion-card.con-borrar{ padding-right: 52px; }
+  .btn-eliminar-simulacion-card{
+    position: absolute; top: 6px; right: 6px;
+    background: transparent; border: none; cursor: pointer;
+    font-size: 16px; line-height: 1; padding: 5px 7px; border-radius: 6px;
+  }
+  .btn-eliminar-simulacion-card:hover{ background: rgba(180,35,24,0.14); }
+  /* Simulaciones creadas por un usuario "parcial": fondo rojo */
+  .simulacion-card.de-parcial{ background: #fbdcdc; border-color: #d98b8b; }
+  .simulacion-card.de-parcial:hover{ border-color: #c0504d; }
+  #modal-ficha-simulacion .modal.de-parcial{ background: #fdeaea; }
+  #modal-ficha-simulacion .modal.de-parcial .ficha-header{ background: linear-gradient(135deg, #a82424 0%, #c43c3c 100%); }
+  #modal-ficha-simulacion .modal.de-parcial .modal-actions{ background: #fdeaea; }
 
   .simulacion-nombre-input{
     width: 100%;
@@ -4104,8 +4118,7 @@
         </div>
 
       </div>
-      <div class="modal-actions" style="justify-content:space-between;">
-        <button type="button" class="btn secondary danger-text" id="btn-eliminar-simulacion">Eliminar simulación</button>
+      <div class="modal-actions">
         <button type="button" class="btn secondary" id="btn-cerrar-ficha-simulacion">Cerrar</button>
       </div>
     </div>
@@ -4308,8 +4321,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="js/firebase-init.js?v=19"></script>
-  <script src="js/auth.js?v=21"></script>
-  <script src="js/roles.js?v=7"></script>
+  <script src="js/auth.js?v=22"></script>
+  <script src="js/roles.js?v=8"></script>
 
   <!-- Un archivo JS por pestaña -->
   <script src="js/config.js?v=22"></script>
@@ -4317,7 +4330,7 @@
   <script src="js/clientes.js?v=22"></script>
   <script src="js/equipos.js?v=25"></script>
   <script src="js/pedidos.js?v=46"></script>
-  <script src="js/envios.js?v=25"></script>
+  <script src="js/envios.js?v=26"></script>
   <script src="js/reparaciones.js?v=27"></script>
   <script src="js/historial.js?v=23"></script>
 

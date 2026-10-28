@@ -47,13 +47,14 @@
   // Roles válidos en /usuarios/{uid}.rol:
   //   'normal'  → puede ver y editar (el de siempre).
   //   'lectura' → solo puede observar (ver roles.js).
+  //   'parcial' → solo observa, salvo las simulaciones de Envíos (ver roles.js).
   // Devuelve el rol, o null si la cuenta no tiene acceso.
   async function obtenerRolDeAcceso(user) {
     try {
       const doc = await db.collection('usuarios').doc(user.uid).get();
       if (!doc.exists) return null;
       const rol = doc.data().rol;
-      return (rol === 'normal' || rol === 'lectura') ? rol : null;
+      return (rol === 'normal' || rol === 'lectura' || rol === 'parcial') ? rol : null;
     } catch (err) {
       return null;
     }

@@ -1,10 +1,13 @@
 // =====================================================================
-// Roles de usuario: "edicion" (como siempre) y "lectura" (solo observar).
+// Roles de usuario: "edicion" (como siempre), "lectura" (solo observar) y
+// "parcial" (solo lectura, salvo Simulaciones).
 //
 // El rol sale del documento  usuarios/{uid}  (el mismo que ya usa auth.js
 // para dar acceso), campo  rol :
 //     'normal'  → edición (como siempre)
 //     'lectura' → solo lectura
+//     'parcial' → solo lectura en todo, MENOS las simulaciones de Envíos:
+//                 ahí puede crear, editar y eliminar (ver reglas abajo)
 // auth.js lo lee al iniciar sesión y lo entrega en el evento 'auth:listo'.
 //
 // Un usuario de lectura puede: abrir fichas, moverse entre pestañas, buscar
@@ -18,11 +21,18 @@
 (function () {
   'use strict';
 
-  let rol = null;            // null = sin resolver | 'edicion' | 'lectura'
+  let rol = null;            // null = sin resolver | 'edicion' | 'lectura' | 'parcial'
   let motivo = '';
 
   window.rolUsuario = () => rol;
   window.puedeEditar = () => rol === 'edicion';
+  window.puedeEditarSimulaciones = () => rol === 'edicion' || rol === 'parcial';
+
+  // El rol "parcial" solo puede escribir en esta colección de Firestore, y
+  // solo puede tocar controles dentro de estas zonas de la pantalla.
+  const COLECCION_PARCIAL = 'simulaciones';
+  const SELECTOR_ZONA_PARCIAL = '#subtab-simulaciones-lista, #modal-ficha-simulacion';
+  const esRestringido = () => rol === 'lectura' || rol === 'parcial';
 
   // ---------- Qué SÍ puede usar un usuario de solo lectura ----------
   // Todo botón/campo que no coincida con esta lista se oculta o se bloquea
@@ -50,6 +60,8 @@
   function esPermitido(el) {
     if (el.type === 'hidden') return true;
     if (el.closest('.login-overlay')) return true;
+    // Parcial: dentro de Simulaciones (lista y ficha) todo queda habilitado.
+    if (rol === 'parcial' && el.closest(SELECTOR_ZONA_PARCIAL)) return true;
     return el.matches(SELECTOR_PERMITIDOS);
   }
 
@@ -67,7 +79,7 @@
   }
 
   function barrer(raiz) {
-    if (rol !== 'lectura' || !raiz || raiz.nodeType !== 1) return;
+    if (!esRestringido() || !raiz || raiz.nodeType !== 1) return;
     if (raiz.matches(SELECTOR_CONTROLES)) bloquearElemento(raiz);
     raiz.querySelectorAll(SELECTOR_CONTROLES).forEach(bloquearElemento);
   }
@@ -86,7 +98,7 @@
 
   // Las fichas y listas se dibujan con innerHTML: se bloquea lo que aparezca.
   const observador = new MutationObserver(mutaciones => {
-    if (rol !== 'lectura') return;
+    if (!esRestringido()) return;
     mutaciones.forEach(m => m.addedNodes.forEach(barrer));
   });
 
@@ -99,7 +111,9 @@
       aviso.id = 'aviso-solo-lectura';
       document.body.appendChild(aviso);
     }
-    aviso.textContent = '👁️ Tu usuario es de solo lectura: no puede crear ni modificar datos.';
+    aviso.textContent = rol === 'parcial'
+      ? '🧮 Tu usuario solo puede crear y modificar simulaciones.'
+      : '👁️ Tu usuario es de solo lectura: no puede crear ni modificar datos.';
     aviso.classList.add('visible');
     clearTimeout(timerAviso);
     timerAviso = setTimeout(() => aviso.classList.remove('visible'), 3500);
@@ -113,13 +127,25 @@
     if (!fs) return;
     const bloqueado = () => {
       avisarSoloLectura();
-      return new Error('Tu usuario es de solo lectura.');
+      return new Error(rol === 'parcial'
+        ? 'Tu usuario solo puede escribir en simulaciones.'
+        : 'Tu usuario es de solo lectura.');
     };
-    const envolver = (proto, metodo, asincrono) => {
+    // Colección a la que apunta cada escritura (para el rol "parcial").
+    const colDeDocumento = (self) => self && self.parent && self.parent.id;       // doc.set/update/delete
+    const colDeColeccion = (self) => self && self.id;                              // collection.add
+    const colDeArg0 = (self, args) => args[0] && args[0].parent && args[0].parent.id; // batch/transaction.set(ref, …)
+
+    // soloLectura = true → el rol "parcial" no se frena en ese método (p. ej.
+    // batch.commit: sus operaciones ya se revisaron una por una).
+    const envolver = (proto, metodo, asincrono, colDe, soloLectura) => {
       if (!proto || typeof proto[metodo] !== 'function' || proto[metodo].__guardaRoles) return;
       const original = proto[metodo];
       const envuelto = function (...args) {
-        if (rol === 'lectura') {
+        const col = colDe ? colDe(this, args) : null;
+        const frenar = rol === 'lectura' ||
+          (rol === 'parcial' && !soloLectura && col !== COLECCION_PARCIAL);
+        if (frenar) {
           const error = bloqueado();
           if (asincrono) return Promise.reject(error);
           throw error;
@@ -129,16 +155,17 @@
       envuelto.__guardaRoles = true;
       proto[metodo] = envuelto;
     };
-    ['set', 'update', 'delete'].forEach(m => envolver(fs.DocumentReference && fs.DocumentReference.prototype, m, true));
-    envolver(fs.CollectionReference && fs.CollectionReference.prototype, 'add', true);
-    envolver(fs.WriteBatch && fs.WriteBatch.prototype, 'commit', true);
-    ['set', 'update', 'delete'].forEach(m => envolver(fs.Transaction && fs.Transaction.prototype, m, false));
+    ['set', 'update', 'delete'].forEach(m => envolver(fs.DocumentReference && fs.DocumentReference.prototype, m, true, colDeDocumento));
+    envolver(fs.CollectionReference && fs.CollectionReference.prototype, 'add', true, colDeColeccion);
+    envolver(fs.WriteBatch && fs.WriteBatch.prototype, 'commit', true, null, true);
+    ['set', 'update', 'delete'].forEach(m => envolver(fs.WriteBatch && fs.WriteBatch.prototype, m, false, colDeArg0));
+    ['set', 'update', 'delete'].forEach(m => envolver(fs.Transaction && fs.Transaction.prototype, m, false, colDeArg0));
   }
 
   // ---------- Insignia en el encabezado ----------
   function actualizarInsignia() {
     let badge = document.getElementById('badge-rol');
-    if (rol !== 'lectura') {
+    if (!esRestringido()) {
       if (badge) badge.remove();
       return;
     }
@@ -150,8 +177,13 @@
       if (!topbar) return;
       topbar.insertBefore(badge, topbar.querySelector('.status')); // junto al título
     }
-    badge.textContent = '👁️ Solo lectura';
-    badge.title = motivo || 'Puedes ver todo, pero no crear ni modificar datos.';
+    if (rol === 'parcial') {
+      badge.textContent = '🧮 Parcial: solo Simulaciones';
+      badge.title = motivo || 'Puedes ver todo; solo puedes crear, editar y eliminar simulaciones de envío.';
+    } else {
+      badge.textContent = '👁️ Solo lectura';
+      badge.title = motivo || 'Puedes ver todo, pero no crear ni modificar datos.';
+    }
   }
 
   function fijarRol(nuevoRol, nuevoMotivo) {
@@ -160,7 +192,8 @@
     motivo = nuevoMotivo || '';
     document.body.classList.remove('rol-pendiente');
     document.body.classList.toggle('rol-lectura', rol === 'lectura');
-    if (rol === 'lectura') barrer(document.body);
+    document.body.classList.toggle('rol-parcial', rol === 'parcial');
+    if (esRestringido()) barrer(document.body);
     else restaurarTodo();
     actualizarInsignia();
     if (cambio) document.dispatchEvent(new CustomEvent('roles:listo', { detail: { rol } }));
@@ -188,6 +221,8 @@
       fijarRol('edicion', '');
     } else if (rolAcceso === 'lectura') {
       fijarRol('lectura', '');
+    } else if (rolAcceso === 'parcial') {
+      fijarRol('parcial', '');
     } else {
       // Rol desconocido: por seguridad, solo lectura.
       fijarRol('lectura', 'No se pudo determinar el rol de este usuario; por seguridad queda en solo lectura.');

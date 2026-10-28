@@ -58,7 +58,6 @@
   const itemsListaSimulacion = document.getElementById('simulacion-items-lista');
   const itemsEmptySimulacion = document.getElementById('simulacion-items-empty');
   const btnCerrarFichaSimulacion = document.getElementById('btn-cerrar-ficha-simulacion');
-  const btnEliminarSimulacion = document.getElementById('btn-eliminar-simulacion');
 
   const btnAbrirAgregarPedido = document.getElementById('btn-simulacion-agregar-pedido');
   const panelAgregarPedido = document.getElementById('simulacion-panel-agregar-pedido');
@@ -1725,6 +1724,32 @@
     return `${redondeado.toLocaleString('es-CO')} kg`;
   }
 
+  // "Compañía" o, si el pedido va a una subsidiaria, "Compañía/Subsidiaria".
+  function nombreDestinoPedido(pedido) {
+    const compania = buscarCompania(pedido.companiaId);
+    const nombreCompania = compania ? compania.nombre : 'Compañía no encontrada';
+    if (!pedido.envioSubsidiaria) return nombreCompania;
+    const subsidiaria = buscarCompania(pedido.subsidiariaId);
+    return `${nombreCompania}/${subsidiaria ? subsidiaria.nombre : 'Subsidiaria no encontrada'}`;
+  }
+
+  // Con varias unidades: "10 kg c/u · 40 kg". Con una sola: solo el total.
+  function textoPesoFila(pesoUnitario, cantidad, pesoTotal) {
+    if (cantidad > 1) return `${formatearPeso(pesoUnitario)} c/u · ${formatearPeso(pesoTotal)}`;
+    return formatearPeso(pesoTotal);
+  }
+
+  // ---------- Permisos de simulaciones según el rol (js/roles.js) ----------
+  // 'edicion' borra cualquiera; 'parcial' solo las que creó un usuario parcial
+  // (las del editor no); 'lectura' ninguna. Las reglas de Firestore lo exigen igual.
+  function rolActualSimulaciones() {
+    return window.rolUsuario ? window.rolUsuario() : null;
+  }
+  function puedeBorrarSimulacion(sim) {
+    const rol = rolActualSimulaciones();
+    return rol === 'edicion' || (rol === 'parcial' && sim.creadoPorRol === 'parcial');
+  }
+
   // ---------- Subtabs del panel (Envíos / Simulaciones) ----------
 
   let suscritoSimulaciones = false;
@@ -1770,11 +1795,14 @@
       const faltantes = itemsSinPesoSimulacion(sim);
       const pesoPillClase = faltantes.length ? 'peso-pill advertencia' : 'peso-pill';
       const pesoPillTexto = faltantes.length ? `⚠️ ${formatearPeso(peso)}` : formatearPeso(peso);
+      const puedeBorrar = puedeBorrarSimulacion(sim);
+      const clases = `simulacion-card${sim.creadoPorRol === 'parcial' ? ' de-parcial' : ''}${puedeBorrar ? ' con-borrar' : ''}`;
       return `
-        <div class="simulacion-card" data-id="${sim.id}">
+        <div class="${clases}" data-id="${sim.id}">
           <div class="nombre">${escapeHtml(sim.nombre || 'Sin nombre')}</div>
           <div class="resumen">${totalItems} equipo${totalItems === 1 ? '' : 's'}</div>
           <div class="${pesoPillClase}">${pesoPillTexto}</div>
+          ${puedeBorrar ? `<button type="button" class="btn-eliminar-simulacion-card" data-id="${sim.id}" title="Eliminar simulación">🗑️</button>` : ''}
         </div>
       `;
     }).join('');
@@ -1785,17 +1813,39 @@
         if (sim) abrirFichaSimulacion(sim);
       });
     });
+
+    simulacionesContenedor.querySelectorAll('.btn-eliminar-simulacion-card').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation(); // que no abra la ficha
+        eliminarSimulacion(btn.dataset.id);
+      });
+    });
+  }
+
+  // Elimina directo, sin preguntar.
+  async function eliminarSimulacion(id) {
+    try {
+      await db.collection(COLECCION_SIMULACIONES).doc(id).delete();
+      delete borradoresSimulacion[id];
+    } catch (err) {
+      console.error('Error eliminando la simulación:', err);
+      alert('No se pudo eliminar. Revisa la consola.');
+    }
   }
 
   btnNuevaSimulacion.addEventListener('click', async () => {
     try {
+      const creadoPorRol = rolActualSimulaciones() === 'parcial' ? 'parcial' : 'normal';
+      const usuarioActual = firebase.auth().currentUser;
       const ref = await db.collection(COLECCION_SIMULACIONES).add({
         nombre: '',
         pedidosSeleccionados: [],
         equiposSueltos: [],
+        creadoPorRol,
+        creadoPor: usuarioActual ? usuarioActual.uid : null,
         creadoEn: firebase.firestore.FieldValue.serverTimestamp()
       });
-      abrirFichaSimulacion({ id: ref.id, nombre: '', pedidosSeleccionados: [], equiposSueltos: [] });
+      abrirFichaSimulacion({ id: ref.id, nombre: '', pedidosSeleccionados: [], equiposSueltos: [], creadoPorRol });
       inputNombreSimulacion.focus();
     } catch (err) {
       console.error('Error creando la simulación:', err);
@@ -1805,15 +1855,79 @@
 
   // ---------- Ficha de una simulación ----------
 
+  // Borradores de los paneles "Agregar desde un pedido" y "Agregar equipo
+  // suelto": se guardan por simulación en memoria (mientras la página siga
+  // abierta) y se borran al confirmar con "Agregar" o con "Cancelar".
+  const borradoresSimulacion = {}; // simId -> { pedido?, suelto? }
+
+  function capturarBorradorFicha() {
+    const id = simulacionIdEnFicha;
+    if (!id) return;
+    const borrador = {};
+
+    const pedidoAbierto = panelAgregarPedido.style.display !== 'none';
+    if (pedidoAbierto || selectPedidoSimulacion.value) {
+      borrador.pedido = {
+        abierto: pedidoAbierto,
+        pedidoId: selectPedidoSimulacion.value,
+        cantidades: leerCantidadesChecklist()
+      };
+    }
+
+    const sueltoAbierto = panelAgregarSuelto.style.display !== 'none';
+    if (sueltoAbierto || selectTipoSuelto.value || selectEquipoSuelto.value || inputEquipoSueltoTexto.value.trim()) {
+      borrador.suelto = {
+        abierto: sueltoAbierto,
+        tipoId: selectTipoSuelto.value,
+        tipoTexto: inputTipoSueltoTexto.value,
+        equipoId: selectEquipoSuelto.value,
+        equipoTexto: inputEquipoSueltoTexto.value,
+        cantidad: inputCantidadSuelto.value
+      };
+    }
+
+    if (borrador.pedido || borrador.suelto) borradoresSimulacion[id] = borrador;
+    else delete borradoresSimulacion[id];
+  }
+
+  function restaurarBorradorFicha(id) {
+    const borrador = borradoresSimulacion[id];
+    if (!borrador) return;
+
+    if (borrador.pedido) {
+      poblarSelectPedidos(borrador.pedido.pedidoId);
+      renderChecklistPedido(selectPedidoSimulacion.value ? borrador.pedido.cantidades : {});
+      if (borrador.pedido.abierto) panelAgregarPedido.style.display = 'block';
+    }
+
+    if (borrador.suelto) {
+      const b = borrador.suelto;
+      inputTipoSueltoTexto.value = b.tipoTexto;
+      selectTipoSuelto.value = b.tipoId;
+      // Si el equipo ya no existe en el catálogo, se descarta esa parte.
+      if (b.equipoId && buscarEquipoCatalogo(b.equipoId)) {
+        selectEquipoSuelto.value = b.equipoId;
+        inputEquipoSueltoTexto.value = b.equipoTexto;
+      }
+      inputCantidadSuelto.value = b.cantidad;
+      actualizarCantidadSueltoSegunEquipo();
+      if (b.abierto) panelAgregarSuelto.style.display = 'block';
+    }
+  }
+
   function abrirFichaSimulacion(sim) {
     simulacionIdEnFicha = sim.id;
-    panelAgregarPedido.style.display = 'none';
-    panelAgregarSuelto.style.display = 'none';
+    // Los paneles son compartidos por todas las simulaciones: se limpian y se
+    // vuelve a poner el borrador de ESTA simulación, si tiene.
+    reiniciarPanelPedido();
+    reiniciarPanelSuelto();
+    restaurarBorradorFicha(sim.id);
     renderContenidoFichaSimulacion(sim);
     modalFichaSimulacion.classList.add('open');
   }
 
   function cerrarFichaSimulacion() {
+    capturarBorradorFicha();
     modalFichaSimulacion.classList.remove('open');
     simulacionIdEnFicha = null;
   }
@@ -1830,6 +1944,8 @@
     if (document.activeElement !== inputNombreSimulacion) {
       inputNombreSimulacion.value = sim.nombre || '';
     }
+
+    modalFichaSimulacion.querySelector('.modal').classList.toggle('de-parcial', sim.creadoPorRol === 'parcial');
 
     const peso = pesoTotalSimulacion(sim);
     pesoValorSimulacion.textContent = formatearPeso(peso);
@@ -1849,17 +1965,17 @@
     (sim.pedidosSeleccionados || []).forEach((sel, idx) => {
       const pedido = buscarPedido(sel.pedidoId);
       const item = pedido?.equipos?.[sel.itemIndex];
-      const compania = pedido ? buscarCompania(pedido.companiaId) : null;
       const nombre = item ? nombreItemParaRemesa(item, true) : '⚠️ Ítem no encontrado (el pedido pudo haber cambiado)';
       const pesoFila = pedido ? pesoItem(pedido, sel) : 0;
       const sinPeso = item && !itemTienePesoCompleto(item);
-      const origen = pedido ? `N${pedido.numero} - ${escapeHtml(compania ? compania.nombre : '?')}` : '';
+      const origen = pedido ? `N${pedido.numero} - ${escapeHtml(nombreDestinoPedido(pedido))}` : '';
+      const pesoUnitarioFila = sel.cantidad > 0 ? pesoFila / sel.cantidad : 0;
       filas.push({
         html: `
           <div class="simulacion-item-fila">
             <span class="nombre">${nombre}${sinPeso ? ' <span class="sin-peso">(sin peso)</span>' : ''}<br><span style="font-size:11.5px; color:var(--ink-soft);">${origen}</span></span>
             <span class="cantidad">× ${sel.cantidad}</span>
-            <span class="peso">${formatearPeso(pesoFila)}</span>
+            <span class="peso">${textoPesoFila(pesoUnitarioFila, sel.cantidad, pesoFila)}</span>
             <button type="button" class="btn-quitar-item-simulacion" data-tipo="pedido" data-idx="${idx}" title="Quitar">✕</button>
           </div>
         `
@@ -1876,7 +1992,7 @@
           <div class="simulacion-item-fila">
             <span class="nombre">${nombre}${sinPeso ? ' <span class="sin-peso">(sin peso)</span>' : ''}<br><span style="font-size:11.5px; color:var(--ink-soft);">Equipo suelto</span></span>
             <span class="cantidad">× ${suelto.cantidad}</span>
-            <span class="peso">${formatearPeso(pesoFila)}</span>
+            <span class="peso">${textoPesoFila(equipo ? pesoUnitarioEquipo(equipo) : 0, suelto.cantidad || 0, pesoFila)}</span>
             <button type="button" class="btn-quitar-item-simulacion" data-tipo="suelto" data-idx="${idx}" title="Quitar">✕</button>
           </div>
         `
@@ -1897,12 +2013,14 @@
   }
 
   async function actualizarSimulacion(campos) {
-    if (!simulacionIdEnFicha) return;
+    if (!simulacionIdEnFicha) return false;
     try {
       await db.collection(COLECCION_SIMULACIONES).doc(simulacionIdEnFicha).update(campos);
+      return true;
     } catch (err) {
       console.error('Error guardando la simulación:', err);
       alert('No se pudo guardar. Revisa la consola.');
+      return false;
     }
   }
 
@@ -1922,44 +2040,30 @@
     actualizarSimulacion({ nombre: inputNombreSimulacion.value.trim() || 'Simulación sin nombre' });
   });
 
-  btnEliminarSimulacion.addEventListener('click', async () => {
-    if (!simulacionIdEnFicha) return;
-    const ok = confirm('¿Eliminar esta simulación? Esta acción no se puede deshacer.');
-    if (!ok) return;
-    try {
-      await db.collection(COLECCION_SIMULACIONES).doc(simulacionIdEnFicha).delete();
-      cerrarFichaSimulacion();
-    } catch (err) {
-      console.error('Error eliminando la simulación:', err);
-      alert('No se pudo eliminar. Revisa la consola.');
-    }
-  });
-
   // ---------- Panel: agregar equipos de un pedido existente ----------
 
-  btnAbrirAgregarPedido.addEventListener('click', () => {
-    panelAgregarSuelto.style.display = 'none';
-    const abierto = panelAgregarPedido.style.display !== 'none';
-    if (abierto) { panelAgregarPedido.style.display = 'none'; return; }
-
-    // Solo pedidos "en proceso" — un pedido ya completamente despachado no
-    // tiene sentido incluirlo en una simulación, esto es para planear lo
-    // que todavía falta por enviar.
+  // Solo pedidos "en proceso" — un pedido ya completamente despachado no
+  // tiene sentido incluirlo en una simulación, esto es para planear lo que
+  // todavía falta por enviar.
+  function poblarSelectPedidos(valorActual) {
     const pedidosOrdenados = [...(window.pedidosCache || [])]
       .filter(p => !(window.pedidoEstaCompletado && window.pedidoEstaCompletado(p)))
       .sort((a, b) => (b.numero || 0) - (a.numero || 0));
     selectPedidoSimulacion.innerHTML = '<option value="">Selecciona un pedido...</option>' +
-      pedidosOrdenados.map(p => {
-        const compania = buscarCompania(p.companiaId);
-        return `<option value="${p.id}">N${p.numero} - ${escapeHtml(compania ? compania.nombre : 'Compañía no encontrada')}</option>`;
-      }).join('');
-    checklistPedidoSimulacion.innerHTML = '';
-    panelAgregarPedido.style.display = 'block';
-  });
+      pedidosOrdenados.map(p => `<option value="${p.id}">N${p.numero} - ${escapeHtml(nombreDestinoPedido(p))}</option>`).join('');
+    selectPedidoSimulacion.value = valorActual || '';
+    if (selectPedidoSimulacion.value !== (valorActual || '')) selectPedidoSimulacion.value = '';
+  }
 
-  btnCancelarAgregarPedido.addEventListener('click', () => { panelAgregarPedido.style.display = 'none'; });
+  function leerCantidadesChecklist() {
+    const cantidades = {};
+    checklistPedidoSimulacion.querySelectorAll('.input-simulacion-item-cantidad').forEach(input => {
+      cantidades[input.dataset.idx] = input.value;
+    });
+    return cantidades;
+  }
 
-  selectPedidoSimulacion.addEventListener('change', () => {
+  function renderChecklistPedido(cantidades = {}) {
     const pedido = buscarPedido(selectPedidoSimulacion.value);
     if (!pedido) { checklistPedidoSimulacion.innerHTML = ''; return; }
 
@@ -1967,15 +2071,42 @@
       const nombre = nombreItemParaRemesa(item, true);
       const equipoParaDecimal = item.tipoLinea === 'individual' ? equipoDeItem(item) : null;
       const esDecimal = esTipoCantidadDecimal(equipoParaDecimal);
+      const valor = cantidades[idx] !== undefined ? cantidades[idx] : 0;
       return `
         <div class="simulacion-pedido-item-row">
           <span class="nombre">${nombre}</span>
           <input type="number" class="input-simulacion-item-cantidad" data-idx="${idx}"
-            min="0" step="${esDecimal ? '0.01' : '1'}" max="${item.cantidad}" value="0" title="Cantidad a incluir (0 = no incluir)">
+            min="0" step="${esDecimal ? '0.01' : '1'}" max="${item.cantidad}" value="${valor}" title="Cantidad a incluir (0 = no incluir)">
         </div>
       `;
     }).join('') || '<div style="font-size:13px; color:var(--ink-soft);">Este pedido no tiene equipos.</div>';
+  }
+
+  // Al abrir el panel se refresca la lista de pedidos sin perder lo que ya
+  // se había elegido/escrito.
+  function refrescarPanelPedido() {
+    const cantidades = leerCantidadesChecklist();
+    poblarSelectPedidos(selectPedidoSimulacion.value);
+    renderChecklistPedido(selectPedidoSimulacion.value ? cantidades : {});
+  }
+
+  // Deja el panel vacío y cerrado (Cancelar, Agregar, o ficha nueva).
+  function reiniciarPanelPedido() {
+    selectPedidoSimulacion.innerHTML = '<option value="">Selecciona un pedido...</option>';
+    checklistPedidoSimulacion.innerHTML = '';
+    panelAgregarPedido.style.display = 'none';
+  }
+
+  btnAbrirAgregarPedido.addEventListener('click', () => {
+    panelAgregarSuelto.style.display = 'none'; // su borrador se conserva
+    if (panelAgregarPedido.style.display !== 'none') { panelAgregarPedido.style.display = 'none'; return; }
+    refrescarPanelPedido();
+    panelAgregarPedido.style.display = 'block';
   });
+
+  btnCancelarAgregarPedido.addEventListener('click', reiniciarPanelPedido);
+
+  selectPedidoSimulacion.addEventListener('change', () => renderChecklistPedido());
 
   btnConfirmarAgregarPedido.addEventListener('click', async () => {
     const pedidoId = selectPedidoSimulacion.value;
@@ -2001,8 +2132,8 @@
       else deEstePedido.push({ pedidoId, ...nueva });
     });
 
-    await actualizarSimulacion({ pedidosSeleccionados: [...otrosSinEstePedido, ...deEstePedido] });
-    panelAgregarPedido.style.display = 'none';
+    const ok = await actualizarSimulacion({ pedidosSeleccionados: [...otrosSinEstePedido, ...deEstePedido] });
+    if (ok) reiniciarPanelPedido(); // el borrador se descarta solo al confirmar
   });
 
   // ---------- Panel: agregar un equipo suelto del catálogo ----------
@@ -2118,19 +2249,22 @@
     inputCantidadSuelto.min = decimal ? '0.01' : '1';
   }
 
-  btnAbrirAgregarSuelto.addEventListener('click', () => {
-    panelAgregarPedido.style.display = 'none';
-    const abierto = panelAgregarSuelto.style.display !== 'none';
-    if (abierto) { panelAgregarSuelto.style.display = 'none'; return; }
-
+  // Deja el panel vacío y cerrado (Cancelar, Agregar, o ficha nueva).
+  function reiniciarPanelSuelto() {
     autoTipoSuelto.limpiar();
     autoEquipoSuelto.limpiar();
     actualizarCantidadSueltoSegunEquipo();
     inputCantidadSuelto.value = 1;
+    panelAgregarSuelto.style.display = 'none';
+  }
+
+  btnAbrirAgregarSuelto.addEventListener('click', () => {
+    panelAgregarPedido.style.display = 'none'; // su borrador se conserva
+    if (panelAgregarSuelto.style.display !== 'none') { panelAgregarSuelto.style.display = 'none'; return; }
     panelAgregarSuelto.style.display = 'block';
   });
 
-  btnCancelarAgregarSuelto.addEventListener('click', () => { panelAgregarSuelto.style.display = 'none'; });
+  btnCancelarAgregarSuelto.addEventListener('click', reiniciarPanelSuelto);
 
   btnConfirmarAgregarSuelto.addEventListener('click', async () => {
     const equipoId = selectEquipoSuelto.value;
@@ -2145,10 +2279,11 @@
     const lista = (sim.equiposSueltos || []).filter(s => s.equipoId !== equipoId);
     lista.push({ equipoId, cantidad });
 
-    await actualizarSimulacion({ equiposSueltos: lista });
-    panelAgregarSuelto.style.display = 'none';
+    const ok = await actualizarSimulacion({ equiposSueltos: lista });
+    if (ok) reiniciarPanelSuelto(); // el borrador se descarta solo al confirmar
   });
 
+  document.addEventListener('roles:listo', renderListaSimulaciones);
   document.addEventListener('equipos-catalogo:cambio', () => { if (simulacionIdEnFicha) renderListaSimulaciones(); });
   document.addEventListener('pedidos:cambio', () => {
     if (simulacionIdEnFicha) {
