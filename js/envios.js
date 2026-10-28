@@ -77,6 +77,15 @@
   const resultadosTipoSuelto = document.getElementById('simulacion-suelto-tipo-resultados');
   const resultadosEquipoSuelto = document.getElementById('simulacion-suelto-equipo-resultados');
   const inputCantidadSuelto = document.getElementById('simulacion-suelto-cantidad');
+  const grupoEquipoSuelto = document.getElementById('simulacion-suelto-grupo-equipo');
+  const grupoMotorSuelto = document.getElementById('simulacion-suelto-grupo-motor');
+  const grupoReductorSuelto = document.getElementById('simulacion-suelto-grupo-reductor');
+  const selectMotorSuelto = document.getElementById('simulacion-suelto-motor');
+  const inputMotorSueltoTexto = document.getElementById('simulacion-suelto-motor-input');
+  const resultadosMotorSuelto = document.getElementById('simulacion-suelto-motor-resultados');
+  const selectReductorSuelto = document.getElementById('simulacion-suelto-reductor');
+  const inputReductorSueltoTexto = document.getElementById('simulacion-suelto-reductor-input');
+  const resultadosReductorSuelto = document.getElementById('simulacion-suelto-reductor-resultados');
   const btnCancelarAgregarSuelto = document.getElementById('btn-cancelar-simulacion-agregar-suelto');
   const btnConfirmarAgregarSuelto = document.getElementById('btn-confirmar-simulacion-agregar-suelto');
 
@@ -1695,8 +1704,7 @@
       if (pedido) total += pesoItem(pedido, sel);
     });
     (sim.equiposSueltos || []).forEach(suelto => {
-      const equipo = buscarEquipoCatalogo(suelto.equipoId);
-      total += pesoUnitarioEquipo(equipo) * (suelto.cantidad || 0);
+      total += pesoUnitarioSuelto(suelto) * (suelto.cantidad || 0);
     });
     return total;
   }
@@ -1710,11 +1718,7 @@
       if (item && !itemTienePesoCompleto(item)) faltantes.push(nombreItemParaRemesa(item, true));
     });
     (sim.equiposSueltos || []).forEach(suelto => {
-      const equipo = buscarEquipoCatalogo(suelto.equipoId);
-      if (equipo && !equipoTienePesoRegistrado(equipo)) {
-        const icono = buscarTipoEquipo(equipo.tipoId)?.icono || '';
-        faltantes.push(`${icono ? icono + ' ' : ''}${escapeHtml(equipo.nombre)}${sufijoVariante(equipo)}`);
-      }
+      if (sueltoSinPeso(suelto)) faltantes.push(nombreSuelto(suelto));
     });
     return faltantes;
   }
@@ -1737,6 +1741,47 @@
   function textoPesoFila(pesoUnitario, cantidad, pesoTotal) {
     if (cantidad > 1) return `${formatearPeso(pesoUnitario)} c/u · ${formatearPeso(pesoTotal)}`;
     return formatearPeso(pesoTotal);
+  }
+
+  // ---------- Equipos sueltos: individual o motoreductor ensamblado ----------
+  // { equipoId, cantidad }                                             → equipo individual
+  // { tipo:'motoreductor', motorEquipoId, reductorEquipoId, cantidad } → motor + reductor
+  const TIPO_MOTOREDUCTOR_ID = '__motoreductor__'; // opción "virtual" en la lista de tipos
+
+  function esSueltoMotoreductor(suelto) {
+    return suelto?.tipo === 'motoreductor';
+  }
+
+  function pesoUnitarioSuelto(suelto) {
+    if (esSueltoMotoreductor(suelto)) {
+      return pesoUnitarioEquipo(buscarEquipoCatalogo(suelto.motorEquipoId))
+        + pesoUnitarioEquipo(buscarEquipoCatalogo(suelto.reductorEquipoId));
+    }
+    return pesoUnitarioEquipo(buscarEquipoCatalogo(suelto.equipoId));
+  }
+
+  function sueltoSinPeso(suelto) {
+    if (esSueltoMotoreductor(suelto)) {
+      return !(equipoTienePesoRegistrado(buscarEquipoCatalogo(suelto.motorEquipoId))
+        && equipoTienePesoRegistrado(buscarEquipoCatalogo(suelto.reductorEquipoId)));
+    }
+    const equipo = buscarEquipoCatalogo(suelto.equipoId);
+    return !!equipo && !equipoTienePesoRegistrado(equipo);
+  }
+
+  function nombreSuelto(suelto) {
+    const conIcono = (equipo) => {
+      const icono = equipo ? (buscarTipoEquipo(equipo.tipoId)?.icono || '') : '';
+      return `${icono ? icono + ' ' : ''}${equipo ? escapeHtml(equipo.nombre) + sufijoVariante(equipo) : '?'}`;
+    };
+    if (esSueltoMotoreductor(suelto)) {
+      const motor = buscarEquipoCatalogo(suelto.motorEquipoId);
+      const reductor = buscarEquipoCatalogo(suelto.reductorEquipoId);
+      if (!motor && !reductor) return '⚠️ Motoreductor no encontrado';
+      return `${conIcono(motor)} + ${conIcono(reductor)}`;
+    }
+    const equipo = buscarEquipoCatalogo(suelto.equipoId);
+    return equipo ? conIcono(equipo) : '⚠️ Equipo no encontrado';
   }
 
   // ---------- Permisos de simulaciones según el rol (js/roles.js) ----------
@@ -1875,13 +1920,18 @@
     }
 
     const sueltoAbierto = panelAgregarSuelto.style.display !== 'none';
-    if (sueltoAbierto || selectTipoSuelto.value || selectEquipoSuelto.value || inputEquipoSueltoTexto.value.trim()) {
+    if (sueltoAbierto || selectTipoSuelto.value || selectEquipoSuelto.value || inputEquipoSueltoTexto.value.trim()
+        || selectMotorSuelto.value || selectReductorSuelto.value) {
       borrador.suelto = {
         abierto: sueltoAbierto,
         tipoId: selectTipoSuelto.value,
         tipoTexto: inputTipoSueltoTexto.value,
         equipoId: selectEquipoSuelto.value,
         equipoTexto: inputEquipoSueltoTexto.value,
+        motorId: selectMotorSuelto.value,
+        motorTexto: inputMotorSueltoTexto.value,
+        reductorId: selectReductorSuelto.value,
+        reductorTexto: inputReductorSueltoTexto.value,
         cantidad: inputCantidadSuelto.value
       };
     }
@@ -1904,10 +1954,19 @@
       const b = borrador.suelto;
       inputTipoSueltoTexto.value = b.tipoTexto;
       selectTipoSuelto.value = b.tipoId;
-      // Si el equipo ya no existe en el catálogo, se descarta esa parte.
+      actualizarModoSuelto();
+      // Si un equipo ya no existe en el catálogo, se descarta esa parte.
       if (b.equipoId && buscarEquipoCatalogo(b.equipoId)) {
         selectEquipoSuelto.value = b.equipoId;
         inputEquipoSueltoTexto.value = b.equipoTexto;
+      }
+      if (b.motorId && buscarEquipoCatalogo(b.motorId)) {
+        selectMotorSuelto.value = b.motorId;
+        inputMotorSueltoTexto.value = b.motorTexto;
+      }
+      if (b.reductorId && buscarEquipoCatalogo(b.reductorId)) {
+        selectReductorSuelto.value = b.reductorId;
+        inputReductorSueltoTexto.value = b.reductorTexto;
       }
       inputCantidadSuelto.value = b.cantidad;
       actualizarCantidadSueltoSegunEquipo();
@@ -1982,17 +2041,17 @@
       });
     });
     (sim.equiposSueltos || []).forEach((suelto, idx) => {
-      const equipo = buscarEquipoCatalogo(suelto.equipoId);
-      const icono = equipo ? (buscarTipoEquipo(equipo.tipoId)?.icono || '') : '';
-      const nombre = equipo ? `${icono ? icono + ' ' : ''}${escapeHtml(equipo.nombre)}${sufijoVariante(equipo)}` : '⚠️ Equipo no encontrado';
-      const pesoFila = equipo ? pesoUnitarioEquipo(equipo) * (suelto.cantidad || 0) : 0;
-      const sinPeso = equipo && !equipoTienePesoRegistrado(equipo);
+      const nombre = nombreSuelto(suelto);
+      const pesoUnitarioFila = pesoUnitarioSuelto(suelto);
+      const pesoFila = pesoUnitarioFila * (suelto.cantidad || 0);
+      const sinPeso = sueltoSinPeso(suelto);
+      const etiqueta = esSueltoMotoreductor(suelto) ? 'Motoreductor ensamblado' : 'Equipo suelto';
       filas.push({
         html: `
           <div class="simulacion-item-fila">
-            <span class="nombre">${nombre}${sinPeso ? ' <span class="sin-peso">(sin peso)</span>' : ''}<br><span style="font-size:11.5px; color:var(--ink-soft);">Equipo suelto</span></span>
+            <span class="nombre">${nombre}${sinPeso ? ' <span class="sin-peso">(sin peso)</span>' : ''}<br><span style="font-size:11.5px; color:var(--ink-soft);">${etiqueta}</span></span>
             <span class="cantidad">× ${suelto.cantidad}</span>
-            <span class="peso">${textoPesoFila(equipo ? pesoUnitarioEquipo(equipo) : 0, suelto.cantidad || 0, pesoFila)}</span>
+            <span class="peso">${textoPesoFila(pesoUnitarioFila, suelto.cantidad || 0, pesoFila)}</span>
             <button type="button" class="btn-quitar-item-simulacion" data-tipo="suelto" data-idx="${idx}" title="Quitar">✕</button>
           </div>
         `
@@ -2201,18 +2260,25 @@
     input: inputTipoSueltoTexto,
     hidden: selectTipoSuelto,
     resultados: resultadosTipoSuelto,
-    obtenerOpciones: (termino) => (window.tiposEquipoCache || [])
-      .filter(t => !termino || normalizar(t.nombre).includes(termino))
-      .map(t => ({
-        id: t.id,
-        texto: `${t.icono ? t.icono + ' ' : ''}${t.nombre}`,
-        html: `${t.icono ? t.icono + ' ' : ''}${escapeHtml(t.nombre)}`,
-      })),
+    obtenerOpciones: (termino) => {
+      const tipos = (window.tiposEquipoCache || [])
+        .filter(t => !termino || normalizar(t.nombre).includes(termino))
+        .map(t => ({
+          id: t.id,
+          texto: `${t.icono ? t.icono + ' ' : ''}${t.nombre}`,
+          html: `${t.icono ? t.icono + ' ' : ''}${escapeHtml(t.nombre)}`,
+        }));
+      // Opción especial al principio: motor + reductor armados como uno solo.
+      const moto = { id: TIPO_MOTOREDUCTOR_ID, texto: '🔩 Motoreductor ensamblado', html: '🔩 Motoreductor ensamblado' };
+      return (!termino || normalizar(moto.texto).includes(termino)) ? [moto, ...tipos] : tipos;
+    },
     alElegir: () => {
       // Si el equipo ya elegido no es de este tipo, se limpia.
       const eq = buscarEquipoCatalogo(selectEquipoSuelto.value);
       if (eq && eq.tipoId !== selectTipoSuelto.value) autoEquipoSuelto.limpiar();
+      actualizarModoSuelto();
     },
+    alEditar: () => actualizarModoSuelto(),
   });
 
   const autoEquipoSuelto = crearAutocompletado({
@@ -2242,8 +2308,65 @@
     alElegir: actualizarCantidadSueltoSegunEquipo,
   });
 
+  // Equipos del catálogo cuyo tipo se llama "Motor" / "Reductor". Si el
+  // catálogo no tiene tipos con esos nombres, se ofrecen todos los equipos.
+  function equiposParaMotoreductor(parte) {
+    const tipoIds = (window.tiposEquipoCache || []).filter(t => {
+      const n = normalizar(t.nombre);
+      return parte === 'motor' ? (n.includes('motor') && !n.includes('reductor'))
+                               : (n.includes('reductor') && !n.includes('motor'));
+    }).map(t => t.id);
+    const lista = (window.equiposCache || []).filter(eq => tipoIds.includes(eq.tipoId));
+    return lista.length ? lista : (window.equiposCache || []);
+  }
+
+  function opcionesEquiposDe(parte, termino) {
+    const palabras = termino.split(/\s+/).filter(Boolean);
+    return equiposParaMotoreductor(parte)
+      .filter(eq => {
+        if (!palabras.length) return true;
+        const pajar = normalizar(`${eq.nombre} ${eq.variante || ''}`);
+        return palabras.every(p => pajar.includes(p));
+      })
+      .map(eq => {
+        const icono = buscarTipoEquipo(eq.tipoId)?.icono || '';
+        return { id: eq.id, texto: textoPlanoEquipo(eq), html: `${icono ? icono + ' ' : ''}${escapeHtml(eq.nombre)}${sufijoVariante(eq)}` };
+      });
+  }
+
+  const autoMotorSuelto = crearAutocompletado({
+    input: inputMotorSueltoTexto,
+    hidden: selectMotorSuelto,
+    resultados: resultadosMotorSuelto,
+    obtenerOpciones: (termino) => opcionesEquiposDe('motor', termino),
+  });
+
+  const autoReductorSuelto = crearAutocompletado({
+    input: inputReductorSueltoTexto,
+    hidden: selectReductorSuelto,
+    resultados: resultadosReductorSuelto,
+    obtenerOpciones: (termino) => opcionesEquiposDe('reductor', termino),
+  });
+
+  function modoMotoreductor() {
+    return selectTipoSuelto.value === TIPO_MOTOREDUCTOR_ID;
+  }
+
+  // Con "Motoreductor ensamblado" se pide Motor + Reductor en vez de un
+  // equipo; con cualquier otro tipo (o ninguno), el equipo de siempre.
+  function actualizarModoSuelto() {
+    const moto = modoMotoreductor();
+    grupoEquipoSuelto.style.display = moto ? 'none' : '';
+    grupoMotorSuelto.style.display = moto ? '' : 'none';
+    grupoReductorSuelto.style.display = moto ? '' : 'none';
+    if (moto) autoEquipoSuelto.limpiar();
+    else { autoMotorSuelto.limpiar(); autoReductorSuelto.limpiar(); }
+    actualizarCantidadSueltoSegunEquipo();
+  }
+
   function actualizarCantidadSueltoSegunEquipo() {
-    const equipo = buscarEquipoCatalogo(selectEquipoSuelto.value);
+    // Un motoreductor siempre se cuenta en unidades enteras.
+    const equipo = modoMotoreductor() ? null : buscarEquipoCatalogo(selectEquipoSuelto.value);
     const decimal = esTipoCantidadDecimal(equipo);
     inputCantidadSuelto.step = decimal ? '0.01' : '1';
     inputCantidadSuelto.min = decimal ? '0.01' : '1';
@@ -2253,7 +2376,9 @@
   function reiniciarPanelSuelto() {
     autoTipoSuelto.limpiar();
     autoEquipoSuelto.limpiar();
-    actualizarCantidadSueltoSegunEquipo();
+    autoMotorSuelto.limpiar();
+    autoReductorSuelto.limpiar();
+    actualizarModoSuelto();
     inputCantidadSuelto.value = 1;
     panelAgregarSuelto.style.display = 'none';
   }
@@ -2267,8 +2392,16 @@
   btnCancelarAgregarSuelto.addEventListener('click', reiniciarPanelSuelto);
 
   btnConfirmarAgregarSuelto.addEventListener('click', async () => {
+    const moto = modoMotoreductor();
     const equipoId = selectEquipoSuelto.value;
-    if (!equipoId) { alert('Elige un equipo de la lista de sugerencias.'); return; }
+    const motorId = selectMotorSuelto.value;
+    const reductorId = selectReductorSuelto.value;
+    if (moto) {
+      if (!motorId) { alert('Elige el motor de la lista de sugerencias.'); return; }
+      if (!reductorId) { alert('Elige el reductor de la lista de sugerencias.'); return; }
+    } else if (!equipoId) {
+      alert('Elige un equipo de la lista de sugerencias.'); return;
+    }
     const cantidad = parseFloat(inputCantidadSuelto.value);
     if (!cantidad || cantidad <= 0) { alert('Pon una cantidad mayor a 0.'); return; }
 
@@ -2276,8 +2409,15 @@
     if (!sim) return;
 
     // Si ya estaba agregado, se reemplaza la cantidad (no se duplica).
-    const lista = (sim.equiposSueltos || []).filter(s => s.equipoId !== equipoId);
-    lista.push({ equipoId, cantidad });
+    let lista;
+    if (moto) {
+      lista = (sim.equiposSueltos || []).filter(s =>
+        !(esSueltoMotoreductor(s) && s.motorEquipoId === motorId && s.reductorEquipoId === reductorId));
+      lista.push({ tipo: 'motoreductor', motorEquipoId: motorId, reductorEquipoId: reductorId, cantidad });
+    } else {
+      lista = (sim.equiposSueltos || []).filter(s => esSueltoMotoreductor(s) || s.equipoId !== equipoId);
+      lista.push({ equipoId, cantidad });
+    }
 
     const ok = await actualizarSimulacion({ equiposSueltos: lista });
     if (ok) reiniciarPanelSuelto(); // el borrador se descarta solo al confirmar

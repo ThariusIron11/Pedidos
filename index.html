@@ -2714,23 +2714,14 @@
     font-size: 16px; line-height: 1; padding: 5px 7px; border-radius: 6px;
   }
   .btn-eliminar-simulacion-card:hover{ background: rgba(180,35,24,0.14); }
-  /* Simulaciones creadas por un usuario "parcial": todo en una misma familia
-     de rojos (tarjeta, encabezado, recuadros y panel) para que se lea como
-     una sola pieza y no como parches sobre fondo rosado. */
+  /* Simulaciones creadas por un usuario "parcial": tarjeta roja en la lista. */
   .simulacion-card.de-parcial{ background: #fde6e6; border-color: #eab0b0; border-left: 4px solid #c0392b; }
   .simulacion-card.de-parcial:hover{ border-color: #d98080; border-left-color: #c0392b; }
   .simulacion-card.de-parcial .resumen{ color: #7d4a4a; }
   .simulacion-card.de-parcial .peso-pill{ background: rgba(255,255,255,0.8); color: #8f1d1d; }
   .simulacion-card.de-parcial .peso-pill.advertencia{ background: #fdf0d5; color: #8a5a06; }
-  #modal-ficha-simulacion .modal.de-parcial{ background: #fff6f6; }
+  /* En la ficha, solo la franja superior va en rojo; el resto es igual a la normal. */
   #modal-ficha-simulacion .modal.de-parcial .ficha-header{ background: linear-gradient(135deg, #8f1d1d 0%, #b32d2d 100%); }
-  #modal-ficha-simulacion .modal.de-parcial .modal-actions{ background: #fff6f6; border-top-color: #f0d0d0; }
-  #modal-ficha-simulacion .modal.de-parcial .simulacion-peso-resumen{ background: #fde6e6; border-color: #eab0b0; }
-  #modal-ficha-simulacion .modal.de-parcial .simulacion-peso-total .label{ color: #7d4a4a; }
-  #modal-ficha-simulacion .modal.de-parcial .simulacion-peso-total .valor{ color: #8f1d1d; }
-  #modal-ficha-simulacion .modal.de-parcial .simulacion-item-fila{ border-bottom-color: #f0d6d6; }
-  #modal-ficha-simulacion .modal.de-parcial .simulacion-panel-agregar{ background: #fdeeee; border-color: #efc4c4; }
-  #modal-ficha-simulacion .modal.de-parcial .simulacion-panel-agregar .modal-actions{ background: transparent; border-top-color: #efc4c4; }
 
   .simulacion-nombre-input{
     width: 100%;
@@ -4118,12 +4109,28 @@
               <div class="buscador-resultados" id="simulacion-suelto-tipo-resultados"></div>
             </div>
           </div>
-          <div class="form-group">
+          <div class="form-group" id="simulacion-suelto-grupo-equipo">
             <label for="simulacion-suelto-equipo-input">Equipo</label>
             <div class="buscador-equipo">
               <input type="text" id="simulacion-suelto-equipo-input" class="buscador-input" placeholder="Escribe para buscar un equipo..." autocomplete="off">
               <input type="hidden" id="simulacion-suelto-equipo">
               <div class="buscador-resultados" id="simulacion-suelto-equipo-resultados"></div>
+            </div>
+          </div>
+          <div class="form-group" id="simulacion-suelto-grupo-motor" style="display:none;">
+            <label for="simulacion-suelto-motor-input">Motor</label>
+            <div class="buscador-equipo">
+              <input type="text" id="simulacion-suelto-motor-input" class="buscador-input" placeholder="Escribe para buscar un motor..." autocomplete="off">
+              <input type="hidden" id="simulacion-suelto-motor">
+              <div class="buscador-resultados" id="simulacion-suelto-motor-resultados"></div>
+            </div>
+          </div>
+          <div class="form-group" id="simulacion-suelto-grupo-reductor" style="display:none;">
+            <label for="simulacion-suelto-reductor-input">Reductor</label>
+            <div class="buscador-equipo">
+              <input type="text" id="simulacion-suelto-reductor-input" class="buscador-input" placeholder="Escribe para buscar un reductor..." autocomplete="off">
+              <input type="hidden" id="simulacion-suelto-reductor">
+              <div class="buscador-resultados" id="simulacion-suelto-reductor-resultados"></div>
             </div>
           </div>
           <div class="form-group">
