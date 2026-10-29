@@ -359,6 +359,71 @@
   .rte-editable ul, .rte-editable ol{ margin: 4px 0 4px 20px; padding: 0; }
   .rte-editable p, .rte-editable div{ margin: 0; }
   .reparacion-observaciones-texto-view ul, .reparacion-observaciones-texto-view ol{ margin: 4px 0 4px 20px; padding: 0; }
+
+  /* ---------- Fichas de observaciones (pestaña de la ficha de Reparaciones) ---------- */
+  .obs-contador{ background: #e6e8ec; color: var(--ink-soft); border-radius: 999px; font-size: 11px; padding: 1px 7px; margin-left: 4px; }
+  .obs-gris{    --obs-bg:#f1f3f5; --obs-barra:#8a929e; --obs-tit:#3d4450; }
+  .obs-azul{    --obs-bg:#e8f1fb; --obs-barra:#3b82c4; --obs-tit:#1e4f86; }
+  .obs-verde{   --obs-bg:#e6f4ea; --obs-barra:#3f9d5f; --obs-tit:#1f6a3a; }
+  .obs-amarillo{--obs-bg:#fdf3d6; --obs-barra:#d9a521; --obs-tit:#7a5a05; }
+  .obs-rojo{    --obs-bg:#fbe5e5; --obs-barra:#c94a4a; --obs-tit:#8f1d1d; }
+  .obs-violeta{ --obs-bg:#efe8fa; --obs-barra:#8157c9; --obs-tit:#55318f; }
+  .obs-barra{ display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .obs-barra .obs-espacio{ flex: 1; }
+  .obs-chip{
+    font-family: inherit; font-size: 12px; font-weight: 600;
+    background: #fff; color: var(--ink-soft);
+    border: 1px solid #d4d7dc; border-radius: 999px;
+    padding: 5px 12px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  }
+  .obs-chip:hover{ border-color: #b8bcc4; }
+  .obs-chip.active{ background: var(--graphite); color: #fff; border-color: var(--graphite); }
+  .obs-chip .obs-punto{ width: 8px; height: 8px; border-radius: 50%; background: var(--obs-barra); }
+  .obs-grid{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: start; }
+  .obs-card{
+    background: var(--obs-bg);
+    border: 1px solid rgba(0,0,0,0.08);
+    border-left: 4px solid var(--obs-barra);
+    border-radius: 0;
+    padding: 11px 13px;
+  }
+  .obs-card.abierta{ grid-column: 1 / -1; }
+  .obs-top{ display: flex; align-items: center; gap: 8px; }
+  .obs-ico{ width: 28px; height: 28px; border-radius: var(--radius); background: #fff; display: flex; align-items: center; justify-content: center; font-size: 16px; flex: none; }
+  .obs-titulo{ flex: 1; min-width: 0; font-size: 14px; font-weight: 700; color: var(--obs-tit); overflow-wrap: anywhere; }
+  .obs-acciones{ display: flex; gap: 2px; flex: none; }
+  .obs-accion{ background: transparent; border: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 4px 5px; border-radius: 6px; opacity: .5; }
+  .obs-accion:hover{ opacity: 1; background: rgba(0,0,0,0.06); }
+  .obs-accion.on{ opacity: 1; background: rgba(0,0,0,0.1); }
+  .obs-pin-estatico{ display: none; }
+  body.rol-lectura .obs-pin-estatico, body.rol-parcial .obs-pin-estatico{ display: inline; }
+  .obs-fecha{ font-size: 12px; color: var(--ink-soft); margin: 5px 0 6px; }
+  .obs-cuerpo{ font-size: 13.5px; line-height: 1.5; overflow-wrap: anywhere; max-height: calc(1.5em * 3); overflow: hidden; }
+  .obs-card.abierta .obs-cuerpo{ max-height: none; }
+  .obs-cuerpo ul, .obs-cuerpo ol{ margin: 4px 0 4px 20px; padding: 0; }
+  .obs-cuerpo div, .obs-cuerpo p{ margin: 0; }
+  .obs-sin{ font-size: 13px; color: var(--ink-soft); }
+  .obs-ver-mas{ background: none; border: none; padding: 0; margin-top: 6px; font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--copper); cursor: pointer; }
+  .obs-ver-mas:hover{ text-decoration: underline; }
+  .obs-vacio{ grid-column: 1 / -1; font-size: 13px; color: var(--ink-soft); padding: 6px 2px; }
+  .obs-opciones{ display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .obs-op{
+    font-family: inherit; font-size: 13px; color: var(--ink);
+    background: #fff; border: 1px solid #d4d7dc; border-radius: var(--radius);
+    min-width: 34px; height: 34px; padding: 0 10px; cursor: pointer;
+  }
+  .obs-op:hover{ border-color: #b8bcc4; }
+  .obs-op.on{ border-color: var(--graphite); background: #f1f3f5; font-weight: 600; }
+  .obs-op.emoji{ font-size: 17px; padding: 0; }
+  .obs-color-btn{ width: 26px; height: 26px; border-radius: 50%; background: var(--obs-barra); border: 2px solid #fff; box-shadow: 0 0 0 1px #d4d7dc; cursor: pointer; padding: 0; }
+  .obs-color-btn.on{ box-shadow: 0 0 0 2px var(--graphite); }
+  .obs-emoji-otro{ width: 78px !important; text-align: center; }
+  .obs-fila-2{ display: grid; grid-template-columns: minmax(0, 1fr) 170px; gap: 12px; }
+  @media (max-width: 600px){
+    .obs-grid{ grid-template-columns: 1fr; }
+    .obs-fila-2{ grid-template-columns: 1fr; }
+  }
   .form-group select{
     appearance: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235b6472'/%3E%3C/svg%3E");
@@ -3630,6 +3695,7 @@
       <div class="subtabs">
         <button type="button" class="subtab-btn active" data-subtab="ficha-reparacion-datos">📋 Datos generales</button>
         <button type="button" class="subtab-btn" data-subtab="ficha-reparacion-equipos">📦 Equipos</button>
+        <button type="button" class="subtab-btn" data-subtab="ficha-reparacion-observaciones">📝 Observaciones <span class="obs-contador" id="ficha-obs-contador">0</span></button>
       </div>
 
       <div class="subtab-panel active" id="subtab-ficha-reparacion-datos">
@@ -3641,17 +3707,72 @@
           <h2 style="font-size:14px;">Equipo que ingresó a esta reparación</h2>
         </div>
         <div id="ficha-reparacion-equipo-texto" class="reparacion-equipo-texto-view"><!-- generado por reparaciones.js --></div>
+      </div>
 
-        <div class="panel-header" style="margin-top:20px; margin-bottom:14px;">
-          <h2 style="font-size:14px;">Observaciones iniciales</h2>
-        </div>
-        <div id="ficha-reparacion-observaciones-texto" class="reparacion-equipo-texto-view reparacion-observaciones-texto-view"><!-- generado por reparaciones.js --></div>
+      <div class="subtab-panel" id="subtab-ficha-reparacion-observaciones">
+        <div id="ficha-reparacion-observaciones"><!-- generado por reparaciones.js --></div>
       </div>
 
       <div class="modal-actions">
         <button type="button" class="btn secondary" id="btn-cerrar-ficha-reparacion">Cerrar</button>
         <button type="button" class="btn" id="btn-editar-desde-ficha-reparacion">Editar</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Modal: nueva / editar ficha de observación de una reparación -->
+  <div class="modal-backdrop" id="modal-obs-ficha">
+    <div class="modal modal-wide">
+      <h3 id="modal-obs-ficha-titulo">Nueva ficha</h3>
+      <form id="form-obs-ficha">
+        <input type="hidden" id="obs-ficha-id">
+
+        <div class="form-group" id="obs-ficha-plantillas-grupo">
+          <label>Plantilla</label>
+          <div class="obs-opciones" id="obs-ficha-plantillas"></div>
+        </div>
+
+        <div class="obs-fila-2">
+          <div class="form-group">
+            <label for="obs-ficha-titulo">Título</label>
+            <input type="text" id="obs-ficha-titulo" required maxlength="80" autocomplete="off" placeholder="Ej: Diagnóstico">
+          </div>
+          <div class="form-group">
+            <label for="obs-ficha-fecha">Fecha</label>
+            <input type="date" id="obs-ficha-fecha" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Emoji</label>
+          <div class="obs-opciones">
+            <span class="obs-opciones" id="obs-ficha-emojis"></span>
+            <input type="text" id="obs-ficha-emoji-otro" class="obs-emoji-otro" placeholder="Otro" maxlength="8" autocomplete="off" title="Escribe o pega cualquier emoji">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Color</label>
+          <div class="obs-opciones" id="obs-ficha-colores"></div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Contenido</label>
+          <div class="rte-toolbar" id="obs-ficha-toolbar">
+            <button type="button" class="rte-btn" data-cmd="bold" title="Negrilla (Ctrl+B)"><b>N</b></button>
+            <button type="button" class="rte-btn" data-cmd="italic" title="Cursiva (Ctrl+I)"><i>K</i></button>
+            <span class="rte-sep"></span>
+            <button type="button" class="rte-btn" data-cmd="insertUnorderedList" title="Lista con viñetas">☰ •</button>
+            <button type="button" class="rte-btn" data-cmd="insertOrderedList" title="Lista numerada">☰ 1.</button>
+          </div>
+          <div id="obs-ficha-contenido" class="rte-editable" contenteditable="true" data-placeholder="Escribe aquí lo que quieres dejar registrado…"></div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="btn-cancelar-obs-ficha">Cancelar</button>
+          <button type="submit" class="btn" id="btn-guardar-obs-ficha">Guardar</button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -4357,7 +4478,7 @@
   <script src="js/equipos.js?v=25"></script>
   <script src="js/pedidos.js?v=46"></script>
   <script src="js/envios.js?v=26"></script>
-  <script src="js/reparaciones.js?v=27"></script>
+  <script src="js/reparaciones.js?v=28"></script>
   <script src="js/historial.js?v=23"></script>
 
 </body>

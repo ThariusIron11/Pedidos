@@ -49,6 +49,17 @@
 //       motorEquipoId, motorSerial?, reductorEquipoId, reductorSerial? }
 // }
 //
+// Fichas de observaciones (pestaña "Observaciones" de la ficha): viven en la
+// subcolección  reparaciones/{id}/observaciones , un documento por ficha:
+//   { titulo, emoji, color ('gris'|'azul'|'verde'|'amarillo'|'rojo'|'violeta'),
+//     contenidoHtml (mismo HTML simple de observacionesIniciales),
+//     fecha ('YYYY-MM-DD', editable, sin hora), fijada (bool),
+//     creadaEn (serverTimestamp, no se muestra: desempata el orden),
+//     creadaPor (correo) }
+// Las "observaciones iniciales" de arriba NO se migran: se muestran como la
+// primera ficha ("Ingreso") de esa pestaña. Al eliminar una reparación se
+// borran también sus fichas (Firestore no borra subcolecciones solo).
+//
 // Depende también de window.pedidosCache (expuesto por pedidos.js) para
 // calcular el siguiente N° de pedido y confirmar que el pedido recién
 // creado ya llegó por su propio listener antes de abrir su ficha; y expone
@@ -76,7 +87,6 @@
   const fichaHeaderTags = document.getElementById('ficha-reparacion-header-tags');
   const fichaSeccionDatos = document.getElementById('ficha-reparacion-seccion-datos');
   const fichaEquipoTexto = document.getElementById('ficha-reparacion-equipo-texto');
-  const fichaObservacionesTexto = document.getElementById('ficha-reparacion-observaciones-texto');
   const btnCerrarFicha = document.getElementById('btn-cerrar-ficha-reparacion');
   const btnEditarDesdeFicha = document.getElementById('btn-editar-desde-ficha-reparacion');
 
@@ -497,11 +507,6 @@
 
   function renderFichaEquipos(reparacion) {
     fichaEquipoTexto.innerHTML = htmlEquipoTarjeta(reparacion) + botonGuiaReparacionHtml(reparacion) + htmlReemplazoFichaReparacion(reparacion);
-
-    const observaciones = reparacion.observacionesIniciales;
-    fichaObservacionesTexto.innerHTML = htmlObservacionesEstaVacio(observaciones)
-      ? '<span class="reparacion-card-sin-equipo">Sin observaciones registradas.</span>'
-      : sanearHtmlObservaciones(observaciones);
   }
 
   function abrirFicha(reparacion, subtabInicial) {
@@ -511,6 +516,8 @@
     renderFichaEquipos(reparacion);
     if (subtabInicial) activarFichaSubtab(subtabInicial); else resetFichaSubtabs();
     btnEditarDesdeFicha.dataset.id = reparacion.id;
+    suscribirObservaciones(reparacion.id);
+    renderObservaciones();
     btnEditarDesdeFicha.disabled = !!reparacion.devuelta;
     btnEditarDesdeFicha.title = reparacion.devuelta ? 'Reparación devuelta: la ficha queda de solo lectura' : '';
     modalFicha.classList.add('open');
@@ -518,6 +525,7 @@
 
   function cerrarFicha() {
     modalFicha.classList.remove('open');
+    desuscribirObservaciones();
   }
 
   btnCerrarFicha.addEventListener('click', () => cerrarFicha());
@@ -529,9 +537,417 @@
     // Mismo criterio que en Pedidos: si estaba viendo Equipos en la ficha,
     // el formulario de edición abre directo en Equipos; si estaba en Datos
     // generales, abre en Datos — igual que siempre.
-    const subtabDestino = subtabFichaActiva() === 'ficha-reparacion-equipos' ? 'reparacion-equipos' : 'reparacion-datos';
+    // (Las observaciones iniciales se editan también en Equipos del formulario.)
+    const subtabEnFicha = subtabFichaActiva();
+    const subtabDestino = (subtabEnFicha === 'ficha-reparacion-equipos' || subtabEnFicha === 'ficha-reparacion-observaciones')
+      ? 'reparacion-equipos' : 'reparacion-datos';
     cerrarFicha();
     if (reparacion) abrirModalEditar(reparacion, subtabDestino);
+  });
+
+
+  // ---------- Fichas de observaciones ----------
+  // Pestaña "Observaciones" de la ficha: tarjetas con título, fecha (solo el
+  // día, editable), emoji y color. Cada una es un documento de la
+  // subcolección reparaciones/{id}/observaciones, que se escucha en vivo
+  // solo mientras la ficha está abierta. Una ficha larga se muestra plegada
+  // (unas 3 líneas) con "Ver más"; abierta, ocupa todo el ancho.
+
+  const SUB_OBSERVACIONES = 'observaciones';
+
+  const OBS_COLORES = [
+    { id: 'gris',     nombre: 'General' },
+    { id: 'azul',     nombre: 'Información' },
+    { id: 'verde',    nombre: 'Listo' },
+    { id: 'amarillo', nombre: 'Pendiente' },
+    { id: 'rojo',     nombre: 'Problema' },
+    { id: 'violeta',  nombre: 'Otro' }
+  ];
+  const OBS_EMOJIS = ['🔍', '🔧', '🛠️', '⚠️', '❗', '💰', '📞', '📦', '🔩', '⚙️', '✅', '📝'];
+  const OBS_PLANTILLAS = [
+    { id: 'diagnostico', nombre: 'Diagnóstico', titulo: 'Diagnóstico', emoji: '🔍', color: 'azul',
+      html: '<div><b>Qué se encontró.</b> </div><div><br></div><div><b>Causa probable.</b> </div><div><br></div><div><b>Qué se va a hacer.</b> </div>' },
+    { id: 'cotizacion',  nombre: 'Cotización',  titulo: 'Cotización',        emoji: '💰', color: 'amarillo', html: '' },
+    { id: 'repuestos',   nombre: 'Repuestos',   titulo: 'Repuestos',         emoji: '📦', color: 'amarillo', html: '' },
+    { id: 'llamada',     nombre: 'Llamada',     titulo: 'Llamada al cliente', emoji: '📞', color: 'azul',    html: '' },
+    { id: 'blanco',      nombre: 'En blanco',   titulo: '',                  emoji: '📝', color: 'gris',     html: '' }
+  ];
+
+  const obsContenedor = document.getElementById('ficha-reparacion-observaciones');
+  const obsContador = document.getElementById('ficha-obs-contador');
+  const obsTabBtn = modalFicha.querySelector('[data-subtab="ficha-reparacion-observaciones"]');
+
+  let obsReparacionId = null;   // reparación cuyas fichas se están escuchando
+  let obsUnsub = null;
+  let obsCache = [];
+  let obsCargadas = false;
+  let obsFiltro = 'todas';
+  const obsAbiertas = new Set(); // fichas desplegadas con "Ver más"
+
+  const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  // 'YYYY-MM-DD' -> '20 oct 2026'
+  function formatearFechaFicha(fechaISO) {
+    if (!fechaISO) return '';
+    const [yyyy, mm, dd] = fechaISO.split('-');
+    const mes = MESES_CORTOS[parseInt(mm, 10) - 1];
+    if (!yyyy || !mes || !dd) return fechaISO;
+    return `${parseInt(dd, 10)} ${mes} ${yyyy}`;
+  }
+
+  function obsColor(id) {
+    return OBS_COLORES.find(c => c.id === id) || OBS_COLORES[0];
+  }
+
+  function suscribirObservaciones(reparacionId) {
+    if (obsUnsub && obsReparacionId === reparacionId) return; // ya escuchando esta
+    desuscribirObservaciones();
+    obsReparacionId = reparacionId;
+    obsCache = [];
+    obsCargadas = false;
+    obsFiltro = 'todas';
+    obsAbiertas.clear();
+    obsUnsub = db.collection(COLECCION).doc(reparacionId).collection(SUB_OBSERVACIONES).onSnapshot(
+      (snapshot) => {
+        obsCache = snapshot.docs.map(doc => {
+          const datos = doc.data();
+          // Mientras el servidor no confirma la hora, la ficha cuenta como la más nueva.
+          const creadaMs = datos.creadaEn && datos.creadaEn.toMillis ? datos.creadaEn.toMillis() : Date.now();
+          return { id: doc.id, ...datos, creadaMs };
+        });
+        obsCargadas = true;
+        renderObservaciones();
+      },
+      (err) => {
+        console.error('Error escuchando las fichas de observaciones:', err);
+        obsCargadas = true;
+        renderObservaciones();
+      }
+    );
+  }
+
+  function desuscribirObservaciones() {
+    if (obsUnsub) obsUnsub();
+    obsUnsub = null;
+    obsReparacionId = null;
+    obsCache = [];
+    obsCargadas = false;
+  }
+
+  // La ficha "Ingreso" (observaciones iniciales) va siempre primera; luego las
+  // fijadas, y dentro de cada grupo la más reciente arriba (fecha, y a igual
+  // fecha, la creada después).
+  function obsTarjetas(reparacion) {
+    const inicial = reparacion.observacionesIniciales;
+    const ingreso = {
+      id: 'ingreso', esIngreso: true, titulo: 'Ingreso', emoji: '📥', color: 'gris',
+      fecha: reparacion.fechaIngreso || '',
+      contenidoHtml: htmlObservacionesEstaVacio(inicial) ? '' : sanearHtmlObservaciones(inicial),
+      fijada: false
+    };
+    const resto = [...obsCache].sort((a, b) => {
+      if (!!a.fijada !== !!b.fijada) return a.fijada ? -1 : 1;
+      const fa = a.fecha || '', fb = b.fecha || '';
+      if (fa !== fb) return fa < fb ? 1 : -1;
+      return (b.creadaMs || 0) - (a.creadaMs || 0);
+    });
+    return [ingreso, ...resto];
+  }
+
+  function htmlTarjetaObservacion(ficha, reparacion) {
+    const color = obsColor(ficha.color);
+    const abierta = obsAbiertas.has(ficha.id);
+    const cuerpo = ficha.contenidoHtml
+      ? sanearHtmlObservaciones(ficha.contenidoHtml)
+      : `<span class="obs-sin">${ficha.esIngreso ? 'Sin observaciones registradas al ingreso.' : 'Sin contenido.'}</span>`;
+    const fecha = ficha.fecha ? formatearFechaFicha(ficha.fecha) : '';
+    const subtitulo = ficha.esIngreso ? `${fecha ? fecha + ' · ' : ''}Observaciones iniciales` : fecha;
+
+    let acciones;
+    if (ficha.esIngreso) {
+      acciones = reparacion.devuelta ? '' : '<button type="button" class="obs-accion" data-obs-accion="editar-ingreso" title="Editar las observaciones iniciales" aria-label="Editar las observaciones iniciales">✏️</button>';
+    } else {
+      acciones = `
+        <button type="button" class="obs-accion ${ficha.fijada ? 'on' : ''}" data-obs-accion="fijar" title="${ficha.fijada ? 'Quitar de las fijadas' : 'Fijar arriba'}" aria-label="${ficha.fijada ? 'Quitar de las fijadas' : 'Fijar arriba'}">📌</button>
+        <button type="button" class="obs-accion" data-obs-accion="editar" title="Editar" aria-label="Editar">✏️</button>
+        <button type="button" class="obs-accion" data-obs-accion="eliminar" title="Eliminar" aria-label="Eliminar">🗑️</button>`;
+    }
+
+    return `
+      <div class="obs-card obs-${color.id}${abierta ? ' abierta' : ''}" data-id="${escapeAttr(ficha.id)}">
+        <div class="obs-top">
+          <span class="obs-ico">${escapeHtml(ficha.emoji || '📝')}</span>
+          <span class="obs-titulo">${ficha.fijada ? '<span class="obs-pin-estatico">📌 </span>' : ''}${escapeHtml(ficha.titulo || 'Sin título')}</span>
+          <span class="obs-acciones">${acciones}</span>
+        </div>
+        <div class="obs-fecha">${subtitulo}</div>
+        <div class="obs-cuerpo">${cuerpo}</div>
+        <button type="button" class="obs-ver-mas" data-obs-accion="mas" data-lectura-ok hidden>Ver más</button>
+      </div>`;
+  }
+
+  function renderObservaciones() {
+    const reparacion = reparacionesCache.find(r => r.id === obsReparacionId);
+    if (!reparacion) return;
+
+    const todas = obsTarjetas(reparacion);
+    const hayIngreso = !!todas[0].contenidoHtml;
+    obsContador.textContent = obsCache.length + (hayIngreso ? 1 : 0);
+
+    // Chips de color: solo los colores que realmente se usan.
+    const usados = OBS_COLORES.filter(c => todas.some(f => f.color === c.id));
+    if (obsFiltro !== 'todas' && !usados.some(c => c.id === obsFiltro)) obsFiltro = 'todas';
+    const chips = usados.length > 1
+      ? `<button type="button" class="obs-chip ${obsFiltro === 'todas' ? 'active' : ''}" data-obs-filtro="todas" data-lectura-ok>Todas</button>` +
+        usados.map(c => `<button type="button" class="obs-chip obs-${c.id} ${obsFiltro === c.id ? 'active' : ''}" data-obs-filtro="${c.id}" data-lectura-ok><span class="obs-punto"></span>${c.nombre}</button>`).join('')
+      : '';
+
+    const visibles = obsFiltro === 'todas' ? todas : todas.filter(f => f.color === obsFiltro);
+    let tarjetasHtml = visibles.map(f => htmlTarjetaObservacion(f, reparacion)).join('');
+    if (!obsCargadas) {
+      tarjetasHtml += '<div class="obs-vacio">Cargando fichas…</div>';
+    } else if (!obsCache.length && obsFiltro === 'todas') {
+      tarjetasHtml += '<div class="obs-vacio">Todavía no hay fichas. Crea la primera con «Nueva ficha».</div>';
+    }
+
+    obsContenedor.innerHTML = `
+      <div class="obs-barra">
+        ${chips}
+        <span class="obs-espacio"></span>
+        <button type="button" class="btn" data-obs-accion="nueva">+ Nueva ficha</button>
+      </div>
+      <div class="obs-grid">${tarjetasHtml}</div>`;
+
+    requestAnimationFrame(ajustarPlegadoObservaciones);
+  }
+
+  // Muestra "Ver más" solo en las fichas cuyo texto no cabe en las 3 líneas.
+  // Hay que medir con la pestaña visible; por eso también se llama al abrirla.
+  function ajustarPlegadoObservaciones() {
+    obsContenedor.querySelectorAll('.obs-card').forEach(card => {
+      const cuerpo = card.querySelector('.obs-cuerpo');
+      const boton = card.querySelector('.obs-ver-mas');
+      if (!cuerpo || !boton) return;
+      if (card.classList.contains('abierta')) {
+        boton.hidden = false;
+        boton.textContent = 'Ver menos';
+        return;
+      }
+      boton.hidden = !(cuerpo.scrollHeight > cuerpo.clientHeight + 2);
+      boton.textContent = 'Ver más';
+    });
+  }
+
+  obsTabBtn.addEventListener('click', () => requestAnimationFrame(ajustarPlegadoObservaciones));
+
+  obsContenedor.addEventListener('click', async (e) => {
+    const chip = e.target.closest('[data-obs-filtro]');
+    if (chip) {
+      obsFiltro = chip.dataset.obsFiltro;
+      renderObservaciones();
+      return;
+    }
+    const boton = e.target.closest('[data-obs-accion]');
+    if (!boton) return;
+    const card = boton.closest('.obs-card');
+    const id = card ? card.dataset.id : null;
+    const ficha = id ? obsCache.find(f => f.id === id) : null;
+    const coleccionObs = () => db.collection(COLECCION).doc(obsReparacionId).collection(SUB_OBSERVACIONES);
+
+    switch (boton.dataset.obsAccion) {
+      case 'nueva':
+        abrirModalObservacion(null);
+        break;
+      case 'editar':
+        if (ficha) abrirModalObservacion(ficha);
+        break;
+      case 'editar-ingreso':
+        btnEditarDesdeFicha.click();
+        break;
+      case 'mas': {
+        const abre = !card.classList.contains('abierta');
+        card.classList.toggle('abierta', abre);
+        if (abre) obsAbiertas.add(id); else obsAbiertas.delete(id);
+        ajustarPlegadoObservaciones();
+        break;
+      }
+      case 'fijar':
+        if (!ficha) break;
+        try {
+          await coleccionObs().doc(id).update({ fijada: !ficha.fijada });
+        } catch (err) {
+          console.error('Error fijando la ficha:', err);
+          alert('No se pudo fijar la ficha. Revisa la consola.');
+        }
+        break;
+      case 'eliminar':
+        if (!ficha) break;
+        if (!confirm(`¿Eliminar la ficha "${ficha.titulo || 'Sin título'}"? Esta acción no se puede deshacer.`)) break;
+        try {
+          await coleccionObs().doc(id).delete();
+          obsAbiertas.delete(id);
+        } catch (err) {
+          console.error('Error eliminando la ficha:', err);
+          alert('No se pudo eliminar la ficha. Revisa la consola.');
+        }
+        break;
+    }
+  });
+
+  // ---------- Modal: crear / editar una ficha ----------
+
+  const modalObs = document.getElementById('modal-obs-ficha');
+  const modalObsTitulo = document.getElementById('modal-obs-ficha-titulo');
+  const formObs = document.getElementById('form-obs-ficha');
+  const obsInputId = document.getElementById('obs-ficha-id');
+  const obsInputTitulo = document.getElementById('obs-ficha-titulo');
+  const obsInputFecha = document.getElementById('obs-ficha-fecha');
+  const obsInputEmojiOtro = document.getElementById('obs-ficha-emoji-otro');
+  const obsEditor = document.getElementById('obs-ficha-contenido');
+  const obsPlantillasGrupo = document.getElementById('obs-ficha-plantillas-grupo');
+  const obsPlantillasEl = document.getElementById('obs-ficha-plantillas');
+  const obsEmojisEl = document.getElementById('obs-ficha-emojis');
+  const obsColoresEl = document.getElementById('obs-ficha-colores');
+  const btnGuardarObs = document.getElementById('btn-guardar-obs-ficha');
+
+  let obsEmojiSel = '📝';
+  let obsColorSel = 'gris';
+  let obsPlantillaSel = 'blanco';
+
+  function renderOpcionesObservacion() {
+    obsPlantillasEl.innerHTML = OBS_PLANTILLAS.map(p =>
+      `<button type="button" class="obs-op ${obsPlantillaSel === p.id ? 'on' : ''}" data-plantilla="${p.id}">${p.nombre}</button>`).join('');
+    obsEmojisEl.innerHTML = OBS_EMOJIS.map(em =>
+      `<button type="button" class="obs-op emoji ${obsEmojiSel === em ? 'on' : ''}" data-emoji="${em}">${em}</button>`).join('');
+    obsColoresEl.innerHTML = OBS_COLORES.map(c =>
+      `<button type="button" class="obs-color-btn obs-${c.id} ${obsColorSel === c.id ? 'on' : ''}" data-color="${c.id}" title="${c.nombre}" aria-label="${c.nombre}"></button>`).join('');
+  }
+
+  // Primer emoji de lo que se escriba o pegue en "Otro" (ignora letras).
+  function primerEmoji(texto) {
+    const limpio = (texto || '').trim();
+    if (!limpio) return '';
+    const trozos = (window.Intl && Intl.Segmenter)
+      ? Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(limpio), x => x.segment)
+      : Array.from(limpio);
+    return trozos.find(t => /\p{Extended_Pictographic}/u.test(t)) || '';
+  }
+
+  obsInputEmojiOtro.addEventListener('input', () => {
+    const emoji = primerEmoji(obsInputEmojiOtro.value);
+    obsInputEmojiOtro.value = emoji;
+    if (emoji) {
+      obsEmojiSel = emoji;
+      renderOpcionesObservacion();
+    }
+  });
+
+  function aplicarPlantillaObservacion(id) {
+    const nueva = OBS_PLANTILLAS.find(p => p.id === id);
+    if (!nueva) return;
+    const previa = OBS_PLANTILLAS.find(p => p.id === obsPlantillaSel);
+    const tituloActual = obsInputTitulo.value.trim();
+    const htmlActual = sanearHtmlObservaciones(obsEditor.innerHTML);
+
+    // No se pisa lo que la persona ya escribió: solo se reemplaza si está
+    // vacío o si sigue siendo exactamente lo que puso la plantilla anterior.
+    if (!tituloActual || (previa && tituloActual === previa.titulo)) obsInputTitulo.value = nueva.titulo;
+    if (htmlObservacionesEstaVacio(htmlActual) || (previa && htmlActual === sanearHtmlObservaciones(previa.html))) {
+      obsEditor.innerHTML = nueva.html;
+    }
+    obsPlantillaSel = id;
+    obsEmojiSel = nueva.emoji;
+    obsColorSel = nueva.color;
+    obsInputEmojiOtro.value = '';
+    renderOpcionesObservacion();
+    obsInputTitulo.focus();
+  }
+
+  modalObs.addEventListener('click', (e) => {
+    if (e.target === modalObs) { cerrarModalObservacion(); return; }
+    const plantilla = e.target.closest('[data-plantilla]');
+    if (plantilla) { aplicarPlantillaObservacion(plantilla.dataset.plantilla); return; }
+    const emoji = e.target.closest('[data-emoji]');
+    if (emoji) { obsEmojiSel = emoji.dataset.emoji; obsInputEmojiOtro.value = ''; renderOpcionesObservacion(); return; }
+    const color = e.target.closest('[data-color]');
+    if (color) { obsColorSel = color.dataset.color; renderOpcionesObservacion(); }
+  });
+
+  document.querySelectorAll('#obs-ficha-toolbar .rte-btn').forEach(btn => {
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
+    btn.addEventListener('click', () => {
+      document.execCommand(btn.dataset.cmd, false, null);
+      obsEditor.focus();
+    });
+  });
+
+  function abrirModalObservacion(ficha) {
+    formObs.reset();
+    obsInputEmojiOtro.value = '';
+    if (ficha) {
+      modalObsTitulo.textContent = 'Editar ficha';
+      obsInputId.value = ficha.id;
+      obsInputTitulo.value = ficha.titulo || '';
+      obsInputFecha.value = ficha.fecha || fechaHoyISO();
+      obsEmojiSel = ficha.emoji || '📝';
+      obsColorSel = obsColor(ficha.color).id;
+      obsPlantillaSel = '';
+      obsEditor.innerHTML = sanearHtmlObservaciones(ficha.contenidoHtml || '');
+      obsPlantillasGrupo.style.display = 'none'; // las plantillas son solo para fichas nuevas
+    } else {
+      modalObsTitulo.textContent = 'Nueva ficha';
+      obsInputId.value = '';
+      obsInputFecha.value = fechaHoyISO();
+      obsPlantillaSel = 'blanco';
+      obsEmojiSel = '📝';
+      obsColorSel = 'gris';
+      obsEditor.innerHTML = '';
+      obsPlantillasGrupo.style.display = '';
+    }
+    renderOpcionesObservacion();
+    modalObs.classList.add('open');
+    obsInputTitulo.focus();
+  }
+
+  function cerrarModalObservacion() {
+    modalObs.classList.remove('open');
+  }
+
+  document.getElementById('btn-cancelar-obs-ficha').addEventListener('click', cerrarModalObservacion);
+
+  formObs.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!obsReparacionId) return;
+    const html = sanearHtmlObservaciones(obsEditor.innerHTML);
+    const datos = {
+      titulo: obsInputTitulo.value.trim(),
+      emoji: obsEmojiSel || '📝',
+      color: obsColorSel,
+      contenidoHtml: htmlObservacionesEstaVacio(html) ? '' : html,
+      fecha: obsInputFecha.value || fechaHoyISO()
+    };
+    if (!datos.titulo) { obsInputTitulo.focus(); return; }
+
+    btnGuardarObs.disabled = true;
+    try {
+      const coleccionObs = db.collection(COLECCION).doc(obsReparacionId).collection(SUB_OBSERVACIONES);
+      if (obsInputId.value) {
+        await coleccionObs.doc(obsInputId.value).update(datos);
+      } else {
+        const usuario = firebase.auth().currentUser;
+        await coleccionObs.add({
+          ...datos,
+          fijada: false,
+          creadaEn: firebase.firestore.FieldValue.serverTimestamp(),
+          creadaPor: usuario ? usuario.email : null
+        });
+      }
+      cerrarModalObservacion();
+    } catch (err) {
+      console.error('Error guardando la ficha:', err);
+      alert('No se pudo guardar la ficha. Revisa la consola.');
+    } finally {
+      btnGuardarObs.disabled = false;
+    }
   });
 
   // ---------- Evidencia fotográfica: link a carpeta compartida ----------
@@ -1625,6 +2041,15 @@
           alert('No se pudo eliminar el pedido vinculado. La reparación no se eliminó.');
           return;
         }
+      }
+      // Las fichas de observaciones son una subcolección: Firestore no la
+      // borra al borrar el documento padre, así que se borran aparte (en
+      // tandas, porque un lote admite como máximo 500 operaciones).
+      const fichasObs = await db.collection(COLECCION).doc(reparacion.id).collection(SUB_OBSERVACIONES).get();
+      for (let i = 0; i < fichasObs.docs.length; i += 400) {
+        const lote = db.batch();
+        fichasObs.docs.slice(i, i + 400).forEach(d => lote.delete(d.ref));
+        await lote.commit();
       }
       await db.collection(COLECCION).doc(reparacion.id).delete();
     } catch (err) {
