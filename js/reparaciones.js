@@ -51,7 +51,8 @@
 //
 // Fichas de observaciones (pestaña "Observaciones" de la ficha): viven en la
 // subcolección  reparaciones/{id}/observaciones , un documento por ficha:
-//   { titulo, emoji, color ('gris'|'azul'|'verde'|'amarillo'|'rojo'|'violeta'),
+//   { titulo, emoji, color ('gris' libre | 'azul' informe | 'violeta' información |
+//             'verde' listo | 'amarillo' pendiente | 'rojo' problema),
 //     contenidoHtml (mismo HTML simple de observacionesIniciales),
 //     fecha ('YYYY-MM-DD', editable, sin hora), fijada (bool),
 //     creadaEn (serverTimestamp, no se muestra: desempata el orden),
@@ -59,6 +60,14 @@
 // Las "observaciones iniciales" de arriba NO se migran: se muestran como la
 // primera ficha ("Ingreso") de esa pestaña. Al eliminar una reparación se
 // borran también sus fichas (Firestore no borra subcolecciones solo).
+//
+// Para que la lista de reparaciones muestre de un vistazo "⚠️ Problema" (hay
+// una ficha ROJA FIJADA) e "📋 Informe" (hay al menos una ficha AZUL), cada
+// reparación guarda dos marcas calculadas a partir de sus fichas:
+//   obsProblemaFijada (bool), obsTieneInforme (bool)
+// Las mantiene al día la app cada vez que cambian las fichas (ver
+// guardarMarcasReparacion); las reparaciones anteriores a este cambio se
+// completan una sola vez, la primera vez que un usuario con edición las ve.
 //
 // Depende también de window.pedidosCache (expuesto por pedidos.js) para
 // calcular el siguiente N° de pedido y confirmar que el pedido recién
@@ -555,13 +564,15 @@
 
   const SUB_OBSERVACIONES = 'observaciones';
 
+  // Cada color significa algo: azul = informe y rojo (fijada) = problema son
+  // los que se destacan en la lista de reparaciones.
   const OBS_COLORES = [
-    { id: 'gris',     nombre: 'General' },
-    { id: 'azul',     nombre: 'Información' },
+    { id: 'gris',     nombre: 'Libre' },
+    { id: 'azul',     nombre: 'Informe' },
+    { id: 'violeta',  nombre: 'Información' },
     { id: 'verde',    nombre: 'Listo' },
     { id: 'amarillo', nombre: 'Pendiente' },
-    { id: 'rojo',     nombre: 'Problema' },
-    { id: 'violeta',  nombre: 'Otro' }
+    { id: 'rojo',     nombre: 'Problema' }
   ];
   const OBS_EMOJIS = ['🔍', '🔧', '🛠️', '⚠️', '❗', '💰', '📞', '📦', '🔩', '⚙️', '✅', '📝'];
   const OBS_PLANTILLAS = [
@@ -569,7 +580,7 @@
       html: '<div><b>Qué se encontró.</b> </div><div><br></div><div><b>Causa probable.</b> </div><div><br></div><div><b>Qué se va a hacer.</b> </div>' },
     { id: 'cotizacion',  nombre: 'Cotización',  titulo: 'Cotización',        emoji: '💰', color: 'amarillo', html: '' },
     { id: 'repuestos',   nombre: 'Repuestos',   titulo: 'Repuestos',         emoji: '📦', color: 'amarillo', html: '' },
-    { id: 'llamada',     nombre: 'Llamada',     titulo: 'Llamada al cliente', emoji: '📞', color: 'azul',    html: '' },
+    { id: 'llamada',     nombre: 'Llamada',     titulo: 'Llamada al cliente', emoji: '📞', color: 'violeta', html: '' },
     { id: 'blanco',      nombre: 'En blanco',   titulo: '',                  emoji: '📝', color: 'gris',     html: '' }
   ];
 
@@ -616,6 +627,7 @@
         });
         obsCargadas = true;
         renderObservaciones();
+        guardarMarcasReparacion(reparacionId, marcasDeFichas(obsCache), reparacionesCache.find(r => r.id === reparacionId));
       },
       (err) => {
         console.error('Error escuchando las fichas de observaciones:', err);
@@ -623,6 +635,57 @@
         renderObservaciones();
       }
     );
+  }
+
+  // ---------- Marcas para la lista (⚠️ Problema / 📋 Informe) ----------
+
+  function marcasDeFichas(fichas) {
+    return {
+      obsProblemaFijada: fichas.some(f => f.color === 'rojo' && f.fijada),
+      obsTieneInforme: fichas.some(f => f.color === 'azul')
+    };
+  }
+
+  const marcasEnviadas = new Map(); // id -> última combinación enviada (evita escrituras repetidas)
+
+  // Solo escribe quien puede editar: lectura y parcial ven las marcas, no las cambian.
+  async function guardarMarcasReparacion(id, marcas, reparacion) {
+    if (!(window.puedeEditar && window.puedeEditar())) return;
+    if (reparacion
+        && reparacion.obsProblemaFijada === marcas.obsProblemaFijada
+        && reparacion.obsTieneInforme === marcas.obsTieneInforme) return; // ya están al día
+    const clave = `${marcas.obsProblemaFijada}|${marcas.obsTieneInforme}`;
+    if (marcasEnviadas.get(id) === clave) return;
+    marcasEnviadas.set(id, clave);
+    try {
+      await db.collection(COLECCION).doc(id).update(marcas);
+    } catch (err) {
+      marcasEnviadas.delete(id);
+      console.error('Error actualizando las marcas de observaciones:', err);
+    }
+  }
+
+  // Reparaciones de antes de este cambio no tienen las marcas: se leen sus
+  // fichas una vez (una lectura por reparación) y se dejan guardadas.
+  let completandoMarcas = false;
+  async function completarMarcasPendientes() {
+    if (completandoMarcas || !(window.puedeEditar && window.puedeEditar())) return;
+    const pendientes = reparacionesCache.filter(r =>
+      (typeof r.obsProblemaFijada !== 'boolean' || typeof r.obsTieneInforme !== 'boolean') && !marcasEnviadas.has(r.id));
+    if (!pendientes.length) return;
+    completandoMarcas = true;
+    try {
+      for (const r of pendientes) {
+        try {
+          const fichas = await db.collection(COLECCION).doc(r.id).collection(SUB_OBSERVACIONES).get();
+          await guardarMarcasReparacion(r.id, marcasDeFichas(fichas.docs.map(d => d.data())), r);
+        } catch (err) {
+          console.error('Error revisando las fichas de una reparación:', err);
+        }
+      }
+    } finally {
+      completandoMarcas = false;
+    }
   }
 
   function desuscribirObservaciones() {
@@ -1984,6 +2047,8 @@
           evidenciaFotografica: inputEvidencia.value.trim(),
           equipo: resuelto.equipo,
           observacionesIniciales,
+          obsProblemaFijada: false,
+          obsTieneInforme: false,
           creadoEn: firebase.firestore.FieldValue.serverTimestamp()
         });
       }
@@ -2211,6 +2276,8 @@
           <div class="reparacion-card-top">
             <span class="reparacion-card-numero">${formatearNumero(reparacion.numero)}</span>
             ${reparacion.pedidoId ? '<span class="reparacion-card-tiene-pedido">🧾 Tiene pedido</span>' : ''}
+            ${reparacion.obsProblemaFijada ? '<span class="tag-reparacion-problema" title="Tiene una ficha de problema fijada">⚠️ Problema</span>' : ''}
+            ${reparacion.obsTieneInforme ? '<span class="tag-reparacion-informe" title="Ya se le hizo informe">📋 Informe</span>' : ''}
             ${completada ? '<span class="tag-pedido-completado">COMPLETADO</span>' : ''}
             ${reparacion.devuelta ? '<span class="tag-pedido-devolucion">DEVOLUCIÓN</span>' : ''}
             <div class="reparacion-card-actions">
@@ -2258,6 +2325,7 @@
         reparacionesCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         window.reparacionesCache = reparacionesCache;
         renderLista();
+        completarMarcasPendientes();
         // Si la ficha de esta reparación está abierta, se refresca en vivo
         // (ej. al eliminar desde Pedidos el pedido asociado: pedidos.js le
         // borra el pedidoId a este documento, y sin esto el botón "Ver
@@ -2312,6 +2380,10 @@
     const reparacionActual = reparacionesCache.find(r => r.id === btnEditarDesdeFicha.dataset.id);
     if (reparacionActual) abrirFicha(reparacionActual, subtabFichaActiva());
   });
+
+  // El rol llega un instante después de la sesión: si es de edición, se completan
+  // las marcas que falten.
+  document.addEventListener('roles:listo', completarMarcasPendientes);
 
   document.addEventListener('auth:listo', () => {
     sesionLista = true;
