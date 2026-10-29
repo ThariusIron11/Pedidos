@@ -404,6 +404,9 @@
   .obs-cuerpo ul, .obs-cuerpo ol{ margin: 4px 0 4px 20px; padding: 0; }
   .obs-cuerpo div, .obs-cuerpo p{ margin: 0; }
   .obs-sin{ font-size: 13px; color: var(--ink-soft); }
+  .obs-enlace{ display: inline-block; margin-top: 8px; font-size: 12.5px; font-weight: 600; color: var(--copper); text-decoration: none; }
+  .obs-enlace:hover{ text-decoration: underline; }
+  .obs-op:disabled, .obs-color-btn:disabled{ opacity: .35; cursor: not-allowed; }
   .obs-ver-mas{ background: none; border: none; padding: 0; margin-top: 6px; font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--copper); cursor: pointer; }
   .obs-ver-mas:hover{ text-decoration: underline; }
   .obs-vacio{ grid-column: 1 / -1; font-size: 13px; color: var(--ink-soft); padding: 6px 2px; }
@@ -3748,7 +3751,7 @@
         <div class="obs-fila-2">
           <div class="form-group">
             <label for="obs-ficha-titulo">Título</label>
-            <input type="text" id="obs-ficha-titulo" required maxlength="80" autocomplete="off" placeholder="Ej: Diagnóstico">
+            <input type="text" id="obs-ficha-titulo" required maxlength="80" autocomplete="off" placeholder="Ej: Reporte">
           </div>
           <div class="form-group">
             <label for="obs-ficha-fecha">Fecha</label>
@@ -3767,6 +3770,11 @@
         <div class="form-group">
           <label>Color</label>
           <div class="obs-opciones" id="obs-ficha-colores"></div>
+        </div>
+
+        <div class="form-group">
+          <label for="obs-ficha-enlace">Enlace <span style="font-weight:400; color:var(--ink-soft);">(opcional: imagen o carpeta del reporte)</span></label>
+          <input type="text" inputmode="url" id="obs-ficha-enlace" autocomplete="off" placeholder="https://…">
         </div>
 
         <div class="form-group" style="margin-bottom:0;">

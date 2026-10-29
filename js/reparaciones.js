@@ -55,8 +55,12 @@
 //             'verde' listo | 'amarillo' pendiente | 'rojo' problema),
 //     contenidoHtml (mismo HTML simple de observacionesIniciales),
 //     fecha ('YYYY-MM-DD', editable, sin hora), fijada (bool),
+//     enlace (opcional, http/https; por ejemplo el link a la imagen o carpeta
+//             del reporte. Se muestra como botón "Abrir enlace" que abre en
+//             otra pestaña),
 //     creadaEn (serverTimestamp, no se muestra: desempata el orden),
 //     creadaPor (correo) }
+// Solo puede haber UNA ficha azul (tipo Reporte) por reparación.
 // Las "observaciones iniciales" de arriba NO se migran: se muestran como la
 // primera ficha ("Ingreso") de esa pestaña. Al eliminar una reparación se
 // borran también sus fichas (Firestore no borra subcolecciones solo).
@@ -574,14 +578,16 @@
     { id: 'amarillo', nombre: 'Pendiente' },
     { id: 'rojo',     nombre: 'Problema' }
   ];
-  const OBS_EMOJIS = ['🔍', '🔧', '🛠️', '⚠️', '❗', '💰', '📞', '📦', '🔩', '⚙️', '✅', '📝'];
+  const OBS_EMOJIS = ['🔍', '🔧', '🛠️', '⚠️', '❗', '⏳', '💰', '📞', '📦', '🔩', '⚙️', '✅', '📝'];
+  // Cada plantilla trae título, emoji, color y (opcional) si nace fijada.
+  // Todas salen con el contenido vacío.
   const OBS_PLANTILLAS = [
-    { id: 'diagnostico', nombre: 'Diagnóstico', titulo: 'Diagnóstico', emoji: '🔍', color: 'azul',
-      html: '<div><b>Qué se encontró.</b> </div><div><br></div><div><b>Causa probable.</b> </div><div><br></div><div><b>Qué se va a hacer.</b> </div>' },
-    { id: 'cotizacion',  nombre: 'Cotización',  titulo: 'Cotización',        emoji: '💰', color: 'amarillo', html: '' },
-    { id: 'repuestos',   nombre: 'Repuestos',   titulo: 'Repuestos',         emoji: '📦', color: 'amarillo', html: '' },
-    { id: 'llamada',     nombre: 'Llamada',     titulo: 'Llamada al cliente', emoji: '📞', color: 'violeta', html: '' },
-    { id: 'blanco',      nombre: 'En blanco',   titulo: '',                  emoji: '📝', color: 'gris',     html: '' }
+    { id: 'reporte',     nombre: 'Reporte',     titulo: 'Reporte',     emoji: '🔍', color: 'azul',     html: '' },
+    { id: 'informacion', nombre: 'Información', titulo: 'Información', emoji: '❗', color: 'violeta',  html: '' },
+    { id: 'pendiente',   nombre: 'Pendiente',   titulo: 'Pendiente',   emoji: '⏳', color: 'amarillo', html: '' },
+    { id: 'listo',       nombre: 'Listo',       titulo: 'Listo',       emoji: '✅', color: 'verde',    html: '' },
+    { id: 'problema',    nombre: 'Problema',    titulo: 'Problema',    emoji: '⚠️', color: 'rojo',     html: '', fijada: true },
+    { id: 'blanco',      nombre: 'En blanco',   titulo: '',            emoji: '📝', color: 'gris',     html: '' }
   ];
 
   const obsContenedor = document.getElementById('ficha-reparacion-observaciones');
@@ -607,6 +613,18 @@
 
   function obsColor(id) {
     return OBS_COLORES.find(c => c.id === id) || OBS_COLORES[0];
+  }
+
+  // Solo se aceptan enlaces http/https (nada de javascript: u otros esquemas).
+  function enlaceSeguro(texto) {
+    const t = (texto || '').trim();
+    if (!t) return '';
+    try {
+      const u = new URL(t);
+      return (u.protocol === 'http:' || u.protocol === 'https:') ? u.href : '';
+    } catch (e) {
+      return '';
+    }
   }
 
   function suscribirObservaciones(reparacionId) {
@@ -744,6 +762,7 @@
         </div>
         <div class="obs-fecha">${subtitulo}</div>
         <div class="obs-cuerpo">${cuerpo}</div>
+        ${enlaceSeguro(ficha.enlace) ? `<a class="obs-enlace" href="${escapeAttr(enlaceSeguro(ficha.enlace))}" target="_blank" rel="noopener noreferrer" data-lectura-ok title="Abrir el enlace en otra pestaña">🔗 Abrir enlace ↗</a>` : ''}
         <button type="button" class="obs-ver-mas" data-obs-accion="mas" data-lectura-ok hidden>Ver más</button>
       </div>`;
   }
@@ -864,6 +883,7 @@
   const obsInputId = document.getElementById('obs-ficha-id');
   const obsInputTitulo = document.getElementById('obs-ficha-titulo');
   const obsInputFecha = document.getElementById('obs-ficha-fecha');
+  const obsInputEnlace = document.getElementById('obs-ficha-enlace');
   const obsInputEmojiOtro = document.getElementById('obs-ficha-emoji-otro');
   const obsEditor = document.getElementById('obs-ficha-contenido');
   const obsPlantillasGrupo = document.getElementById('obs-ficha-plantillas-grupo');
@@ -875,14 +895,28 @@
   let obsEmojiSel = '📝';
   let obsColorSel = 'gris';
   let obsPlantillaSel = 'blanco';
+  let obsFijadaSel = false;       // solo se usa al crear (las plantillas como Problema nacen fijadas)
+  let obsColorOriginal = '';      // color de la ficha que se está editando ('' si es nueva)
+
+  // Solo una ficha azul (Reporte) por reparación. Se bloquea si ya hay otra
+  // azul, salvo que la que se edita ya era azul (así se puede seguir editando).
+  function azulBloqueado() {
+    const otraAzul = obsCache.some(f => f.color === 'azul' && f.id !== obsInputId.value);
+    return otraAzul && obsColorOriginal !== 'azul';
+  }
 
   function renderOpcionesObservacion() {
-    obsPlantillasEl.innerHTML = OBS_PLANTILLAS.map(p =>
-      `<button type="button" class="obs-op ${obsPlantillaSel === p.id ? 'on' : ''}" data-plantilla="${p.id}">${p.nombre}</button>`).join('');
+    const bloqueaAzul = azulBloqueado();
+    obsPlantillasEl.innerHTML = OBS_PLANTILLAS.map(p => {
+      const bloqueada = bloqueaAzul && p.color === 'azul';
+      return `<button type="button" class="obs-op ${obsPlantillaSel === p.id ? 'on' : ''}" data-plantilla="${p.id}"${bloqueada ? ' disabled title="Ya existe un reporte en esta reparación"' : ''}>${p.emoji} ${p.nombre}</button>`;
+    }).join('');
     obsEmojisEl.innerHTML = OBS_EMOJIS.map(em =>
       `<button type="button" class="obs-op emoji ${obsEmojiSel === em ? 'on' : ''}" data-emoji="${em}">${em}</button>`).join('');
-    obsColoresEl.innerHTML = OBS_COLORES.map(c =>
-      `<button type="button" class="obs-color-btn obs-${c.id} ${obsColorSel === c.id ? 'on' : ''}" data-color="${c.id}" title="${c.nombre}" aria-label="${c.nombre}"></button>`).join('');
+    obsColoresEl.innerHTML = OBS_COLORES.map(c => {
+      const bloqueado = bloqueaAzul && c.id === 'azul';
+      return `<button type="button" class="obs-color-btn obs-${c.id} ${obsColorSel === c.id ? 'on' : ''}" data-color="${c.id}" title="${bloqueado ? 'Ya existe un reporte en esta reparación' : c.nombre}" aria-label="${c.nombre}"${bloqueado ? ' disabled' : ''}></button>`;
+    }).join('');
   }
 
   // Primer emoji de lo que se escriba o pegue en "Otro" (ignora letras).
@@ -907,6 +941,7 @@
   function aplicarPlantillaObservacion(id) {
     const nueva = OBS_PLANTILLAS.find(p => p.id === id);
     if (!nueva) return;
+    if (azulBloqueado() && nueva.color === 'azul') return;
     const previa = OBS_PLANTILLAS.find(p => p.id === obsPlantillaSel);
     const tituloActual = obsInputTitulo.value.trim();
     const htmlActual = sanearHtmlObservaciones(obsEditor.innerHTML);
@@ -920,6 +955,7 @@
     obsPlantillaSel = id;
     obsEmojiSel = nueva.emoji;
     obsColorSel = nueva.color;
+    obsFijadaSel = !!nueva.fijada;
     obsInputEmojiOtro.value = '';
     renderOpcionesObservacion();
     obsInputTitulo.focus();
@@ -953,6 +989,9 @@
       obsInputFecha.value = ficha.fecha || fechaHoyISO();
       obsEmojiSel = ficha.emoji || '📝';
       obsColorSel = obsColor(ficha.color).id;
+      obsColorOriginal = obsColorSel;
+      obsFijadaSel = false;
+      obsInputEnlace.value = ficha.enlace || '';
       obsPlantillaSel = '';
       obsEditor.innerHTML = sanearHtmlObservaciones(ficha.contenidoHtml || '');
       obsPlantillasGrupo.style.display = 'none'; // las plantillas son solo para fichas nuevas
@@ -963,6 +1002,9 @@
       obsPlantillaSel = 'blanco';
       obsEmojiSel = '📝';
       obsColorSel = 'gris';
+      obsColorOriginal = '';
+      obsFijadaSel = false;
+      obsInputEnlace.value = '';
       obsEditor.innerHTML = '';
       obsPlantillasGrupo.style.display = '';
     }
@@ -990,6 +1032,24 @@
     };
     if (!datos.titulo) { obsInputTitulo.focus(); return; }
 
+    const enlaceTexto = obsInputEnlace.value.trim();
+    if (enlaceTexto) {
+      const enlaceOk = enlaceSeguro(enlaceTexto) || enlaceSeguro('https://' + enlaceTexto);
+      if (!enlaceOk) {
+        alert('El enlace no es válido. Debe empezar por http:// o https://');
+        obsInputEnlace.focus();
+        return;
+      }
+      datos.enlace = enlaceOk;
+    } else {
+      datos.enlace = '';
+    }
+
+    if (datos.color === 'azul' && azulBloqueado()) {
+      alert('Esta reparación ya tiene un reporte. Solo puede haber uno.');
+      return;
+    }
+
     btnGuardarObs.disabled = true;
     try {
       const coleccionObs = db.collection(COLECCION).doc(obsReparacionId).collection(SUB_OBSERVACIONES);
@@ -999,7 +1059,7 @@
         const usuario = firebase.auth().currentUser;
         await coleccionObs.add({
           ...datos,
-          fijada: false,
+          fijada: obsFijadaSel,
           creadaEn: firebase.firestore.FieldValue.serverTimestamp(),
           creadaPor: usuario ? usuario.email : null
         });
