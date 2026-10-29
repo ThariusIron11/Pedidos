@@ -1942,6 +1942,17 @@
   }
   .reparacion-card-actions button:hover{ color: var(--danger); border-color: var(--danger); background: rgba(0,0,0,0.04); }
 
+  /* Botón de acceso rápido a las observaciones (en la tarjeta de la lista de reparaciones) */
+  .reparacion-card-actions .btn-obs-rapido:hover{ color: var(--copper); border-color: var(--copper); background: rgba(0,0,0,0.04); }
+
+  /* Ventana exclusiva de observaciones (acceso rápido desde la lista y desde Pedidos).
+     Va por encima de las fichas (la de pedido está más abajo en el HTML) y el
+     formulario de nueva/editar ficha por encima de ella. */
+  #modal-obs-rapido{ z-index: 60; }
+  #modal-obs-ficha{ z-index: 70; }
+  #modal-obs-rapido .modal.modal-ficha{ display: flex; flex-direction: column; }
+  #modal-obs-rapido .obs-rapido-cuerpo{ flex: 1; min-height: 0; overflow-y: auto; padding: 16px 26px 4px; }
+
   /* ---------- Tarjetas de la lista de pedidos ---------- */
   .pedidos-cards{
     display: flex;
@@ -3732,6 +3743,21 @@
       <div class="modal-actions">
         <button type="button" class="btn secondary" id="btn-cerrar-ficha-reparacion">Cerrar</button>
         <button type="button" class="btn" id="btn-editar-desde-ficha-reparacion">Editar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: OBSERVACIONES de una reparación (acceso rápido desde la lista) -->
+  <div class="modal-backdrop" id="modal-obs-rapido">
+    <div class="modal modal-ficha">
+      <div class="ficha-header">
+        <div class="ficha-header-numero" id="obs-rapido-header">Observaciones</div>
+      </div>
+      <div class="obs-rapido-cuerpo">
+        <div id="obs-rapido-contenedor"><!-- generado por reparaciones.js --></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" id="btn-cerrar-obs-rapido" data-lectura-ok>Cerrar</button>
       </div>
     </div>
   </div>

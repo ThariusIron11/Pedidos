@@ -2385,8 +2385,13 @@
     return tipoEfectivoPedido(pedido) !== 'reparacion';
   }
 
-  // 📄 junto al nombre del equipo: solo si tiene observación.
+  // 📄 junto al nombre del equipo: solo si tiene observación. En los equipos
+  // de reparación no hay observación propia: sus observaciones viven en la
+  // reparación de origen, y el 📄 abre su ventana de observaciones.
   function botonObservacionHtml(item, index, pedido) {
+    if (pedido.reparacionId) {
+      return `<button type="button" class="btn-obs-equipo" data-obs-reparacion="${escapeHtml(pedido.reparacionId)}" title="Ver observaciones de la reparación" aria-label="Ver observaciones de la reparación">📄</button>`;
+    }
     if (!pedidoPermiteObservaciones(pedido) || observacionVacia(item.observacion)) return '';
     return `<button type="button" class="btn-obs-equipo" data-obs-index="${index}" title="Ver observación" aria-label="Ver observación">📄</button>`;
   }
@@ -2679,6 +2684,10 @@
     fichaEquiposContenido.querySelectorAll('.btn-obs-equipo').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (btn.dataset.obsReparacion) {
+          if (window.abrirObservacionesReparacion) window.abrirObservacionesReparacion(btn.dataset.obsReparacion);
+          return;
+        }
         const pedidoVisor = pedidosCache.find(p => p.id === pedidoIdEnFicha);
         const itemVisor = pedidoVisor && (pedidoVisor.equipos || [])[parseInt(btn.dataset.obsIndex, 10)];
         if (!itemVisor) return;

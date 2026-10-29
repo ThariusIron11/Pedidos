@@ -538,7 +538,7 @@
 
   function cerrarFicha() {
     modalFicha.classList.remove('open');
-    desuscribirObservaciones();
+    if (!modalObsRapido.classList.contains('open')) desuscribirObservaciones();
   }
 
   btnCerrarFicha.addEventListener('click', () => cerrarFicha());
@@ -592,6 +592,11 @@
 
   const obsContenedor = document.getElementById('ficha-reparacion-observaciones');
   const obsContador = document.getElementById('ficha-obs-contador');
+  // Ventana exclusiva de observaciones (acceso rápido desde la lista): usa
+  // las mismas fichas, filtros y acciones que la pestaña de la ficha.
+  const modalObsRapido = document.getElementById('modal-obs-rapido');
+  const obsRapidoHeader = document.getElementById('obs-rapido-header');
+  const obsContenedorRapido = document.getElementById('obs-rapido-contenedor');
   const obsTabBtn = modalFicha.querySelector('[data-subtab="ficha-reparacion-observaciones"]');
 
   let obsReparacionId = null;   // reparación cuyas fichas se están escuchando
@@ -791,13 +796,15 @@
       tarjetasHtml += '<div class="obs-vacio">Todavía no hay fichas. Crea la primera con «Nueva ficha».</div>';
     }
 
-    obsContenedor.innerHTML = `
+    const htmlObs = `
       <div class="obs-barra">
         ${chips}
         <span class="obs-espacio"></span>
         <button type="button" class="btn" data-obs-accion="nueva">+ Nueva ficha</button>
       </div>
       <div class="obs-grid">${tarjetasHtml}</div>`;
+    obsContenedor.innerHTML = htmlObs;
+    obsContenedorRapido.innerHTML = htmlObs;
 
     requestAnimationFrame(ajustarPlegadoObservaciones);
   }
@@ -805,7 +812,7 @@
   // Muestra "Ver más" solo en las fichas cuyo texto no cabe en las 3 líneas.
   // Hay que medir con la pestaña visible; por eso también se llama al abrirla.
   function ajustarPlegadoObservaciones() {
-    obsContenedor.querySelectorAll('.obs-card').forEach(card => {
+    [obsContenedor, obsContenedorRapido].forEach(c => c.querySelectorAll('.obs-card').forEach(card => {
       const cuerpo = card.querySelector('.obs-cuerpo');
       const boton = card.querySelector('.obs-ver-mas');
       if (!cuerpo || !boton) return;
@@ -816,12 +823,12 @@
       }
       boton.hidden = !(cuerpo.scrollHeight > cuerpo.clientHeight + 2);
       boton.textContent = 'Ver más';
-    });
+    }));
   }
 
   obsTabBtn.addEventListener('click', () => requestAnimationFrame(ajustarPlegadoObservaciones));
 
-  obsContenedor.addEventListener('click', async (e) => {
+  async function manejarClickObservaciones(e) {
     const chip = e.target.closest('[data-obs-filtro]');
     if (chip) {
       obsFiltro = chip.dataset.obsFiltro;
@@ -842,9 +849,25 @@
       case 'editar':
         if (ficha) abrirModalObservacion(ficha);
         break;
-      case 'editar-ingreso':
-        btnEditarDesdeFicha.click();
+      case 'editar-ingreso': {
+        // Desde la ventana rápida no hay ficha abierta: se pasa directo al
+        // formulario de edición (Equipos, donde viven las observaciones iniciales).
+        if (modalObsRapido.classList.contains('open')) {
+          const rep = reparacionesCache.find(r => r.id === obsReparacionId);
+          cerrarObsRapido();
+          // Si la ventana se abrió desde la ficha de un pedido, esa ficha se
+          // cierra para que el formulario de edición no quede detrás.
+          const fichaPedido = document.getElementById('modal-ficha-pedido');
+          if (fichaPedido && fichaPedido.classList.contains('open')) {
+            const cerrarPedido = document.getElementById('btn-cerrar-ficha-pedido');
+            if (cerrarPedido) cerrarPedido.click();
+          }
+          if (rep) abrirModalEditar(rep, 'reparacion-equipos');
+        } else {
+          btnEditarDesdeFicha.click();
+        }
         break;
+      }
       case 'mas': {
         const abre = !card.classList.contains('abierta');
         card.classList.toggle('abierta', abre);
@@ -873,6 +896,48 @@
         }
         break;
     }
+  }
+  obsContenedor.addEventListener('click', manejarClickObservaciones);
+  obsContenedorRapido.addEventListener('click', manejarClickObservaciones);
+
+  // ---------- Ventana exclusiva de observaciones (acceso rápido) ----------
+
+  function abrirObsRapido(reparacion) {
+    suscribirObservaciones(reparacion.id);
+    obsRapidoHeader.textContent = '📝 Observaciones · ' + fichaTextoHeader(reparacion);
+    renderObservaciones();
+    modalObsRapido.classList.add('open');
+    requestAnimationFrame(ajustarPlegadoObservaciones);
+  }
+
+  function cerrarObsRapido() {
+    modalObsRapido.classList.remove('open');
+    if (!modalFicha.classList.contains('open')) desuscribirObservaciones();
+  }
+
+  // Permite abrir esta ventana desde otro archivo — ej. el 📄 de un equipo
+  // de reparación en pedidos.js. Si la lista de reparaciones aún no se ha
+  // cargado (no se ha entrado a esa pestaña), se inicia la escucha y se abre
+  // en cuanto llega la reparación.
+  window.abrirObservacionesReparacion = function (reparacionId) {
+    const buscar = () => reparacionesCache.find(r => r.id === reparacionId);
+    const ya = buscar();
+    if (ya) { abrirObsRapido(ya); return; }
+    iniciarSuscripcion();
+    const alLlegar = () => {
+      const r = buscar();
+      if (!r) return;
+      document.removeEventListener('reparaciones:cambio', alLlegar);
+      clearTimeout(temporizador);
+      abrirObsRapido(r);
+    };
+    const temporizador = setTimeout(() => document.removeEventListener('reparaciones:cambio', alLlegar), 8000);
+    document.addEventListener('reparaciones:cambio', alLlegar);
+  };
+
+  document.getElementById('btn-cerrar-obs-rapido').addEventListener('click', cerrarObsRapido);
+  modalObsRapido.addEventListener('click', (e) => {
+    if (e.target === modalObsRapido) cerrarObsRapido();
   });
 
   // ---------- Modal: crear / editar una ficha ----------
@@ -2341,6 +2406,7 @@
             ${completada ? '<span class="tag-pedido-completado">COMPLETADO</span>' : ''}
             ${reparacion.devuelta ? '<span class="tag-pedido-devolucion">DEVOLUCIÓN</span>' : ''}
             <div class="reparacion-card-actions">
+              <button type="button" class="btn-obs-rapido" data-lectura-ok data-id="${reparacion.id}" title="Ver observaciones" aria-label="Ver observaciones">📝</button>
               <button type="button" class="btn-eliminar" data-id="${reparacion.id}" title="Eliminar">🗑️</button>
             </div>
           </div>
@@ -2359,6 +2425,12 @@
         if (e.target.closest('button') || e.target.closest('a')) return;
         const reparacion = reparacionesCache.find(r => r.id === card.dataset.id);
         if (reparacion) abrirFicha(reparacion);
+      });
+    });
+    listaContenedor.querySelectorAll('.btn-obs-rapido').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const reparacion = reparacionesCache.find(r => r.id === btn.dataset.id);
+        if (reparacion) abrirObsRapido(reparacion);
       });
     });
     listaContenedor.querySelectorAll('.btn-eliminar').forEach(btn => {
@@ -2436,6 +2508,7 @@
   // snapshot con los datos frescos, si esa ficha sigue abierta, se refresca
   // conservando el subtab en el que estaba.
   document.addEventListener('reparaciones:cambio', () => {
+    if (modalObsRapido.classList.contains('open')) renderObservaciones(); // la ficha "Ingreso" sale de la reparación
     if (!modalFicha.classList.contains('open')) return;
     const reparacionActual = reparacionesCache.find(r => r.id === btnEditarDesdeFicha.dataset.id);
     if (reparacionActual) abrirFicha(reparacionActual, subtabFichaActiva());
