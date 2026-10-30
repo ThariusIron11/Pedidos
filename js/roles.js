@@ -1,6 +1,7 @@
 // =====================================================================
-// Roles de usuario: "edicion" (como siempre), "lectura" (solo observar) y
-// "parcial" (solo lectura, salvo Simulaciones).
+// Roles de usuario: "edicion" (como siempre), "lectura" (solo observar),
+// "parcial" (solo lectura, salvo Simulaciones) y "tecnico" (solo lectura,
+// salvo las fichas de observación de las Reparaciones).
 //
 // El rol sale del documento  usuarios/{uid}  (el mismo que ya usa auth.js
 // para dar acceso), campo  rol :
@@ -8,6 +9,9 @@
 //     'lectura' → solo lectura
 //     'parcial' → solo lectura en todo, MENOS las simulaciones de Envíos:
 //                 ahí puede crear, editar y eliminar (ver reglas abajo)
+//     'tecnico' → solo lectura en todo, MENOS las fichas de observación de
+//                 las reparaciones: puede crearlas, editarlas, fijarlas y
+//                 eliminarlas (reparaciones/{id}/observaciones)
 // auth.js lo lee al iniciar sesión y lo entrega en el evento 'auth:listo'.
 //
 // Un usuario de lectura puede: abrir fichas, moverse entre pestañas, buscar
@@ -21,18 +25,26 @@
 (function () {
   'use strict';
 
-  let rol = null;            // null = sin resolver | 'edicion' | 'lectura' | 'parcial'
+  let rol = null;            // null = sin resolver | 'edicion' | 'lectura' | 'parcial' | 'tecnico'
   let motivo = '';
 
   window.rolUsuario = () => rol;
   window.puedeEditar = () => rol === 'edicion';
   window.puedeEditarSimulaciones = () => rol === 'edicion' || rol === 'parcial';
+  window.puedeEditarObservaciones = () => rol === 'edicion' || rol === 'tecnico';
 
   // El rol "parcial" solo puede escribir en esta colección de Firestore, y
   // solo puede tocar controles dentro de estas zonas de la pantalla.
   const COLECCION_PARCIAL = 'simulaciones';
   const SELECTOR_ZONA_PARCIAL = '#subtab-simulaciones-lista, #modal-ficha-simulacion';
-  const esRestringido = () => rol === 'lectura' || rol === 'parcial';
+  // El rol "tecnico" solo puede escribir en la subcolección de observaciones
+  // de las reparaciones, y solo puede tocar controles de las fichas de
+  // observación (pestaña de la ficha, ventana rápida y formulario). La ficha
+  // "Ingreso" no se edita desde aquí: modifica la reparación misma.
+  const COLECCION_TECNICO = 'reparaciones/observaciones';
+  const SELECTOR_ZONA_TECNICO = '#ficha-reparacion-observaciones, #obs-rapido-contenedor, #modal-obs-ficha';
+  const SELECTOR_EXCLUIDOS_TECNICO = '[data-obs-accion="editar-ingreso"]';
+  const esRestringido = () => rol === 'lectura' || rol === 'parcial' || rol === 'tecnico';
 
   // ---------- Qué SÍ puede usar un usuario de solo lectura ----------
   // Todo botón/campo que no coincida con esta lista se oculta o se bloquea
@@ -62,6 +74,9 @@
     if (el.closest('.login-overlay')) return true;
     // Parcial: dentro de Simulaciones (lista y ficha) todo queda habilitado.
     if (rol === 'parcial' && el.closest(SELECTOR_ZONA_PARCIAL)) return true;
+    // Técnico: dentro de las fichas de observación de reparaciones todo queda
+    // habilitado (menos editar la ficha "Ingreso").
+    if (rol === 'tecnico' && el.closest(SELECTOR_ZONA_TECNICO) && !el.matches(SELECTOR_EXCLUIDOS_TECNICO)) return true;
     return el.matches(SELECTOR_PERMITIDOS);
   }
 
@@ -113,7 +128,9 @@
     }
     aviso.textContent = rol === 'parcial'
       ? '🧮 Tu usuario solo puede crear y modificar simulaciones.'
-      : '👁️ Tu usuario es de solo lectura: no puede crear ni modificar datos.';
+      : rol === 'tecnico'
+        ? '🛠️ Tu usuario técnico solo puede crear y modificar observaciones de reparaciones.'
+        : '👁️ Tu usuario es de solo lectura: no puede crear ni modificar datos.';
     aviso.classList.add('visible');
     clearTimeout(timerAviso);
     timerAviso = setTimeout(() => aviso.classList.remove('visible'), 3500);
@@ -129,14 +146,23 @@
       avisarSoloLectura();
       return new Error(rol === 'parcial'
         ? 'Tu usuario solo puede escribir en simulaciones.'
-        : 'Tu usuario es de solo lectura.');
+        : rol === 'tecnico'
+          ? 'Tu usuario solo puede escribir en las observaciones de reparaciones.'
+          : 'Tu usuario es de solo lectura.');
     };
-    // Colección a la que apunta cada escritura (para el rol "parcial").
-    const colDeDocumento = (self) => self && self.parent && self.parent.id;       // doc.set/update/delete
-    const colDeColeccion = (self) => self && self.id;                              // collection.add
-    const colDeArg0 = (self, args) => args[0] && args[0].parent && args[0].parent.id; // batch/transaction.set(ref, …)
+    // Colección a la que apunta cada escritura (para los roles "parcial" y
+    // "tecnico"). Una colección de primer nivel se identifica por su id
+    // ('simulaciones'); una subcolección, por 'colección/subcolección'
+    // ('reparaciones/observaciones').
+    const claveColeccion = (col) => {
+      if (!col) return null;
+      return col.parent && col.parent.parent ? col.parent.parent.id + '/' + col.id : col.id;
+    };
+    const colDeDocumento = (self) => self && claveColeccion(self.parent);          // doc.set/update/delete
+    const colDeColeccion = (self) => claveColeccion(self);                          // collection.add
+    const colDeArg0 = (self, args) => args[0] && claveColeccion(args[0].parent);    // batch/transaction.set(ref, …)
 
-    // soloLectura = true → el rol "parcial" no se frena en ese método (p. ej.
+    // soloLectura = true → los roles "parcial" y "tecnico" no se frenan en ese método (p. ej.
     // batch.commit: sus operaciones ya se revisaron una por una).
     const envolver = (proto, metodo, asincrono, colDe, soloLectura) => {
       if (!proto || typeof proto[metodo] !== 'function' || proto[metodo].__guardaRoles) return;
@@ -144,7 +170,8 @@
       const envuelto = function (...args) {
         const col = colDe ? colDe(this, args) : null;
         const frenar = rol === 'lectura' ||
-          (rol === 'parcial' && !soloLectura && col !== COLECCION_PARCIAL);
+          (rol === 'parcial' && !soloLectura && col !== COLECCION_PARCIAL) ||
+          (rol === 'tecnico' && !soloLectura && col !== COLECCION_TECNICO);
         if (frenar) {
           const error = bloqueado();
           if (asincrono) return Promise.reject(error);
@@ -180,6 +207,9 @@
     if (rol === 'parcial') {
       badge.textContent = '🧮 Parcial: solo Simulaciones';
       badge.title = motivo || 'Puedes ver todo; solo puedes crear, editar y eliminar simulaciones de envío.';
+    } else if (rol === 'tecnico') {
+      badge.textContent = '🛠️ Técnico: observaciones';
+      badge.title = motivo || 'Puedes ver todo; solo puedes crear, editar y eliminar fichas de observación de las reparaciones.';
     } else {
       badge.textContent = '👁️ Solo lectura';
       badge.title = motivo || 'Puedes ver todo, pero no crear ni modificar datos.';
@@ -193,6 +223,7 @@
     document.body.classList.remove('rol-pendiente');
     document.body.classList.toggle('rol-lectura', rol === 'lectura');
     document.body.classList.toggle('rol-parcial', rol === 'parcial');
+    document.body.classList.toggle('rol-tecnico', rol === 'tecnico');
     if (esRestringido()) barrer(document.body);
     else restaurarTodo();
     actualizarInsignia();
@@ -223,6 +254,8 @@
       fijarRol('lectura', '');
     } else if (rolAcceso === 'parcial') {
       fijarRol('parcial', '');
+    } else if (rolAcceso === 'tecnico') {
+      fijarRol('tecnico', '');
     } else {
       // Rol desconocido: por seguridad, solo lectura.
       fijarRol('lectura', 'No se pudo determinar el rol de este usuario; por seguridad queda en solo lectura.');
