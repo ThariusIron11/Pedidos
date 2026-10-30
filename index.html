@@ -2255,6 +2255,8 @@
 
   .filtros-pedidos{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
   .filtros-pedidos-activos{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .pastilla-cliente-pedidos:empty{ display:none; }
+  .pastilla-cliente-pedidos .filtro-chip-activo > span:nth-child(2){ max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .filtro-chip-activo{
     display:inline-flex; align-items:center; gap:6px;
     font-size:12.5px; font-weight:600;
@@ -3066,9 +3068,14 @@
         <div class="cabecera-fija">
           <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
             <div class="form-group" style="max-width:300px; margin-bottom:0; flex:1; position:relative;">
-              <input type="text" id="buscador-pedidos" placeholder="Buscar por equipo, cliente, subsidiaria, contacto o N° de pedido..." autocomplete="off">
+              <input type="text" id="buscador-pedidos" placeholder="Buscar por equipo, contacto, N° de pedido o remisión..." autocomplete="off">
               <div class="buscador-resultados" id="resultados-buscador-pedidos"></div>
             </div>
+            <div class="form-group" style="max-width:250px; margin-bottom:0; flex:1; position:relative;">
+              <input type="text" id="buscador-cliente-pedidos" placeholder="Buscar cliente (empresa o subsidiaria)..." autocomplete="off">
+              <div class="buscador-resultados" id="resultados-buscador-cliente-pedidos"></div>
+            </div>
+            <div class="filtros-pedidos-activos pastilla-cliente-pedidos" id="pastilla-cliente-pedidos"></div>
             <div class="form-group" style="max-width:220px; margin-bottom:0; flex:1; position:relative;">
               <input type="text" id="buscador-serial-pedidos" placeholder="Buscar por número de serial..." autocomplete="off">
               <div class="buscador-resultados" id="resultados-buscador-serial-pedidos"></div>
@@ -3079,6 +3086,13 @@
                 <button type="button" class="chip-filtro-estado" id="btn-agregar-filtro-pedidos">＋ Filtro</button>
                 <div class="filtro-menu" id="menu-filtros-pedidos"></div>
               </div>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <select id="orden-pedidos" data-lectura-ok title="Ordenar la lista de pedidos" aria-label="Ordenar la lista de pedidos">
+                <option value="">↕️ Orden: por número</option>
+                <option value="nombre_asc">🔤 Nombre A → Z</option>
+                <option value="nombre_desc">🔤 Nombre Z → A</option>
+              </select>
             </div>
             <button type="button" class="btn" id="btn-nuevo-pedido" style="margin-left:auto;">+ Nuevo pedido</button>
           </div>
@@ -3169,6 +3183,13 @@
             </div>
             <div class="filtro-estado-pedidos" id="filtro-tiene-pedido-reparaciones">
               <button type="button" class="chip-filtro-estado" id="chip-tiene-pedido-reparaciones">🧾 Con pedido</button>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <select id="orden-reparaciones" data-lectura-ok title="Ordenar la lista de reparaciones" aria-label="Ordenar la lista de reparaciones">
+                <option value="">↕️ Orden: por número</option>
+                <option value="nombre_asc">🔤 Nombre A → Z</option>
+                <option value="nombre_desc">🔤 Nombre Z → A</option>
+              </select>
             </div>
             <button type="button" class="btn" id="btn-nueva-reparacion" style="margin-left:auto;">+ Nueva reparación</button>
           </div>

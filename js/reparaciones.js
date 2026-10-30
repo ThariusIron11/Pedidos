@@ -292,6 +292,7 @@
   let filtroTexto = '';
   let filtroEstadoReparaciones = 'en_proceso'; // predeterminado, igual que en Pedidos
   let filtroTienePedido = false; // chip adicional "Con pedido", independiente del de estado
+  let ordenReparaciones = ''; // '' (por número) | 'nombre_asc' | 'nombre_desc'
 
   // ---------- Helpers ----------
 
@@ -2255,6 +2256,12 @@
     renderLista();
   });
 
+  // ---------- Orden de la lista (por número / por nombre) ----------
+  document.getElementById('orden-reparaciones').addEventListener('change', (e) => {
+    ordenReparaciones = e.target.value;
+    renderLista();
+  });
+
   // ---------- Filtro de estado (En proceso / Completado / Devolución / Todos) ----------
   // "Devolución" queda con la etiqueta lista pero sin lógica propia todavía
   // — por ahora no filtra nada especial (se comporta como "Todos") hasta
@@ -2380,7 +2387,21 @@
     }
     tablaEmpty.style.display = 'none';
 
-    const ordenadas = [...filtradas].sort((a, b) => a.numero - b.numero);
+    // Por número (como siempre) o por nombre de la compañía; a igual nombre,
+    // por número. Compañías no encontradas, al final.
+    const ordenadas = [...filtradas].sort((a, b) => {
+      if (ordenReparaciones) {
+        const nombreA = buscarCompania(a.companiaId)?.nombre;
+        const nombreB = buscarCompania(b.companiaId)?.nombre;
+        if (nombreA || nombreB) {
+          if (!nombreA) return 1;
+          if (!nombreB) return -1;
+          const r = String(nombreA).localeCompare(String(nombreB), 'es', { sensitivity: 'base', numeric: true });
+          if (r) return ordenReparaciones === 'nombre_desc' ? -r : r;
+        }
+      }
+      return a.numero - b.numero;
+    });
 
     listaContenedor.innerHTML = ordenadas.map(reparacion => {
       const compania = buscarCompania(reparacion.companiaId);

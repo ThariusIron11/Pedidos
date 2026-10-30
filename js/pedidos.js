@@ -4074,13 +4074,18 @@
   ];
   const TITULO_GRUPO_FILTRO = { estado: 'Estado', tipo: 'Tipo de pedido', envio: 'Envío', planta: 'Planta de cumplimiento' };
   const filtrosActivosPedidos = { estado: new Set(['en_proceso']), tipo: new Set(), envio: new Set(), planta: new Set() }; // "En proceso" queda por defecto
+  // Filtro por cliente (buscador propio + pastilla): id de la empresa o
+  // subsidiaria elegida, o null. Se combina con los demás filtros.
+  let clienteFiltroPedidosId = null;
+  // Orden de la lista: '' (por número, como siempre) | 'nombre_asc' | 'nombre_desc'.
+  let ordenPedidos = '';
 
   const contenedorFiltrosActivos = document.getElementById('filtros-pedidos-activos');
   const btnAgregarFiltro = document.getElementById('btn-agregar-filtro-pedidos');
   const menuFiltros = document.getElementById('menu-filtros-pedidos');
 
   function hayFiltrosActivosPedidos() {
-    return filtrosActivosPedidos.estado.size > 0 || filtrosActivosPedidos.tipo.size > 0 || filtrosActivosPedidos.envio.size > 0 || filtrosActivosPedidos.planta.size > 0;
+    return !!clienteFiltroPedidosId || filtrosActivosPedidos.estado.size > 0 || filtrosActivosPedidos.tipo.size > 0 || filtrosActivosPedidos.envio.size > 0 || filtrosActivosPedidos.planta.size > 0;
   }
 
   // El aviso/ficha de devolución solo aplica cuando "Devolución" es el único
@@ -4238,6 +4243,7 @@
   function pedidosPorFiltroEstado(lista) {
     const { estado, tipo, envio, planta } = filtrosActivosPedidos;
     return lista.filter(pedido => {
+      if (clienteFiltroPedidosId && !pedidoCoincideConCliente(pedido)) return false;
       if (tipo.size && !tipo.has(tipoEfectivoPedido(pedido))) return false;
       // Planta: sin ninguna elegida se ven todos; con una o ambas, solo esas.
       if (planta.size && !planta.has(plantaDePedido(pedido))) return false;
@@ -4297,14 +4303,12 @@
   function pedidoCoincideConBusquedaTexto(pedido, texto) {
     if (!texto) return true;
     if (normalizar(textoNumeroPedido(pedido)).includes(texto)) return true;
-    const compania = buscarCompania(pedido.companiaId);
-    if (compania && normalizar(compania.nombre).includes(texto)) return true;
+    // El nombre de la empresa / subsidiaria ya no se busca aquí: tiene su
+    // propio buscador de cliente (con pastilla) justo al lado.
     if (pedido.contacto && normalizar(pedido.contacto).includes(texto)) return true;
-    // Envío a subsidiaria: también se busca por el nombre de la subsidiaria
-    // y por el contacto (encargado) de esa subsidiaria.
+    // Envío a subsidiaria: también se busca por el contacto (encargado) de
+    // esa subsidiaria.
     if (pedido.envioSubsidiaria) {
-      const subsidiaria = (window.clientesCache || []).find(c => c.id === pedido.subsidiariaId);
-      if (subsidiaria && normalizar(subsidiaria.nombre).includes(texto)) return true;
       if (pedido.subsidiariaContacto && normalizar(pedido.subsidiariaContacto).includes(texto)) return true;
     }
     if ((pedido.equipos || []).some(item => normalizar(nombreItemPedido(item)).includes(texto))) return true;
@@ -4318,6 +4322,117 @@
   function pedidoCoincideConBusqueda(pedido) {
     return pedidoCoincideConBusquedaTexto(pedido, filtroTextoPedidos);
   }
+
+  // ---------- Buscador de cliente (empresa / subsidiaria) + pastilla ----------
+  // Sale de la lista de clientes. Entran las empresas y las subsidiarias; las
+  // "subsidiarias de Edisatech" no. Al elegir uno queda como pastilla (con ×
+  // para quitarla) y la lista solo muestra los pedidos de ese cliente: los
+  // que lo tienen como compañía o como subsidiaria de destino.
+  const buscadorClientePedidos = document.getElementById('buscador-cliente-pedidos');
+  const resultadosBuscadorCliente = document.getElementById('resultados-buscador-cliente-pedidos');
+  const pastillaClientePedidos = document.getElementById('pastilla-cliente-pedidos');
+  const selectOrdenPedidos = document.getElementById('orden-pedidos');
+
+  function clientesParaFiltro() {
+    return (window.clientesCache || [])
+      .filter(c => c.tipo !== 'subsidiaria_edisatech')
+      .sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base', numeric: true }));
+  }
+
+  function iconoCliente(cliente) {
+    return cliente.tipo === 'subsidiaria' ? '🔗' : '🏢';
+  }
+
+  function pedidoCoincideConCliente(pedido) {
+    if (!clienteFiltroPedidosId) return true;
+    if (pedido.companiaId === clienteFiltroPedidosId) return true;
+    return !!pedido.envioSubsidiaria && pedido.subsidiariaId === clienteFiltroPedidosId;
+  }
+
+  function renderPastillaClientePedidos() {
+    const cliente = clienteFiltroPedidosId ? buscarCompania(clienteFiltroPedidosId) : null;
+    if (!cliente) {
+      pastillaClientePedidos.innerHTML = '';
+      return;
+    }
+    pastillaClientePedidos.innerHTML = `
+      <span class="filtro-chip-activo" title="Cliente: ${escapeHtml(cliente.nombre)}">
+        <span>${iconoCliente(cliente)}</span><span>${escapeHtml(cliente.nombre)}</span>
+        <button type="button" class="filtro-chip-quitar" aria-label="Quitar el filtro de cliente" title="Quitar cliente">×</button>
+      </span>`;
+    pastillaClientePedidos.querySelector('.filtro-chip-quitar').addEventListener('click', () => {
+      clienteFiltroPedidosId = null;
+      renderPastillaClientePedidos();
+      renderTabla();
+      mostrarSugerenciasPedidos();
+      mostrarSugerenciasSerial();
+    });
+  }
+
+  function mostrarSugerenciasCliente() {
+    const texto = normalizar(buscadorClientePedidos.value.trim());
+    const candidatos = clientesParaFiltro().filter(c => !texto || normalizar(c.nombre).includes(texto));
+
+    if (!candidatos.length) {
+      resultadosBuscadorCliente.innerHTML = '<div class="buscador-item-vacio">Sin clientes que coincidan</div>';
+      resultadosBuscadorCliente.classList.add('open');
+      return;
+    }
+    resultadosBuscadorCliente.innerHTML = candidatos.slice(0, 40).map(c => `
+      <div class="buscador-item" data-id="${escapeHtml(c.id)}">
+        ${iconoCliente(c)} ${escapeHtml(c.nombre)}
+        <span class="buscador-item-sub">${c.tipo === 'subsidiaria' ? 'Subsidiaria' : 'Empresa'}</span>
+      </div>`).join('');
+    resultadosBuscadorCliente.classList.add('open');
+
+    resultadosBuscadorCliente.querySelectorAll('.buscador-item').forEach(el => {
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        clienteFiltroPedidosId = el.dataset.id;
+        buscadorClientePedidos.value = '';
+        ocultarResultados(resultadosBuscadorCliente);
+        renderPastillaClientePedidos();
+        renderTabla();
+        mostrarSugerenciasPedidos();
+        mostrarSugerenciasSerial();
+      });
+    });
+  }
+
+  buscadorClientePedidos.addEventListener('input', mostrarSugerenciasCliente);
+  buscadorClientePedidos.addEventListener('focus', mostrarSugerenciasCliente);
+  buscadorClientePedidos.addEventListener('blur', () => setTimeout(() => ocultarResultados(resultadosBuscadorCliente), 120));
+  buscadorClientePedidos.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { buscadorClientePedidos.blur(); }
+  });
+
+  // Si cambian los clientes (p. ej. renombran o eliminan el elegido), la
+  // pastilla se actualiza; si ya no existe, el filtro se quita.
+  document.addEventListener('clientes:cambio', () => {
+    if (clienteFiltroPedidosId && !buscarCompania(clienteFiltroPedidosId)) clienteFiltroPedidosId = null;
+    renderPastillaClientePedidos();
+    renderTabla();
+  });
+
+  // ---------- Orden de la lista por nombre ----------
+  // Nombre = el de la compañía del pedido. Los prioritarios siguen yendo
+  // primero (regla de siempre); dentro de cada grupo se ordena por nombre y,
+  // a igual nombre, por número de pedido. Compañías no encontradas, al final.
+  function compararPedidosPorNombre(a, b) {
+    if (!ordenPedidos) return 0;
+    const nombreA = buscarCompania(a.companiaId)?.nombre;
+    const nombreB = buscarCompania(b.companiaId)?.nombre;
+    if (!nombreA && !nombreB) return 0;
+    if (!nombreA) return 1;
+    if (!nombreB) return -1;
+    const r = String(nombreA).localeCompare(String(nombreB), 'es', { sensitivity: 'base', numeric: true });
+    return ordenPedidos === 'nombre_desc' ? -r : r;
+  }
+
+  selectOrdenPedidos.addEventListener('change', () => {
+    ordenPedidos = selectOrdenPedidos.value;
+    renderTabla();
+  });
 
   // ---------- Sugerencias de autocompletar (dropdown bajo cada buscador) ----------
   // Ambos buscadores respetan el chip de estado activo: si está en "Todos"
@@ -4532,7 +4647,7 @@
     // Los pedidos con prioridad van primero (entre ellos, por número); luego
     // el resto, también por número.
     const ordenados = [...filtrados].sort((a, b) =>
-      (esPrioritario(b) - esPrioritario(a)) || compararPedidosPorNumero(a, b)
+      (esPrioritario(b) - esPrioritario(a)) || compararPedidosPorNombre(a, b) || compararPedidosPorNumero(a, b)
     );
 
     listaContenedor.innerHTML = ordenados.map(pedido => {
