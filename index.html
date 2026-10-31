@@ -132,6 +132,7 @@
     font-size: 12px;
     color: var(--ink-soft);
   }
+  .btn-cerrar-sesion-movil{ display: none; margin-left: 12px; white-space: nowrap; }
 
   #panels{
     flex: 1;
@@ -2936,6 +2937,9 @@
       padding: 10px;
     }
     #sidebar .brand, #sidebar .foot{ display: none; }
+    /* Sin barra lateral, "Cerrar sesión" pasa a la barra superior. */
+    .btn-cerrar-sesion-movil{ display: inline-block; }
+    header#topbar{ padding: 0 14px; }
     nav#tabs{ flex-direction: row; padding: 0; }
     nav#tabs button{ white-space: nowrap; }
 
@@ -3061,6 +3065,8 @@
     <header id="topbar">
       <h1 id="panel-title">Pedidos</h1>
       <div class="status" id="panel-status"></div>
+      <!-- Solo en celular: la barra lateral (con "Cerrar sesión") queda oculta -->
+      <button type="button" class="btn-link btn-cerrar-sesion-movil" id="btn-cerrar-sesion-movil" data-lectura-ok>Cerrar sesión</button>
     </header>
 
     <div id="panels">

@@ -22,7 +22,8 @@
   const btnGoogleLogin = document.getElementById('btn-google-login');
 
   const infoUsuarioCorreo = document.getElementById('sidebar-usuario-correo');
-  const btnCerrarSesion   = document.getElementById('btn-cerrar-sesion');
+  // Dos botones: el de la barra lateral (escritorio) y el de la barra superior (celular).
+  const botonesCerrarSesion = document.querySelectorAll('#btn-cerrar-sesion, #btn-cerrar-sesion-movil');
 
   const CLAVE_RECORDAR_CORREO = 'edisatech_ultimo_correo';
 
@@ -161,12 +162,12 @@
     }
   }
 
-  if (btnCerrarSesion) {
-    btnCerrarSesion.addEventListener('click', async () => {
+  botonesCerrarSesion.forEach(btn => {
+    btn.addEventListener('click', async () => {
       await firebase.auth().signOut();
       // Recarga limpia: reinicia todos los cachés y suscripciones de los
       // demás módulos en vez de tener que desconectarlos uno por uno.
       location.reload();
     });
-  }
+  });
 })();
