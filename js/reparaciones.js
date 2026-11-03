@@ -790,17 +790,26 @@
     return caja.innerHTML;
   }
 
+  function cuerpoObservacionHtml(ficha) {
+    return ficha.contenidoHtml
+      ? resaltarHtml(sanearHtmlObservaciones(ficha.contenidoHtml))
+      : `<span class="obs-sin">${ficha.esIngreso ? 'Sin observaciones registradas al ingreso.' : 'Sin contenido.'}</span>`;
+  }
+
+  // Fecha y autor ("20 oct 2026 · 👤 Juan P."); el Ingreso lleva su leyenda.
+  function subtituloObservacion(ficha) {
+    const fecha = ficha.fecha ? formatearFechaFicha(ficha.fecha) : '';
+    const autor = ficha.creadaPorNombre || ficha.creadaPor || '';
+    return ficha.esIngreso
+      ? `${fecha ? fecha + ' · ' : ''}Observaciones iniciales`
+      : escapeHtml(fecha) + (autor ? `${fecha ? ' · ' : ''}👤 ${resaltarTexto(autor)}` : '');
+  }
+
   function htmlTarjetaObservacion(ficha, reparacion) {
     const color = obsColor(ficha.color);
     const abierta = obsAbiertas.has(ficha.id);
-    const cuerpo = ficha.contenidoHtml
-      ? resaltarHtml(sanearHtmlObservaciones(ficha.contenidoHtml))
-      : `<span class="obs-sin">${ficha.esIngreso ? 'Sin observaciones registradas al ingreso.' : 'Sin contenido.'}</span>`;
-    const fecha = ficha.fecha ? formatearFechaFicha(ficha.fecha) : '';
-    const autor = ficha.creadaPorNombre || ficha.creadaPor || '';
-    const subtitulo = ficha.esIngreso
-      ? `${fecha ? fecha + ' · ' : ''}Observaciones iniciales`
-      : escapeHtml(fecha) + (autor ? `${fecha ? ' · ' : ''}👤 ${resaltarTexto(autor)}` : '');
+    const cuerpo = cuerpoObservacionHtml(ficha);
+    const subtitulo = subtituloObservacion(ficha);
 
     let acciones;
     if (ficha.esIngreso) {
@@ -947,13 +956,9 @@
         }
         break;
       }
-      case 'mas': {
-        const abre = !card.classList.contains('abierta');
-        card.classList.toggle('abierta', abre);
-        if (abre) obsAbiertas.add(id); else obsAbiertas.delete(id);
-        ajustarPlegadoObservaciones();
+      case 'mas':
+        abrirLectorObservacion(id);
         break;
-      }
       case 'fijar':
         if (!ficha) break;
         try {
@@ -993,6 +998,45 @@
   obsContenedor.addEventListener('click', manejarClickObservaciones);
   obsContenedorRapido.addEventListener('click', manejarClickObservaciones);
 
+  // ---------- Ventana de lectura de una ficha ("Ver más") ----------
+  // La ficha completa, sin recortar, en una ventana propia por encima de
+  // todo. Se cierra con la ✕, el botón Cerrar, un clic fuera o la tecla Esc.
+
+  const modalObsLector = document.getElementById('modal-obs-lector');
+  const obsLectorTitulo = document.getElementById('obs-lector-titulo');
+  const obsLectorContenido = document.getElementById('obs-lector-contenido');
+
+  function abrirLectorObservacion(fichaId) {
+    const reparacion = reparacionesCache.find(r => r.id === obsReparacionId);
+    if (!reparacion) return;
+    const ficha = obsTarjetas(reparacion).find(f => f.id === fichaId);
+    if (!ficha) return;
+    const color = obsColor(ficha.color);
+    const enlace = enlaceSeguro(ficha.enlace);
+    obsLectorTitulo.textContent = `${ficha.emoji || '📝'} ${ficha.titulo || 'Sin título'}`;
+    obsLectorContenido.innerHTML = `
+      <div class="obs-card obs-${color.id} abierta">
+        <div class="obs-fecha">${subtituloObservacion(ficha)}</div>
+        <div class="obs-cuerpo">${cuerpoObservacionHtml(ficha)}</div>
+        ${enlace ? `<a class="obs-enlace" href="${escapeAttr(enlace)}" target="_blank" rel="noopener noreferrer" data-lectura-ok>🔗 Abrir enlace ↗</a>` : ''}
+      </div>`;
+    obsLectorContenido.scrollTop = 0;
+    modalObsLector.classList.add('open');
+  }
+
+  function cerrarLectorObservacion() {
+    modalObsLector.classList.remove('open');
+  }
+
+  document.getElementById('btn-cerrar-obs-lector').addEventListener('click', cerrarLectorObservacion);
+  document.getElementById('btn-cerrar-obs-lector-pie').addEventListener('click', cerrarLectorObservacion);
+  modalObsLector.addEventListener('click', (e) => {
+    if (e.target === modalObsLector) cerrarLectorObservacion();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modalObsLector.classList.contains('open')) cerrarLectorObservacion();
+  });
+
   // ---------- Ventana exclusiva de observaciones (acceso rápido) ----------
 
   function abrirObsRapido(reparacion) {
@@ -1004,6 +1048,7 @@
   }
 
   function cerrarObsRapido() {
+    cerrarLectorObservacion();
     modalObsRapido.classList.remove('open');
     if (!modalFicha.classList.contains('open')) desuscribirObservaciones();
   }
