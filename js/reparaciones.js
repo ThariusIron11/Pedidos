@@ -294,7 +294,8 @@
   let filtroTexto = '';
   let filtroEstadoReparaciones = 'en_proceso'; // predeterminado, igual que en Pedidos
   let filtroTienePedido = false; // chip adicional "Con pedido", independiente del de estado
-  let ordenReparaciones = ''; // '' (por número) | 'nombre_asc' | 'nombre_desc'
+  let ordenReparacionesCriterio = 'numero'; // 'numero' | 'nombre'
+  let ordenReparacionesDir = 1;             // 1 ascendente | -1 descendente
 
   // ---------- Helpers ----------
 
@@ -2399,10 +2400,29 @@
   });
 
   // ---------- Orden de la lista (por número / por nombre) ----------
-  document.getElementById('orden-reparaciones').addEventListener('change', (e) => {
-    ordenReparaciones = e.target.value;
+  // Dos chips: clic en el inactivo lo activa en ascendente; clic en el activo
+  // invierte la dirección.
+  const contenedorOrdenReparaciones = document.getElementById('orden-reparaciones');
+  function pintarOrdenReparaciones() {
+    contenedorOrdenReparaciones.querySelectorAll('[data-orden]').forEach(btn => {
+      const activo = btn.dataset.orden === ordenReparacionesCriterio;
+      btn.classList.toggle('active', activo);
+      btn.querySelector('.orden-flecha').textContent = activo ? (ordenReparacionesDir === 1 ? '↑' : '↓') : '';
+    });
+  }
+  contenedorOrdenReparaciones.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-orden]');
+    if (!btn) return;
+    if (ordenReparacionesCriterio === btn.dataset.orden) {
+      ordenReparacionesDir *= -1;
+    } else {
+      ordenReparacionesCriterio = btn.dataset.orden;
+      ordenReparacionesDir = 1;
+    }
+    pintarOrdenReparaciones();
     renderLista();
   });
+  pintarOrdenReparaciones();
 
   // ---------- Filtro de estado (En proceso / Completado / Devolución / Todos) ----------
   // "Devolución" queda con la etiqueta lista pero sin lógica propia todavía
@@ -2529,20 +2549,22 @@
     }
     tablaEmpty.style.display = 'none';
 
-    // Por número (como siempre) o por nombre de la compañía; a igual nombre,
-    // por número. Compañías no encontradas, al final.
+    // Por número o por nombre de la compañía, en la dirección elegida. Por
+    // nombre, a igual nombre se desempata por número ascendente. Compañías
+    // no encontradas, al final.
     const ordenadas = [...filtradas].sort((a, b) => {
-      if (ordenReparaciones) {
+      if (ordenReparacionesCriterio === 'nombre') {
         const nombreA = buscarCompania(a.companiaId)?.nombre;
         const nombreB = buscarCompania(b.companiaId)?.nombre;
         if (nombreA || nombreB) {
           if (!nombreA) return 1;
           if (!nombreB) return -1;
           const r = String(nombreA).localeCompare(String(nombreB), 'es', { sensitivity: 'base', numeric: true });
-          if (r) return ordenReparaciones === 'nombre_desc' ? -r : r;
+          if (r) return r * ordenReparacionesDir;
         }
+        return a.numero - b.numero;
       }
-      return a.numero - b.numero;
+      return (a.numero - b.numero) * ordenReparacionesDir;
     });
 
     listaContenedor.innerHTML = ordenadas.map(reparacion => {

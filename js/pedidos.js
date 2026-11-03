@@ -4077,8 +4077,10 @@
   // Filtro por cliente (buscador propio + pastilla): id de la empresa o
   // subsidiaria elegida, o null. Se combina con los demás filtros.
   let clienteFiltroPedidosId = null;
-  // Orden de la lista: '' (por número, como siempre) | 'nombre_asc' | 'nombre_desc'.
-  let ordenPedidos = '';
+  // Orden de la lista: criterio 'numero' (predeterminado) | 'nombre', y
+  // dirección 1 (ascendente) | -1 (descendente).
+  let ordenPedidosCriterio = 'numero';
+  let ordenPedidosDir = 1;
 
   const contenedorFiltrosActivos = document.getElementById('filtros-pedidos-activos');
   const btnAgregarFiltro = document.getElementById('btn-agregar-filtro-pedidos');
@@ -4331,7 +4333,7 @@
   const buscadorClientePedidos = document.getElementById('buscador-cliente-pedidos');
   const resultadosBuscadorCliente = document.getElementById('resultados-buscador-cliente-pedidos');
   const pastillaClientePedidos = document.getElementById('pastilla-cliente-pedidos');
-  const selectOrdenPedidos = document.getElementById('orden-pedidos');
+  const contenedorOrdenPedidos = document.getElementById('orden-pedidos');
 
   function clientesParaFiltro() {
     return (window.clientesCache || [])
@@ -4419,20 +4421,38 @@
   // primero (regla de siempre); dentro de cada grupo se ordena por nombre y,
   // a igual nombre, por número de pedido. Compañías no encontradas, al final.
   function compararPedidosPorNombre(a, b) {
-    if (!ordenPedidos) return 0;
+    if (ordenPedidosCriterio !== 'nombre') return 0;
     const nombreA = buscarCompania(a.companiaId)?.nombre;
     const nombreB = buscarCompania(b.companiaId)?.nombre;
     if (!nombreA && !nombreB) return 0;
     if (!nombreA) return 1;
     if (!nombreB) return -1;
     const r = String(nombreA).localeCompare(String(nombreB), 'es', { sensitivity: 'base', numeric: true });
-    return ordenPedidos === 'nombre_desc' ? -r : r;
+    return r * ordenPedidosDir;
   }
 
-  selectOrdenPedidos.addEventListener('change', () => {
-    ordenPedidos = selectOrdenPedidos.value;
+  // Dos chips (Número / Nombre): clic en el inactivo lo activa en ascendente;
+  // clic en el activo invierte la dirección.
+  function pintarOrdenPedidos() {
+    contenedorOrdenPedidos.querySelectorAll('[data-orden]').forEach(btn => {
+      const activo = btn.dataset.orden === ordenPedidosCriterio;
+      btn.classList.toggle('active', activo);
+      btn.querySelector('.orden-flecha').textContent = activo ? (ordenPedidosDir === 1 ? '↑' : '↓') : '';
+    });
+  }
+  contenedorOrdenPedidos.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-orden]');
+    if (!btn) return;
+    if (ordenPedidosCriterio === btn.dataset.orden) {
+      ordenPedidosDir *= -1;
+    } else {
+      ordenPedidosCriterio = btn.dataset.orden;
+      ordenPedidosDir = 1;
+    }
+    pintarOrdenPedidos();
     renderTabla();
   });
+  pintarOrdenPedidos();
 
   // ---------- Sugerencias de autocompletar (dropdown bajo cada buscador) ----------
   // Ambos buscadores respetan el chip de estado activo: si está en "Todos"
@@ -4644,10 +4664,12 @@
     }
     tablaEmpty.style.display = 'none';
 
-    // Los pedidos con prioridad van primero (entre ellos, por número); luego
-    // el resto, también por número.
+    // Los pedidos con prioridad van primero; luego el resto. Dentro de cada
+    // grupo: por nombre (si es el criterio activo) y, a igual nombre, por
+    // número ascendente; o por número en la dirección elegida.
+    const dirNumero = ordenPedidosCriterio === 'numero' ? ordenPedidosDir : 1;
     const ordenados = [...filtrados].sort((a, b) =>
-      (esPrioritario(b) - esPrioritario(a)) || compararPedidosPorNombre(a, b) || compararPedidosPorNumero(a, b)
+      (esPrioritario(b) - esPrioritario(a)) || compararPedidosPorNombre(a, b) || (compararPedidosPorNumero(a, b) * dirNumero)
     );
 
     listaContenedor.innerHTML = ordenados.map(pedido => {
