@@ -56,6 +56,8 @@
       const doc = await db.collection('usuarios').doc(user.uid).get();
       if (!doc.exists) return null;
       const rol = doc.data().rol;
+      // Nombre para mostrar (opcional): campo "nombre" del documento /usuarios/{uid}.
+      window.nombreUsuarioActual = String(doc.data().nombre || '').trim();
       return (rol === 'normal' || rol === 'lectura' || rol === 'parcial' || rol === 'tecnico') ? rol : null;
     } catch (err) {
       return null;

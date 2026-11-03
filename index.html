@@ -371,6 +371,13 @@
   .obs-violeta{ --obs-bg:#efe8fa; --obs-barra:#8157c9; --obs-tit:#55318f; }
   .obs-barra{ display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
   .obs-barra .obs-espacio{ flex: 1; }
+  .obs-buscador{ width: 100%; padding: 8px 11px; margin-bottom: 10px; border: 1px solid #d4d7dc; border-radius: var(--radius); font: inherit; }
+  .obs-buscador:focus{ outline: none; border-color: var(--copper); }
+  .obs-chip-n{ font-weight: 600; opacity: .65; margin-left: 5px; }
+  .obs-card mark{ background: rgba(180,103,58,.22); color: inherit; border-radius: 3px; padding: 0 1px; }
+  /* Atajos de nueva ficha: quedan pegados abajo mientras se desplaza la lista */
+  .obs-atajos{ position: sticky; bottom: 0; z-index: 2; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; padding: 10px 0 8px; background: var(--paper-card, #fff); border-top: 1px solid #e2e4e9; }
+  .obs-atajos-lbl{ font-size: 12px; color: var(--ink-soft); margin-right: 2px; }
   .obs-chip{
     font-family: inherit; font-size: 12px; font-weight: 600;
     background: #fff; color: var(--ink-soft);
@@ -1944,6 +1951,8 @@
   .reparacion-card-actions button:hover{ color: var(--danger); border-color: var(--danger); background: rgba(0,0,0,0.04); }
 
   /* Botón de acceso rápido a las observaciones (en la tarjeta de la lista de reparaciones) */
+  .reparacion-card-actions .btn-obs-rapido{ position: relative; }
+  .btn-obs-rapido .obs-cnt{ position: absolute; top: -7px; right: -7px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--copper); color: #fff; font-size: 10.5px; font-weight: 700; line-height: 17px; text-align: center; pointer-events: none; }
   .reparacion-card-actions .btn-obs-rapido:hover{ color: var(--copper); border-color: var(--copper); background: rgba(0,0,0,0.04); }
 
   /* Ventana exclusiva de observaciones (acceso rápido desde la lista y desde Pedidos).

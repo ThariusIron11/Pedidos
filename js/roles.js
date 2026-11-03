@@ -169,9 +169,12 @@
       const original = proto[metodo];
       const envuelto = function (...args) {
         const col = colDe ? colDe(this, args) : null;
+        // Técnico: además de sus fichas, puede actualizar la reparación (las
+        // marcas de la lista). Qué campos puede tocar lo limitan las reglas de Firestore.
+        const tecnicoOk = col === COLECCION_TECNICO || (metodo === 'update' && col === 'reparaciones');
         const frenar = rol === 'lectura' ||
           (rol === 'parcial' && !soloLectura && col !== COLECCION_PARCIAL) ||
-          (rol === 'tecnico' && !soloLectura && col !== COLECCION_TECNICO);
+          (rol === 'tecnico' && !soloLectura && !tecnicoOk);
         if (frenar) {
           const error = bloqueado();
           if (asincrono) return Promise.reject(error);
