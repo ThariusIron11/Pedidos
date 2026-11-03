@@ -1597,6 +1597,33 @@
   }
   .unidad-envio-row.sin-disponible{ opacity: 0.5; cursor: default; }
   .unidad-envio-row input[type="checkbox"]{ accent-color: var(--copper); }
+  .unidad-envio-row{ padding: 6px 8px; border-radius: var(--radius); user-select: none; }
+  .unidad-envio-row:not(.sin-disponible):hover{ background: #f0f1f4; }
+  .unidad-envio-row.seleccionada{ background: #f6ece2; }
+  .equipo-envio-serial-titulo{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .contador-unidades{
+    display: block;
+    font-size: 11.5px;
+    font-weight: 400;
+    color: var(--ink-soft);
+    margin-top: 2px;
+  }
+  .chk-todas-unidades{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .chk-todas-unidades.sin-disponible{ opacity: 0.5; cursor: default; }
+  .chk-todas-unidades input[type="checkbox"]{ accent-color: var(--copper); }
 
   .equipos-envio-list{
     display: flex;

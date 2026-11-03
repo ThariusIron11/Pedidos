@@ -3791,6 +3791,21 @@
   selectQuienEncarga.addEventListener('change', actualizarVisibilidadCamposEnvio);
   radiosModoEnvio.forEach(r => r.addEventListener('change', actualizarVisibilidadCamposEnvio));
 
+  // Recalcula el contador "X de N seleccionadas" y el estado (marcada /
+  // intermedia / vacía) de la casilla "Todas" de un grupo de unidades con serial.
+  function refrescarGrupoSerial(grupo) {
+    const todas = grupo.querySelector('.equipo-envio-todas');
+    const habilitadas = Array.from(grupo.querySelectorAll('.equipo-envio-unidad:not(:disabled)'));
+    const marcadas = habilitadas.filter(c => c.checked).length;
+    const total = grupo.querySelectorAll('.equipo-envio-unidad').length;
+    todas.checked = habilitadas.length > 0 && marcadas === habilitadas.length;
+    todas.indeterminate = marcadas > 0 && marcadas < habilitadas.length;
+    grupo.querySelector('.contador-unidades').textContent = `${marcadas} de ${total} seleccionadas`;
+    grupo.querySelectorAll('.unidad-envio-row').forEach(fila => {
+      fila.classList.toggle('seleccionada', !!fila.querySelector('.equipo-envio-unidad')?.checked);
+    });
+  }
+
   function poblarChecklistEquipos() {
     const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
     if (!pedido) { equiposEnvioList.innerHTML = ''; return; }
@@ -3815,9 +3830,18 @@
             </label>
           `;
         }).join('');
+        const disponiblesSerial = Array.from({ length: total }).filter((_, u) => !reservadas.has(u)).length;
         return `
-          <div class="equipo-envio-group">
-            <div class="equipo-envio-group-titulo">${escapeHtml(nombreItemPedido(item))} — elige unidades</div>
+          <div class="equipo-envio-group equipo-envio-serial" data-index="${index}">
+            <div class="equipo-envio-group-titulo equipo-envio-serial-titulo">
+              <span>${escapeHtml(nombreItemPedido(item))} — elige unidades
+                <span class="contador-unidades">0 de ${total} seleccionadas</span>
+              </span>
+              <label class="chk-todas-unidades ${disponiblesSerial <= 0 ? 'sin-disponible' : ''}">
+                <input type="checkbox" class="equipo-envio-todas" data-index="${index}" ${disponiblesSerial <= 0 ? 'disabled' : ''}>
+                <span class="todas-texto">Todas (${disponiblesSerial} disponibles)</span>
+              </label>
+            </div>
             ${unidadesHtml}
           </div>
         `;
@@ -3873,6 +3897,7 @@
         </div>
       `;
     }).join('');
+    equiposEnvioList.querySelectorAll('.equipo-envio-serial').forEach(refrescarGrupoSerial);
   }
 
   function abrirModalAgregarEnvio() {
@@ -3901,6 +3926,37 @@
       const inp = fila.querySelector('.equipo-envio-cantidad');
       inp.value = inp.max;
     });
+  });
+
+  // Unidades con serial: casilla "Todas" del grupo (solo las habilitadas; las
+  // ya asignadas a otro envío se saltan solas).
+  equiposEnvioList.addEventListener('change', (e) => {
+    const todas = e.target.closest('.equipo-envio-todas');
+    if (!todas) return;
+    const grupo = todas.closest('.equipo-envio-serial');
+    grupo.querySelectorAll('.equipo-envio-unidad:not(:disabled)').forEach(c => { c.checked = todas.checked; });
+    delete grupo.dataset.ultimaUnidad;
+    refrescarGrupoSerial(grupo);
+  });
+
+  // Unidades con serial: Shift + clic marca (o desmarca) todo el rango entre la
+  // última unidad tocada y la actual, saltando las deshabilitadas.
+  equiposEnvioList.addEventListener('click', (e) => {
+    const chk = e.target.closest('.equipo-envio-unidad');
+    if (!chk) return;
+    const grupo = chk.closest('.equipo-envio-serial');
+    const idx = parseInt(chk.dataset.unidad, 10);
+    const ultima = grupo.dataset.ultimaUnidad !== undefined ? parseInt(grupo.dataset.ultimaUnidad, 10) : null;
+    if (e.shiftKey && ultima !== null) {
+      const desde = Math.min(ultima, idx);
+      const hasta = Math.max(ultima, idx);
+      grupo.querySelectorAll('.equipo-envio-unidad').forEach(c => {
+        const u = parseInt(c.dataset.unidad, 10);
+        if (u >= desde && u <= hasta && !c.disabled) c.checked = chk.checked;
+      });
+    }
+    grupo.dataset.ultimaUnidad = String(idx);
+    refrescarGrupoSerial(grupo);
   });
 
   btnAgregarAEnvio.addEventListener('click', abrirModalAgregarEnvio);
