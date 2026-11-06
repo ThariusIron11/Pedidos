@@ -2304,7 +2304,9 @@
     border-color: var(--graphite);
   }
 
-  .orden-chips{ display:flex; gap:6px; }
+  .orden-chips{ display:flex; gap:6px; flex-wrap:wrap; }
+  .ficha-remisiones{ display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; }
+  .remision-estado{ font-size:12px; color:var(--ink-soft); }
   .orden-chips .orden-flecha{ display:inline-block; min-width:1ch; }
   .filtros-pedidos{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
   .filtros-pedidos-activos{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
@@ -3148,6 +3150,7 @@
             <div class="orden-chips" id="orden-pedidos" role="group" aria-label="Ordenar la lista de pedidos">
                 <button type="button" class="chip-filtro-estado active" data-orden="numero" data-lectura-ok title="Ordenar por número (clic de nuevo para invertir)">Número <span class="orden-flecha">↑</span></button>
                 <button type="button" class="chip-filtro-estado" data-orden="nombre" data-lectura-ok title="Ordenar por nombre (clic de nuevo para invertir)">Nombre <span class="orden-flecha"></span></button>
+                <button type="button" class="chip-filtro-estado" data-orden="salida" data-lectura-ok title="Ordenar por fecha de salida del equipo (clic de nuevo para invertir)">Salida <span class="orden-flecha"></span></button>
               </div>
             <button type="button" class="btn" id="btn-nuevo-pedido" style="margin-left:auto;">+ Nuevo pedido</button>
           </div>
@@ -3242,6 +3245,7 @@
             <div class="orden-chips" id="orden-reparaciones" role="group" aria-label="Ordenar la lista de reparaciones">
                 <button type="button" class="chip-filtro-estado active" data-orden="numero" data-lectura-ok title="Ordenar por número (clic de nuevo para invertir)">Número <span class="orden-flecha">↑</span></button>
                 <button type="button" class="chip-filtro-estado" data-orden="nombre" data-lectura-ok title="Ordenar por nombre (clic de nuevo para invertir)">Nombre <span class="orden-flecha"></span></button>
+                <button type="button" class="chip-filtro-estado" data-orden="salida" data-lectura-ok title="Ordenar por fecha de salida del equipo (clic de nuevo para invertir)">Salida <span class="orden-flecha"></span></button>
               </div>
             <button type="button" class="btn" id="btn-nueva-reparacion" style="margin-left:auto;">+ Nueva reparación</button>
           </div>

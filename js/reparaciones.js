@@ -294,7 +294,7 @@
   let filtroTexto = '';
   let filtroEstadoReparaciones = 'en_proceso'; // predeterminado, igual que en Pedidos
   let filtroTienePedido = false; // chip adicional "Con pedido", independiente del de estado
-  let ordenReparacionesCriterio = 'numero'; // 'numero' | 'nombre'
+  let ordenReparacionesCriterio = 'numero'; // 'numero' | 'nombre' | 'salida'
   let ordenReparacionesDir = 1;             // 1 ascendente | -1 descendente
 
   // ---------- Helpers ----------
@@ -336,6 +336,49 @@
 
   function buscarCompania(id) {
     return (window.clientesCache || []).find(c => c.id === id);
+  }
+
+  // ---------- Envío / remisión de una reparación (solo lectura) ----------
+  // La reparación y su pedido comparten ID, y los envíos (window.enviosCache,
+  // expuesto por envios.js) guardan en pedidos[] qué pedidos llevan y con qué
+  // remisión. Acá solo se lee; nada se escribe en Envíos.
+  function enviosDeReparacion(reparacion) {
+    if (!reparacion.pedidoId) return [];
+    return (window.enviosCache || []).filter(envio =>
+      (envio.pedidos || []).some(p => p.pedidoId === reparacion.pedidoId)
+    );
+  }
+
+  // [{ remision, envio }] distintas (por envío + número) de esta reparación.
+  function remisionesDeReparacion(reparacion) {
+    const lista = [];
+    const vistas = new Set();
+    enviosDeReparacion(reparacion).forEach(envio => {
+      (envio.pedidos || []).forEach(p => {
+        if (p.pedidoId !== reparacion.pedidoId) return;
+        const remision = String(p.remision || '').trim();
+        if (!remision) return;
+        const clave = envio.id + '|' + remision;
+        if (vistas.has(clave)) return;
+        vistas.add(clave);
+        lista.push({ remision, envio });
+      });
+    });
+    return lista;
+  }
+
+  // Fecha de salida: la fechaEnvio más reciente entre sus envíos ('' si
+  // ninguno la tiene — un envío armado sin fecha tocada no cuenta).
+  function fechaSalidaReparacion(reparacion) {
+    let mejor = '';
+    enviosDeReparacion(reparacion).forEach(envio => {
+      if (envio.fechaEnvio && envio.fechaEnvio > mejor) mejor = envio.fechaEnvio;
+    });
+    return mejor;
+  }
+
+  function textoEstadoEnvio(envio) {
+    return envio.estado === 'despachado' ? '🚚 Despachado' : '📦 Armado';
   }
 
   function buscarEquipoCatalogo(id) {
@@ -439,12 +482,21 @@
       ? `<a href="${escapeAttr(reparacion.evidenciaFotografica)}" target="_blank" rel="noopener noreferrer">📷 Ver evidencia ↗</a><button type="button" class="btn-copiar-link" data-link="${encodeURIComponent(reparacion.evidenciaFotografica)}" title="Copiar el link de la evidencia">🔗 Copiar link</button>`
       : '— (sin evidencia)';
 
+    const remisiones = remisionesDeReparacion(reparacion);
+    const remisionHtml = remisiones.length
+      ? '<div class="ficha-remisiones">' + remisiones.map(({ remision, envio }) =>
+          `<span class="chip-remision">Remisión ${escapeHtml(remision)}</span>` +
+          `<span class="remision-estado">${textoEstadoEnvio(envio)}${envio.fechaEnvio ? ' · ' + formatearFechaCorta(envio.fechaEnvio) : ''}</span>`
+        ).join('') + '</div>'
+      : '— (aún sin envío)';
+
     fichaSeccionDatos.innerHTML = `
       <h4>Datos generales</h4>
       <div class="ficha-campos">
         ${campoFicha('Compañía', nombreCompania)}
         ${campoFicha('Encargado de reparaciones', contacto)}
         ${campoFicha('Día de ingreso', fecha)}
+        ${campoFicha('Remisión', remisionHtml)}
         ${campoFicha('Evidencia fotográfica', evidencia)}
       </div>
     `;
@@ -2417,7 +2469,8 @@
       ordenReparacionesDir *= -1;
     } else {
       ordenReparacionesCriterio = btn.dataset.orden;
-      ordenReparacionesDir = 1;
+      // En fechas lo natural es ver lo más reciente primero.
+      ordenReparacionesDir = ordenReparacionesCriterio === 'salida' ? -1 : 1;
     }
     pintarOrdenReparaciones();
     renderLista();
@@ -2552,7 +2605,23 @@
     // Por número o por nombre de la compañía, en la dirección elegida. Por
     // nombre, a igual nombre se desempata por número ascendente. Compañías
     // no encontradas, al final.
+    const fechasSalida = new Map();
+    if (ordenReparacionesCriterio === 'salida') {
+      filtradas.forEach(r => fechasSalida.set(r.id, fechaSalidaReparacion(r)));
+    }
     const ordenadas = [...filtradas].sort((a, b) => {
+      if (ordenReparacionesCriterio === 'salida') {
+        // Por fecha de salida del equipo; sin fecha, siempre al final en
+        // cualquier dirección; a igual fecha, por número ascendente.
+        const fa = fechasSalida.get(a.id) || '';
+        const fb = fechasSalida.get(b.id) || '';
+        if (fa !== fb) {
+          if (!fa) return 1;
+          if (!fb) return -1;
+          return (fa < fb ? -1 : 1) * ordenReparacionesDir;
+        }
+        return a.numero - b.numero;
+      }
       if (ordenReparacionesCriterio === 'nombre') {
         const nombreA = buscarCompania(a.companiaId)?.nombre;
         const nombreB = buscarCompania(b.companiaId)?.nombre;
@@ -2577,8 +2646,12 @@
       const evidenciaHtml = reparacion.evidenciaFotografica
         ? `<a class="reparacion-card-evidencia" href="${escapeAttr(reparacion.evidenciaFotografica)}" target="_blank" rel="noopener noreferrer">📷 Evidencia fotográfica ↗</a>`
         : '';
-      const footerHtml = (fechaHtml || evidenciaHtml)
-        ? `<div class="reparacion-card-footer">${fechaHtml}${evidenciaHtml}</div>`
+      const remisiones = remisionesDeReparacion(reparacion);
+      const remisionHtml = remisiones.length
+        ? `<span class="chip-remision" title="${escapeAttr(remisiones.map(x => 'Remisión ' + x.remision + ' · ' + textoEstadoEnvio(x.envio)).join('\n'))}">📄 Remisión ${escapeHtml(remisiones[0].remision)}${remisiones.length > 1 ? ` +${remisiones.length - 1}` : ''}</span>`
+        : '';
+      const footerHtml = (fechaHtml || remisionHtml || evidenciaHtml)
+        ? `<div class="reparacion-card-footer">${fechaHtml}${remisionHtml}${evidenciaHtml}</div>`
         : '';
 
       return `
@@ -2677,6 +2750,17 @@
         actualizarHeaderAcciones(reparacionAbierta);
         renderFichaEquipos(reparacionAbierta); // el reemplazo de equipo vive en el pedido, no acá
       }
+    }
+  });
+
+  // La remisión y la fecha de salida salen de los envíos: si uno cambia (se
+  // arma, se despacha, se edita su fecha), se refrescan la lista (tarjeta y
+  // orden por Salida) y, si está abierta, los datos generales de la ficha.
+  document.addEventListener('envios:cambio', () => {
+    renderLista();
+    if (modalFicha.classList.contains('open')) {
+      const reparacionAbierta = reparacionesCache.find(r => r.id === btnEditarDesdeFicha.dataset.id);
+      if (reparacionAbierta) renderFichaDatos(reparacionAbierta);
     }
   });
 

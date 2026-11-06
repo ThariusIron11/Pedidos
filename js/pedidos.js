@@ -4133,7 +4133,7 @@
   // Filtro por cliente (buscador propio + pastilla): id de la empresa o
   // subsidiaria elegida, o null. Se combina con los demás filtros.
   let clienteFiltroPedidosId = null;
-  // Orden de la lista: criterio 'numero' (predeterminado) | 'nombre', y
+  // Orden de la lista: criterio 'numero' (predeterminado) | 'nombre' | 'salida', y
   // dirección 1 (ascendente) | -1 (descendente).
   let ordenPedidosCriterio = 'numero';
   let ordenPedidosDir = 1;
@@ -4288,8 +4288,9 @@
 
   // Si cambia un envío (se arma, se despacha, se elimina), la lista debe
   // reflejarlo cuando hay un filtro de envío activo.
+  // También cuando se ordena por fecha de salida, que sale de los envíos.
   document.addEventListener('envios:cambio', () => {
-    if (!filtrosActivosPedidos.envio.size) return;
+    if (!filtrosActivosPedidos.envio.size && ordenPedidosCriterio !== 'salida') return;
     renderTabla();
     mostrarSugerenciasPedidos();
     mostrarSugerenciasSerial();
@@ -4476,6 +4477,32 @@
   // Nombre = el de la compañía del pedido. Los prioritarios siguen yendo
   // primero (regla de siempre); dentro de cada grupo se ordena por nombre y,
   // a igual nombre, por número de pedido. Compañías no encontradas, al final.
+  // Fecha de salida de cada pedido: la fechaEnvio más reciente entre los
+  // envíos (window.enviosCache) que lo incluyen. Un envío armado al que nunca
+  // se le tocó la fecha no cuenta (no tiene fechaEnvio guardada). Los pedidos
+  // sin fecha no aparecen en el mapa y van al final del orden por salida.
+  function mapaFechasSalidaPedidos() {
+    const mapa = new Map();
+    (window.enviosCache || []).forEach(envio => {
+      if (!envio.fechaEnvio) return;
+      (envio.pedidos || []).forEach(p => {
+        const previa = mapa.get(p.pedidoId);
+        if (!previa || envio.fechaEnvio > previa) mapa.set(p.pedidoId, envio.fechaEnvio);
+      });
+    });
+    return mapa;
+  }
+
+  function compararPedidosPorSalida(a, b, mapaSalida) {
+    if (ordenPedidosCriterio !== 'salida' || !mapaSalida) return 0;
+    const fa = mapaSalida.get(a.id) || '';
+    const fb = mapaSalida.get(b.id) || '';
+    if (fa === fb) return 0;
+    if (!fa) return 1;   // sin fecha: siempre al final, en cualquier dirección
+    if (!fb) return -1;
+    return (fa < fb ? -1 : 1) * ordenPedidosDir;
+  }
+
   function compararPedidosPorNombre(a, b) {
     if (ordenPedidosCriterio !== 'nombre') return 0;
     const nombreA = buscarCompania(a.companiaId)?.nombre;
@@ -4503,7 +4530,8 @@
       ordenPedidosDir *= -1;
     } else {
       ordenPedidosCriterio = btn.dataset.orden;
-      ordenPedidosDir = 1;
+      // En fechas lo natural es ver lo más reciente primero.
+      ordenPedidosDir = ordenPedidosCriterio === 'salida' ? -1 : 1;
     }
     pintarOrdenPedidos();
     renderTabla();
@@ -4721,11 +4749,16 @@
     tablaEmpty.style.display = 'none';
 
     // Los pedidos con prioridad van primero; luego el resto. Dentro de cada
-    // grupo: por nombre (si es el criterio activo) y, a igual nombre, por
-    // número ascendente; o por número en la dirección elegida.
+    // grupo: por nombre o por fecha de salida (según el criterio activo) y,
+    // a igual valor, por número ascendente; o por número en la dirección
+    // elegida.
     const dirNumero = ordenPedidosCriterio === 'numero' ? ordenPedidosDir : 1;
+    const mapaSalida = ordenPedidosCriterio === 'salida' ? mapaFechasSalidaPedidos() : null;
     const ordenados = [...filtrados].sort((a, b) =>
-      (esPrioritario(b) - esPrioritario(a)) || compararPedidosPorNombre(a, b) || (compararPedidosPorNumero(a, b) * dirNumero)
+      (esPrioritario(b) - esPrioritario(a)) ||
+      compararPedidosPorNombre(a, b) ||
+      compararPedidosPorSalida(a, b, mapaSalida) ||
+      (compararPedidosPorNumero(a, b) * dirNumero)
     );
 
     listaContenedor.innerHTML = ordenados.map(pedido => {
