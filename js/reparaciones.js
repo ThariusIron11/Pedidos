@@ -2565,6 +2565,8 @@
     if (normalizar(reparacion.contacto).includes(filtroTexto)) return true;
     if (normalizar(formatearNumero(reparacion.numero)).includes(filtroTexto)) return true;
     if (textoEquipoBusqueda(reparacion).includes(filtroTexto)) return true;
+    // También por número de remisión del envío (ej. "1234").
+    if (remisionesDeReparacion(reparacion).some(x => normalizar(x.remision).includes(filtroTexto))) return true;
     return false;
   }
 
