@@ -4371,6 +4371,8 @@
       if (pedido.subsidiariaContacto && normalizar(pedido.subsidiariaContacto).includes(texto)) return true;
     }
     if ((pedido.equipos || []).some(item => normalizar(nombreItemPedido(item)).includes(texto))) return true;
+    // Orden de compra: cada equipo del pedido puede traer la suya.
+    if ((pedido.equipos || []).some(item => normalizar(item.ordenCompra).includes(texto))) return true;
     // Remisiones: viven dentro de los envíos (un pedido puede tener varias,
     // repartidas en uno o más envíos), no en el propio documento del pedido.
     return (window.enviosCache || []).some(envio =>
@@ -4557,6 +4559,14 @@
     return null;
   }
 
+  // Primera orden de compra del pedido que coincide con el texto (para
+  // mostrarla en las sugerencias), o null.
+  function ocCoincidenteConTexto(pedido, texto) {
+    if (!texto) return null;
+    const item = (pedido.equipos || []).find(it => normalizar(it.ordenCompra).includes(texto));
+    return item ? String(item.ordenCompra).trim() : null;
+  }
+
   function etiquetaPedidoSugerencia(pedido) {
     const compania = buscarCompania(pedido.companiaId);
     const nombreCompania = compania ? compania.nombre : 'Compañía no encontrada';
@@ -4598,10 +4608,11 @@
 
     resultadosBuscadorPedidos.innerHTML = candidatos.map(p => {
       const remisionMatch = remisionCoincidenteConTexto(p, texto);
+      const ocMatch = ocCoincidenteConTexto(p, texto);
       return `
       <div class="buscador-item" data-id="${p.id}">
         ${escapeHtml(etiquetaPedidoSugerencia(p))}
-        <span class="buscador-item-sub">${(p.equipos || []).length} ${(p.equipos || []).length === 1 ? 'equipo' : 'equipos'}${pedidoEstaCompletado(p) ? ' · Completado' : ''}${remisionMatch ? ` · Remisión ${escapeHtml(remisionMatch)}` : ''}</span>
+        <span class="buscador-item-sub">${(p.equipos || []).length} ${(p.equipos || []).length === 1 ? 'equipo' : 'equipos'}${pedidoEstaCompletado(p) ? ' · Completado' : ''}${remisionMatch ? ` · Remisión ${escapeHtml(remisionMatch)}` : ''}${ocMatch ? ` · OC ${escapeHtml(ocMatch)}` : ''}</span>
       </div>
     `;
     }).join('');
