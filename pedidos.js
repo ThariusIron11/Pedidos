@@ -1,0 +1,4916 @@
+// ================== Pestaña: Pedidos ==================
+// CRUD de pedidos sobre Firestore (colección "pedidos").
+//
+// Cada pedido:
+// {
+//   numero (entero, se reutiliza el menor número libre si se borra un pedido.
+//           Cada tipo tiene su PROPIA numeración: Normal → N1, N2…;
+//           Traslado → T01, T02…; los de Reparación copian el R01 de su reparación),
+//   companiaId (referencia a "clientes"),
+//   contacto (nombre, tomado de contactosPedidos de la compañía),
+//   tipo ('normal' | 'reparacion' | 'traslado' — 'reparacion' se pone 'reparacion' automáticamente
+//         cuando el pedido se creó desde la ficha de una reparación),
+//   reparacionId (solo si viene de una reparación — mismo valor que el ID
+//                 de este mismo pedido, porque se crea con ese mismo ID;
+//                 ver "Enlace con Pedidos" en reparaciones.js),
+//   equipos: [{ equipoId, cantidad, ordenCompra }]
+// }
+//
+// Depende de los catálogos globales que exponen clientes.js y equipos.js:
+//   window.clientesCache  + evento 'clientes:cambio'
+//   window.equiposCache   + evento 'equipos-catalogo:cambio'
+//
+// Mismo comportamiento de modal que el resto de pestañas: backdrop conserva
+// el borrador, Cancelar limpia todo, reabrir retoma el borrador vigente.
+
+(function () {
+  const COLECCION = 'pedidos';
+
+  const listaContenedor = document.getElementById('pedidos-cards');
+  const tablaEmpty = document.getElementById('pedidos-empty');
+  const modal       = document.getElementById('modal-pedido');
+  const modalTitulo = document.getElementById('modal-pedido-titulo');
+  const form         = document.getElementById('form-pedido');
+
+  const inputId      = document.getElementById('pedido-id');
+  const inputNumero  = document.getElementById('pedido-numero');
+  const selectCompania = document.getElementById('pedido-compania');
+  const inputCompaniaTexto = document.getElementById('pedido-compania-input');
+  const resultadosCompania = document.getElementById('pedido-compania-resultados');
+  const selectContacto = document.getElementById('pedido-contacto');
+  const inputContactoTexto = document.getElementById('pedido-contacto-input');
+  const resultadosContacto = document.getElementById('pedido-contacto-resultados');
+  const checkboxEnvioSubsidiaria = document.getElementById('pedido-envio-subsidiaria');
+  const grupoSubsidiaria = document.getElementById('pedido-grupo-subsidiaria');
+  const selectSubsidiaria = document.getElementById('pedido-subsidiaria');
+  const inputSubsidiariaTexto = document.getElementById('pedido-subsidiaria-input');
+  const resultadosSubsidiaria = document.getElementById('pedido-subsidiaria-resultados');
+  const grupoSubsidiariaContacto = document.getElementById('pedido-grupo-subsidiaria-contacto');
+  const selectSubsidiariaContacto = document.getElementById('pedido-subsidiaria-contacto');
+  const inputSubsidiariaContactoTexto = document.getElementById('pedido-subsidiaria-contacto-input');
+  const resultadosSubsidiariaContacto = document.getElementById('pedido-subsidiaria-contacto-resultados');
+  const equiposPedidoList = document.getElementById('equipos-pedido-list');
+  const radiosTipoPedido = form.querySelectorAll('input[name="tipo-pedido"]');
+  const radiosPlantaPedido = form.querySelectorAll('input[name="planta-pedido"]');
+  const btnAddEquipoPedido = document.getElementById('btn-add-equipo-pedido');
+  const btnAddContenedorPedido = document.getElementById('btn-add-contenedor-pedido');
+  const inputEvidenciaPedido = document.getElementById('pedido-evidencia');
+  const evidenciaPedidoInputWrap = document.getElementById('pedido-evidencia-input-wrap');
+  const btnEditarEvidenciaPedido = document.getElementById('btn-editar-evidencia-pedido');
+  const previewEvidenciaPedido = document.getElementById('pedido-evidencia-preview');
+  const linkEvidenciaPedido = document.getElementById('pedido-evidencia-link');
+
+  // Compañía, contacto y equipo de un pedido que viene de una reparación
+  // (mismo ID, ver "Enlace con Pedidos" en reparaciones.js) no se editan
+  // acá: se bloquean y se sincronizan solos cada vez que se guarda la
+  // reparación de origen. Cantidad, orden de compra, brazo/eje, etc. sí
+  // siguen siendo editables desde acá (son logística propia del pedido).
+  let pedidoBloqueadoPorReparacion = false;
+  let pedidoCompletadoBloqueado = false;
+  const notaReparacionDatos = document.getElementById('pedido-nota-reparacion');
+  const notaReparacionNumero = document.getElementById('pedido-nota-reparacion-numero');
+  const notaReparacionEquipos = document.getElementById('pedido-equipos-nota-reparacion');
+  const notaCompletadoDatos = document.getElementById('pedido-nota-completado');
+  const notaCompletadoEquipos = document.getElementById('pedido-equipos-nota-completado');
+  const btnVerReparacionDesdePedido = document.getElementById('btn-ver-reparacion-desde-pedido');
+
+  const modalFicha = document.getElementById('modal-ficha-pedido');
+  const fichaHeaderNumero = document.getElementById('ficha-header-numero');
+  const fichaHeaderTags = document.getElementById('ficha-header-tags');
+  const fichaSeccionCliente = document.getElementById('ficha-seccion-cliente');
+  const fichaEquiposContenido = document.getElementById('ficha-equipos-contenido');
+  const btnCerrarFicha = document.getElementById('btn-cerrar-ficha-pedido');
+  const btnEditarDesdeFicha = document.getElementById('btn-editar-desde-ficha');
+
+  const modalSeriales = document.getElementById('modal-seriales');
+  const modalSerialesTitulo = document.getElementById('modal-seriales-titulo');
+  const serialesCampos = document.getElementById('seriales-campos');
+  const btnCancelarSeriales = document.getElementById('btn-cancelar-seriales');
+  const btnGuardarSeriales = document.getElementById('btn-guardar-seriales');
+
+  const modalReemplazoEquipo = document.getElementById('modal-reemplazo-equipo');
+  const reemplazoEquipoTitulo = document.getElementById('reemplazo-equipo-titulo');
+  const reemplazoEquipoOriginalTexto = document.getElementById('reemplazo-equipo-original-texto');
+  const reemplazoEquipoSerialWrap = document.getElementById('reemplazo-equipo-serial-wrap');
+  const inputReemplazoEquipoSerial = document.getElementById('reemplazo-equipo-serial');
+  const btnCancelarReemplazoEquipo = document.getElementById('btn-cancelar-reemplazo-equipo');
+  const btnConfirmarReemplazoEquipo = document.getElementById('btn-confirmar-reemplazo-equipo');
+  const contenedorBuscadorReemplazo = document.querySelector('#modal-reemplazo-equipo .buscador-equipo');
+
+  const modalFichaDevolucion = document.getElementById('modal-ficha-devolucion');
+  const fichaDevolucionNumero = document.getElementById('ficha-devolucion-numero');
+  const fichaDevolucionContenido = document.getElementById('ficha-devolucion-contenido');
+  const btnCerrarFichaDevolucion = document.getElementById('btn-cerrar-ficha-devolucion');
+
+  const TIPO_PEDIDO_LABEL = {
+    normal: { texto: 'Normal', clase: 'tag-pedido-normal' },
+    reparacion: { texto: 'Reparación', clase: 'tag-pedido-reparacion' },
+    // Traslado: mover equipos ya existentes a otra sede — no es una venta
+    // nueva. Funciona exactamente igual a un pedido Normal (misma compañía,
+    // mismo flujo de Envíos); lo único distinto es la etiqueta y una
+    // excepción puntual en el aviso de serial duplicado (ver buscarUsosDeSerial).
+    traslado: { texto: 'Traslado', clase: 'tag-pedido-traslado' }
+  };
+
+  let pedidosCache = [];
+  let borradorId = null;
+  let origenEdicion = null; // 'ficha' cuando se edita desde dentro de la Ficha, null si es desde la tabla
+
+  // ---------- Helpers ----------
+
+  // Planta de cumplimiento: 'envigado' (por defecto) o 'mosquera'. Los pedidos
+  // anteriores a este campo se consideran de Envigado.
+  function plantaDePedido(pedido) {
+    return pedido && pedido.planta === 'mosquera' ? 'mosquera' : 'envigado';
+  }
+
+  function tagPlantaHtml(pedido) {
+    return plantaDePedido(pedido) === 'mosquera'
+      ? '<span class="tag-planta-mosquera" title="Planta de cumplimiento">Mosquera</span>'
+      : '<span class="tag-planta-envigado" title="Planta de cumplimiento">Envigado</span>';
+  }
+
+  function escapeHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function escapeAttr(str) {
+    return String(str ?? '').replace(/"/g, '&quot;');
+  }
+
+  function buscarCompania(id) {
+    return (window.clientesCache || []).find(c => c.id === id) || null;
+  }
+
+  function buscarEquipoCatalogo(id) {
+    return (window.equiposCache || []).find(eq => eq.id === id) || null;
+  }
+
+  // ---------- Sets de sprockets ----------
+  // Un "set" es UNA línea del pedido (tipoLinea: 'set') que agrupa piezas del
+  // catálogo: dos sprockets y, opcionalmente, una caja de cadena.
+  //   { tipoLinea: 'set', sprocket1EquipoId, sprocket2EquipoId,
+  //     cajaEquipoId (o null si el set es solo de sprockets), cantidad (sets),
+  //     ordenCompra, unidadesPreparadas, ... }
+  // Para el resto del programa se ve y se cuenta como UN solo equipo: el
+  // nombre se arma con los sprockets y el peso es la suma de sus piezas.
+  // equipoDeItem(item) devuelve un "equipo virtual" con esos datos, así los
+  // flujos de equipo individual (preparado, despacho, devolución, peso,
+  // búsqueda) funcionan igual, sin seriales por pieza.
+  const TIPO_SET_ID = '__set__';
+
+  function nombreSet(item) {
+    const partes = [item.sprocket1EquipoId, item.sprocket2EquipoId].map(id => {
+      const eq = buscarEquipoCatalogo(id);
+      return eq ? nombreMostrableEquipo(eq) : '?';
+    });
+    return `${item.cajaEquipoId ? 'Set sprocket y caja de cadena' : 'Set sprocket'} ${partes.join(' - ')}`;
+  }
+
+  function equipoVirtualSet(item) {
+    const piezas = [item.sprocket1EquipoId, item.sprocket2EquipoId, item.cajaEquipoId]
+      .filter(Boolean).map(buscarEquipoCatalogo);
+    const tienePeso = (eq) => !!eq && (eq.esCompuesto || (eq.peso !== undefined && eq.peso !== null && eq.peso !== ''));
+    const completo = piezas.length > 0 && piezas.every(tienePeso);
+    return {
+      id: null,
+      nombre: nombreSet(item),
+      variante: '',
+      tipoId: TIPO_SET_ID,
+      usaSerial: false,
+      esSet: true,
+      // Si a alguna pieza le falta el peso, el set queda "sin peso" (igual
+      // que cualquier equipo sin peso) en vez de mostrar un total incompleto.
+      peso: completo ? Math.round(piezas.reduce((t, eq) => t + pesoUnitarioEquipoEnvio(eq), 0) * 100) / 100 : undefined
+    };
+  }
+
+  // Equipo (del catálogo, o virtual si es un set) al que corresponde un ítem
+  // de tipo individual/set.
+  function equipoDeItem(item) {
+    if (item?.tipoLinea === 'set') return equipoVirtualSet(item);
+    return buscarEquipoCatalogo(item?.equipoId);
+  }
+
+  // ---------- Sets: despacho por PARTES ----------
+  // Un set con caja de cadena se puede despachar en dos partes, que pueden
+  // salir en envíos distintos: 'sprockets' (los 2 sprockets) y 'caja' (la caja
+  // de cadena). Cada ítem de una remisión (it) puede traer it.partes =
+  // ['sprockets'] o ['caja']; si no trae it.partes se entiende que lleva
+  // TODO el set. En el pedido, item.partesCompletadas = { sprockets: n,
+  // caja: n } cuenta a cuántos sets ya se les despachó cada parte, e
+  // item.cantidadCompletada sigue siendo el nº de sets COMPLETOS (el menor de
+  // los dos), así el resto del programa (completado, bloqueos, pendientes)
+  // funciona igual que siempre.
+  function setTienePartes(item) {
+    return item?.tipoLinea === 'set' && !!item.cajaEquipoId;
+  }
+
+  function partesDeEntradaEnvio(it, item) {
+    if (!setTienePartes(item)) return null;
+    return (it.partes && it.partes.length) ? it.partes : ['sprockets', 'caja'];
+  }
+
+  // Texto corto de qué parte lleva una entrada de envío ('' si lleva todo).
+  function textoPartesEntrada(it, item) {
+    const partes = partesDeEntradaEnvio(it, item);
+    if (!partes || partes.length >= 2) return '';
+    return partes[0] === 'caja' ? 'solo caja de cadena' : 'solo sprockets';
+  }
+
+  // Cuántos sets tienen ya despachada cada parte (con respaldo para pedidos
+  // anteriores a esta función: ahí ambas partes salían siempre juntas).
+  function partesCompletadasSet(item) {
+    const base = item.cantidadCompletada || 0;
+    const pc = item.partesCompletadas;
+    return { sprockets: pc ? (pc.sprockets || 0) : base, caja: pc ? (pc.caja || 0) : base };
+  }
+
+  // Peso unitario (kg) de UNA parte del set.
+  function pesoParteSetUnitario(item, parte) {
+    const ids = parte === 'caja' ? [item.cajaEquipoId] : [item.sprocket1EquipoId, item.sprocket2EquipoId];
+    return ids.filter(Boolean).reduce((t, id) => t + pesoUnitarioEquipoEnvio(buscarEquipoCatalogo(id)), 0);
+  }
+
+  // ¿Ya salió algo de este ítem (aunque sea solo una parte de un set)?
+  function algoDespachadoItem(item) {
+    if (conteoCompletadoItem(item).hecho > 0) return true;
+    if (setTienePartes(item)) {
+      const pc = partesCompletadasSet(item);
+      return pc.sprockets > 0 || pc.caja > 0;
+    }
+    return false;
+  }
+
+  // Cantidad mínima a la que se puede bajar un ítem sin quedar por debajo de
+  // lo que ya salió (para un set por partes: la parte más adelantada).
+  function cantidadMinimaDespachada(item) {
+    if (setTienePartes(item)) {
+      const pc = partesCompletadasSet(item);
+      return Math.max(pc.sprockets, pc.caja);
+    }
+    return conteoCompletadoItem(item).hecho;
+  }
+
+  // Un pedido es "traslado" (numeración T01, T02…) solo si no viene de una
+  // reparación: los pedidos de reparación siempre usan la numeración R.
+  function esPedidoTraslado(pedido) {
+    return !pedido.reparacionId && pedido.tipo === 'traslado';
+  }
+
+  // Menor número libre DENTRO de la numeración del tipo indicado (mismas
+  // reglas para Normal y Traslado: se reutiliza el hueco si se borra uno).
+  // `excluirId` sirve al editar: el propio pedido no cuenta como "ocupando"
+  // un número al reasignarle uno nuevo por cambio de tipo.
+  function siguienteNumeroDisponible(tipo = 'normal', excluirId = null) {
+    // Los pedidos que vienen de una reparación no cuentan para ninguna bolsa:
+    // su "numero" es una copia del N° de esa reparación (otra colección,
+    // otra numeración — ver textoNumeroPedido), no un N° propio de Pedidos.
+    const buscaTraslado = (tipo === 'traslado');
+    const usados = new Set(
+      pedidosCache
+        .filter(p => !p.reparacionId && p.id !== excluirId && esPedidoTraslado(p) === buscaTraslado)
+        .map(p => p.numero)
+    );
+    let n = 1;
+    while (usados.has(n)) n++;
+    return n;
+  }
+
+  // Texto del N° tal como se muestra en toda la pestaña:
+  //  - Reparación (mismo ID en las dos colecciones): "R01", copia exacta del
+  //    N° de esa reparación (ver crearPedidoDesdeReparacion en reparaciones.js).
+  //  - Traslado: "T01", "T02"… (numeración propia).
+  //  - Normal: "N1", "N2"…
+  function textoNumeroPedido(pedido) {
+    if (pedido.reparacionId) return 'R' + String(pedido.numero).padStart(2, '0');
+    if (pedido.tipo === 'traslado') return 'T' + String(pedido.numero).padStart(2, '0');
+    return 'N' + pedido.numero;
+  }
+  window.textoNumeroPedido = textoNumeroPedido;
+
+  // Orden de las listas: por número y, si coinciden (N1 / T01 / R01), por
+  // serie para que el orden sea estable.
+  const ORDEN_SERIE = { N: 0, T: 1, R: 2 };
+  function compararPedidosPorNumero(a, b) {
+    if (a.numero !== b.numero) return a.numero - b.numero;
+    return ORDEN_SERIE[textoNumeroPedido(a)[0]] - ORDEN_SERIE[textoNumeroPedido(b)[0]];
+  }
+
+  // ---------- Sub-pestañas del modal (Datos / Equipos) ----------
+
+  const subtabButtons = modal.querySelectorAll('.subtab-btn');
+  const subtabPanels = modal.querySelectorAll('.subtab-panel');
+  subtabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      subtabButtons.forEach(b => b.classList.toggle('active', b === btn));
+      subtabPanels.forEach(p => p.classList.toggle('active', p.id === 'subtab-' + btn.dataset.subtab));
+    });
+  });
+  function resetSubtabs() {
+    subtabButtons.forEach((b, i) => b.classList.toggle('active', i === 0));
+    subtabPanels.forEach((p, i) => p.classList.toggle('active', i === 0));
+  }
+  function activarSubtab(nombre) {
+    subtabButtons.forEach(b => b.classList.toggle('active', b.dataset.subtab === nombre));
+    subtabPanels.forEach(p => p.classList.toggle('active', p.id === 'subtab-' + nombre));
+  }
+
+  // Sub-pestañas dentro de la Ficha (Datos / Equipos / Envío) — mismo patrón,
+  // pero escuchando dentro de modalFicha para no chocar con las de arriba.
+  const fichaSubtabButtons = modalFicha.querySelectorAll('.subtab-btn');
+  const fichaSubtabPanels = modalFicha.querySelectorAll('.subtab-panel');
+  fichaSubtabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      fichaSubtabButtons.forEach(b => b.classList.toggle('active', b === btn));
+      fichaSubtabPanels.forEach(p => p.classList.toggle('active', p.id === 'subtab-' + btn.dataset.subtab));
+    });
+  });
+  function resetFichaSubtabs() {
+    fichaSubtabButtons.forEach((b, i) => b.classList.toggle('active', i === 0));
+    fichaSubtabPanels.forEach((p, i) => p.classList.toggle('active', i === 0));
+  }
+
+  function activarFichaSubtab(nombre) {
+    fichaSubtabButtons.forEach(b => b.classList.toggle('active', b.dataset.subtab === nombre));
+    fichaSubtabPanels.forEach(p => p.classList.toggle('active', p.id === 'subtab-' + nombre));
+  }
+
+  // ---------- Select de compañía / contacto ----------
+
+  // Buscador de texto genérico (compañía, contacto, subsidiaria, encargado
+  // de subsidiaria comparten el mismo comportamiento): input.buscador-input
+  // visible + input[hidden] que guarda el id/valor real + div.buscador-resultados.
+  // obtenerOpciones() debe devolver [{id, texto}] o null si el campo todavía
+  // no debería mostrar nada (ej. no hay compañía elegida todavía).
+  function inicializarBuscadorTexto(inputTexto, inputValor, resultados, { obtenerOpciones, onChange }) {
+    function mostrarResultados() {
+      if (inputTexto.disabled) return;
+      const opciones = obtenerOpciones();
+      if (!opciones) { resultados.classList.remove('open'); return; }
+      const t = normalizar(inputTexto.value);
+      const coincidencias = (t ? opciones.filter(o => normalizar(o.texto).includes(t)) : opciones).slice(0, 8);
+      resultados.innerHTML = coincidencias.length
+        ? coincidencias.map(o => `<div class="buscador-item" data-id="${escapeAttr(o.id)}">${escapeHtml(o.texto)}</div>`).join('')
+        : `<div class="buscador-item-vacio">Sin coincidencias</div>`;
+      resultados.classList.add('open');
+      resultados.querySelectorAll('.buscador-item').forEach(el => {
+        el.addEventListener('mousedown', (e) => {
+          e.preventDefault(); // evita que el blur del input cierre la lista antes del click
+          const opcionesActuales = obtenerOpciones() || [];
+          const o = opcionesActuales.find(x => x.id === el.dataset.id);
+          if (o) seleccionar(o);
+        });
+      });
+    }
+
+    function seleccionar(o) {
+      inputValor.value = o.id;
+      inputTexto.value = o.texto;
+      resultados.classList.remove('open');
+      if (onChange) onChange(o.id);
+    }
+
+    inputTexto.addEventListener('input', () => {
+      inputValor.value = ''; // hasta que elija algo de la lista, no hay selección válida
+      mostrarResultados();
+      if (onChange) onChange('');
+    });
+    // 'click' (no 'focus'): así no se abre sola si el campo llega a quedar
+    // enfocado por algo que no sea un clic real del usuario.
+    inputTexto.addEventListener('click', mostrarResultados);
+    inputTexto.addEventListener('blur', () => {
+      setTimeout(() => resultados.classList.remove('open'), 120);
+    });
+
+    return { refrescar: mostrarResultados };
+  }
+
+  // ---------- Compañía / contacto ----------
+
+  // El buscador de compañía lee window.clientesCache en vivo cada vez que se
+  // escribe, así que no hace falta "poblar" nada de antemano — esta función
+  // solo re-sincroniza el TEXTO visible con el id ya guardado (al editar un
+  // pedido existente, o si el nombre de la compañía cambió en Clientes).
+  function poblarSelectCompanias() {
+    const compania = buscarCompania(selectCompania.value);
+    inputCompaniaTexto.value = compania ? compania.nombre : '';
+  }
+
+  function poblarSelectContacto(companiaId, contactoSeleccionado) {
+    const compania = buscarCompania(companiaId);
+    const contactos = compania?.contactosPedidos || [];
+    if (!compania) {
+      inputContactoTexto.value = '';
+      inputContactoTexto.placeholder = 'Selecciona una compañía primero';
+      inputContactoTexto.disabled = true;
+      selectContacto.value = '';
+      return;
+    }
+    if (!contactos.length) {
+      inputContactoTexto.value = '';
+      inputContactoTexto.placeholder = 'Esta compañía no tiene contactos de pedidos';
+      inputContactoTexto.disabled = true;
+      selectContacto.value = '';
+      return;
+    }
+    inputContactoTexto.disabled = false;
+    inputContactoTexto.placeholder = 'Escribe para buscar un contacto...';
+    selectContacto.value = contactoSeleccionado || '';
+    inputContactoTexto.value = contactoSeleccionado || '';
+  }
+
+  inicializarBuscadorTexto(inputCompaniaTexto, selectCompania, resultadosCompania, {
+    obtenerOpciones: () => (window.clientesCache || []).map(c => ({ id: c.id, texto: c.nombre })),
+    onChange: (companiaId) => poblarSelectContacto(companiaId, '')
+  });
+
+  inicializarBuscadorTexto(inputContactoTexto, selectContacto, resultadosContacto, {
+    obtenerOpciones: () => {
+      const compania = buscarCompania(selectCompania.value);
+      if (!compania) return null;
+      return (compania.contactosPedidos || []).map(nombre => ({ id: nombre, texto: nombre }));
+    }
+  });
+
+  // ---------- Envío a Subsidiaria ----------
+  // "Subsidiaria" = cliente con tipo 'subsidiaria' (NO 'subsidiaria_edisatech',
+  // esa es otra categoría y queda afuera de este buscador a propósito).
+
+  function poblarSelectSubsidiarias(subsidiariaSeleccionada) {
+    selectSubsidiaria.value = subsidiariaSeleccionada || '';
+    const subsidiaria = (window.clientesCache || []).find(c => c.id === subsidiariaSeleccionada);
+    inputSubsidiariaTexto.value = subsidiaria ? subsidiaria.nombre : '';
+  }
+
+  function poblarSelectSubsidiariaContacto(subsidiariaId, contactoSeleccionado) {
+    const subsidiaria = (window.clientesCache || []).find(c => c.id === subsidiariaId);
+    const contactos = subsidiaria?.contactosPedidos || [];
+    if (!subsidiaria) {
+      inputSubsidiariaContactoTexto.value = '';
+      inputSubsidiariaContactoTexto.placeholder = 'Selecciona una subsidiaria primero';
+      inputSubsidiariaContactoTexto.disabled = true;
+      selectSubsidiariaContacto.value = '';
+      return;
+    }
+    if (!contactos.length) {
+      inputSubsidiariaContactoTexto.value = '';
+      inputSubsidiariaContactoTexto.placeholder = 'Esta subsidiaria no tiene contactos de pedidos';
+      inputSubsidiariaContactoTexto.disabled = true;
+      selectSubsidiariaContacto.value = '';
+      return;
+    }
+    inputSubsidiariaContactoTexto.disabled = false;
+    inputSubsidiariaContactoTexto.placeholder = 'Escribe para buscar un encargado...';
+    selectSubsidiariaContacto.value = contactoSeleccionado || '';
+    inputSubsidiariaContactoTexto.value = contactoSeleccionado || '';
+  }
+
+  inicializarBuscadorTexto(inputSubsidiariaTexto, selectSubsidiaria, resultadosSubsidiaria, {
+    obtenerOpciones: () => (window.clientesCache || []).filter(c => c.tipo === 'subsidiaria').map(c => ({ id: c.id, texto: c.nombre })),
+    onChange: (subsidiariaId) => poblarSelectSubsidiariaContacto(subsidiariaId, '')
+  });
+
+  inicializarBuscadorTexto(inputSubsidiariaContactoTexto, selectSubsidiariaContacto, resultadosSubsidiariaContacto, {
+    obtenerOpciones: () => {
+      const subsidiaria = (window.clientesCache || []).find(c => c.id === selectSubsidiaria.value);
+      if (!subsidiaria) return null;
+      return (subsidiaria.contactosPedidos || []).map(nombre => ({ id: nombre, texto: nombre }));
+    }
+  });
+
+  checkboxEnvioSubsidiaria.addEventListener('change', () => {
+    const marcado = checkboxEnvioSubsidiaria.checked;
+    grupoSubsidiaria.style.display = marcado ? 'block' : 'none';
+    grupoSubsidiariaContacto.style.display = marcado ? 'block' : 'none';
+    selectSubsidiaria.value = '';
+    inputSubsidiariaTexto.value = '';
+    poblarSelectSubsidiariaContacto('', '');
+  });
+
+  document.addEventListener('clientes:cambio', () => {
+    poblarSelectCompanias();
+    if (checkboxEnvioSubsidiaria.checked) poblarSelectSubsidiarias(selectSubsidiaria.value);
+    renderTabla(); // los nombres de compañía en la tabla pueden haber cambiado
+  });
+  if (window.clientesCache && window.clientesCache.length) poblarSelectCompanias();
+
+  // ---------- Lista de equipos dentro del pedido ----------
+
+  function normalizar(str) {
+    return String(str ?? '')
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
+  // Cadena se vende/cuenta por metros, no por unidades enteras — así que su
+  // cantidad en el pedido acepta decimales. El resto de tipos sigue siendo
+  // entero (no tendría sentido pedir "2.5 motores").
+  const TIPOS_CON_CANTIDAD_DECIMAL = ['cadena'];
+
+  // Redondea a 2 decimales para evitar la basura de coma flotante de JS
+  // (10 - 9.7 = 0.30000000000000004), que rompe la validación del input.
+  function redondear2(n) {
+    return Math.round((parseFloat(n) || 0) * 100) / 100;
+  }
+
+  function esTipoCantidadDecimal(equipo) {
+    if (!equipo) return false;
+    const tipo = buscarTipoEquipo(equipo.tipoId);
+    return !!tipo && TIPOS_CON_CANTIDAD_DECIMAL.includes(normalizar(tipo.nombre));
+  }
+
+  // Un ítem "por medida" (hoy: cadena) no se cuenta en unidades sueltas: su
+  // cantidad son metros y lo preparado es un total en metros
+  // (item.cantidadPreparada: 11, 12.5…), no una lista de unidades marcadas.
+  function itemEsPorMedida(item) {
+    if (!item || item.tipoLinea === 'motoreductor') return false;
+    return esTipoCantidadDecimal(equipoDeItem(item));
+  }
+
+  function nombreMostrableEquipo(eq) {
+    return eq.nombre + (eq.variante ? ` (${eq.variante})` : '');
+  }
+
+  // Buscador con autocompletar para elegir un equipo del catálogo, filtrado
+  // opcionalmente por tipo. El filtro puede ser fijo (tipoNombre, usado para
+  // Motor/Reductor dentro de Motoreductor) o dinámico (obtenerTipoId, usado
+  // cuando hay un <select> de tipo aparte que se puede cambiar en cualquier
+  // momento). El contenedor debe tener: input.buscador-input, input[type=hidden]
+  // (guarda el id elegido) y div.buscador-resultados. Devuelve { refrescar }
+  // para poder re-mostrar resultados desde afuera (ej: al cambiar el filtro).
+  function inicializarBuscadorEquipo(contenedor, { tipoNombre, obtenerTipoId, seleccionInicialId, onChange }) {
+    const inputTexto = contenedor.querySelector('.buscador-input');
+    const inputValor = contenedor.querySelector('input[type="hidden"]');
+    const resultados = contenedor.querySelector('.buscador-resultados');
+
+    function catalogoFiltrado(texto) {
+      const equipos = window.equiposCache || [];
+      let porTipo = equipos;
+      if (obtenerTipoId) {
+        const tid = obtenerTipoId();
+        porTipo = tid ? equipos.filter(eq => eq.tipoId === tid) : equipos;
+      } else if (tipoNombre) {
+        porTipo = equipos.filter(eq => normalizar(buscarTipoEquipo(eq.tipoId)?.nombre) === tipoNombre);
+      }
+      const t = normalizar(texto);
+      const coincidencias = t
+        ? porTipo.filter(eq => normalizar(eq.nombre + ' ' + (eq.variante || '')).includes(t))
+        : porTipo;
+      return coincidencias.slice(0, 8);
+    }
+
+    function mostrarResultados() {
+      const lista = catalogoFiltrado(inputTexto.value);
+      resultados.innerHTML = lista.length
+        ? lista.map(eq => `<div class="buscador-item" data-id="${eq.id}">${escapeHtml(nombreMostrableEquipo(eq))}</div>`).join('')
+        : `<div class="buscador-item-vacio">Sin coincidencias en el catálogo</div>`;
+      resultados.classList.add('open');
+      resultados.querySelectorAll('.buscador-item').forEach(el => {
+        el.addEventListener('mousedown', (e) => {
+          e.preventDefault(); // evita que el blur del input cierre la lista antes del click
+          const eq = (window.equiposCache || []).find(x => x.id === el.dataset.id);
+          if (eq) seleccionar(eq);
+        });
+      });
+    }
+
+    function seleccionar(eq) {
+      inputValor.value = eq.id;
+      inputTexto.value = nombreMostrableEquipo(eq);
+      resultados.classList.remove('open');
+      if (onChange) onChange(eq.id);
+    }
+
+    inputTexto.addEventListener('input', () => {
+      inputValor.value = ''; // hasta que elija algo de la lista, no hay selección válida
+      mostrarResultados();
+      if (onChange) onChange('');
+    });
+    inputTexto.addEventListener('focus', mostrarResultados);
+    inputTexto.addEventListener('blur', () => {
+      setTimeout(() => resultados.classList.remove('open'), 120);
+    });
+
+    if (seleccionInicialId) {
+      const eq = (window.equiposCache || []).find(x => x.id === seleccionInicialId);
+      if (eq) {
+        inputValor.value = eq.id;
+        inputTexto.value = nombreMostrableEquipo(eq);
+      }
+    }
+
+    return { refrescar: mostrarResultados };
+  }
+
+  // Mismo patrón que inicializarBuscadorEquipo, pero buscando en el catálogo
+  // de TIPOS de equipo (window.tiposEquipoCache) en vez del de equipos.
+  function inicializarBuscadorTipo(contenedor, { seleccionInicialId, onChange }) {
+    const inputTexto = contenedor.querySelector('.buscador-input');
+    const inputValor = contenedor.querySelector('input[type="hidden"]');
+    const resultados = contenedor.querySelector('.buscador-resultados');
+
+    // Texto plano para lo único que SÍ debe quedar como texto: lo que se
+    // escribe dentro del <input> una vez elegido un tipo (los navegadores no
+    // permiten imágenes ahí, así que ese campo siempre cae al emoji).
+    function nombreMostrableTipo(t) {
+      return (t.icono ? t.icono + ' ' : '') + t.nombre;
+    }
+
+    function catalogoFiltrado(texto) {
+      const tipos = window.tiposEquipoCache || [];
+      const t = normalizar(texto);
+      const coincidencias = t ? tipos.filter(ti => normalizar(ti.nombre).includes(t)) : tipos;
+      return coincidencias.slice(0, 8);
+    }
+
+    function mostrarResultados() {
+      const lista = catalogoFiltrado(inputTexto.value);
+      // Acá sí es HTML real (un <div> por sugerencia), así que el logo del
+      // tipo se puede mostrar tal cual — solo el nombre va escapado.
+      resultados.innerHTML = lista.length
+        ? lista.map(ti => `<div class="buscador-item" data-id="${ti.id}">${window.iconoTipoHtml(ti)} ${escapeHtml(ti.nombre)}</div>`).join('')
+        : `<div class="buscador-item-vacio">Sin coincidencias</div>`;
+      resultados.classList.add('open');
+      resultados.querySelectorAll('.buscador-item').forEach(el => {
+        el.addEventListener('mousedown', (e) => {
+          e.preventDefault(); // evita que el blur del input cierre la lista antes del click
+          const ti = (window.tiposEquipoCache || []).find(x => x.id === el.dataset.id);
+          if (ti) seleccionar(ti);
+        });
+      });
+    }
+
+    function seleccionar(ti) {
+      inputValor.value = ti.id;
+      inputTexto.value = nombreMostrableTipo(ti);
+      resultados.classList.remove('open');
+      if (onChange) onChange(ti.id);
+    }
+
+    inputTexto.addEventListener('input', () => {
+      inputValor.value = ''; // hasta que elija algo de la lista, no hay filtro de tipo activo
+      mostrarResultados();
+      if (onChange) onChange('');
+    });
+    // 'click' (no 'focus'): así no se abre sola si el campo llega a quedar
+    // enfocado por algo que no sea un clic real del usuario.
+    inputTexto.addEventListener('click', mostrarResultados);
+    inputTexto.addEventListener('blur', () => {
+      setTimeout(() => resultados.classList.remove('open'), 120);
+    });
+
+    if (seleccionInicialId) {
+      const ti = (window.tiposEquipoCache || []).find(x => x.id === seleccionInicialId);
+      if (ti) {
+        inputValor.value = ti.id;
+        inputTexto.value = nombreMostrableTipo(ti);
+      }
+    }
+
+    return { refrescar: mostrarResultados };
+  }
+
+  // ---------- Contenedores para agrupar equipos dentro del formulario ----------
+  // Puramente organizativo (ej. "Bodega A", "Prioridad alta") — no afecta el
+  // guardado del pedido más que guardar a qué contenedor pertenece cada
+  // equipo. En la Ficha (solo lectura) se muestran agrupados bajo el título
+  // del contenedor; los equipos sin contenedor se ven exactamente igual que
+  // siempre. Mover un equipo de contenedor solo se puede hacer aquí, en el
+  // formulario — la Ficha no permite arrastrar.
+
+  function actualizarContenedoresVacios() {
+    document.querySelectorAll('.contenedor-pedido-body').forEach(body => {
+      body.classList.toggle('vacio', !body.querySelector('.equipo-pedido-row-wrap'));
+    });
+  }
+
+  let filaEquipoArrastrada = null;
+
+  function habilitarArrastreFila(row) {
+    const asa = row.querySelector('.fila-drag-handle');
+    asa.addEventListener('dragstart', (e) => {
+      filaEquipoArrastrada = row;
+      row.classList.add('arrastrando');
+      // Sin esto, varios navegadores no consideran el arrastre "válido" y el
+      // drop no se completa aunque dragover/drop se vean bien.
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', 'equipo-pedido');
+    });
+    asa.addEventListener('dragend', () => {
+      row.classList.remove('arrastrando');
+      filaEquipoArrastrada = null;
+      document.querySelectorAll('.contenedor-pedido-body, #equipos-pedido-list').forEach(z => z.classList.remove('drag-over', 'drag-over-raiz'));
+      actualizarContenedoresVacios();
+      actualizarSelectsMoverContenedor();
+    });
+  }
+
+  // Mete la fila arrastrada en `zona`, en la posición que corresponde según
+  // la altura del cursor.
+  function colocarFilaArrastrada(zona, clientY) {
+    const filasHermanas = [...zona.children].filter(el => el.classList.contains('equipo-pedido-row-wrap') && el !== filaEquipoArrastrada);
+    const despuesDe = filasHermanas.find(el => {
+      const r = el.getBoundingClientRect();
+      return clientY < r.top + r.height / 2;
+    });
+    if (despuesDe) zona.insertBefore(filaEquipoArrastrada, despuesDe);
+    else zona.appendChild(filaEquipoArrastrada);
+    // Así el texto "Arrastra equipos aquí" desaparece apenas entra la fila
+    // (si no, el placeholder sigue ocupando espacio durante el arrastre).
+    actualizarContenedoresVacios();
+  }
+
+  // zona: el contenedor donde se pueden soltar filas (equiposPedidoList
+  // directamente, o el body de un .contenedor-pedido). claseHover es la
+  // clase CSS a usar mientras se arrastra encima (distinta para la raíz,
+  // que no puede verse como una tarjeta con fondo propio).
+  //
+  // Los .contenedor-pedido viven DENTRO de #equipos-pedido-list, así que los
+  // eventos de arrastre sobre el body de un contenedor BURBUJEAN hasta la
+  // raíz. Sin frenar eso, el handler de la raíz corría después y volvía a
+  // mover la fila al final de la lista: el equipo terminaba justo debajo del
+  // contenedor en vez de quedar adentro. Por eso el body detiene la
+  // propagación (esRaiz = false).
+  function habilitarZonaDropEquipos(zona, claseHover, esRaiz = false) {
+    // Solo llega acá (en la raíz) lo que NO pasó por el body de un
+    // contenedor: el encabezado, el título o el padding del contenedor. En
+    // ese caso se manda la fila al body de ese contenedor igual, para que
+    // soltar "sobre el contenedor" funcione aunque no se apunte exacto.
+    const bodyDelContenedorBajoElCursor = (e) => {
+      if (!esRaiz || !(e.target instanceof Element)) return null;
+      const cont = e.target.closest('.contenedor-pedido');
+      return cont ? cont.querySelector('.contenedor-pedido-body') : null;
+    };
+
+    zona.addEventListener('dragenter', (e) => {
+      if (!filaEquipoArrastrada) return;
+      if (!esRaiz) e.stopPropagation();
+      e.preventDefault();
+    });
+    zona.addEventListener('dragover', (e) => {
+      if (!filaEquipoArrastrada) return;
+      if (!esRaiz) e.stopPropagation();
+      e.preventDefault();
+      const bodyDelegado = bodyDelContenedorBajoElCursor(e);
+      if (bodyDelegado) {
+        zona.classList.remove(claseHover);
+        document.querySelectorAll('.contenedor-pedido-body.drag-over').forEach(b => { if (b !== bodyDelegado) b.classList.remove('drag-over'); });
+        bodyDelegado.classList.add('drag-over');
+        colocarFilaArrastrada(bodyDelegado, e.clientY);
+        return;
+      }
+      zona.classList.add(claseHover);
+      colocarFilaArrastrada(zona, e.clientY);
+    });
+    zona.addEventListener('dragleave', (e) => {
+      if (e.target === zona) zona.classList.remove(claseHover);
+    });
+    zona.addEventListener('drop', (e) => {
+      if (!esRaiz) e.stopPropagation();
+      e.preventDefault();
+      zona.classList.remove(claseHover);
+      actualizarContenedoresVacios();
+    });
+  }
+  habilitarZonaDropEquipos(equiposPedidoList, 'drag-over-raiz', true);
+
+  let contadorContenedoresPedido = 0;
+
+  // Con 2+ contenedores, arrastrar cada equipo al que corresponde es
+  // incómodo (hay que apuntar bien, uno por uno). Este select da una forma
+  // rápida y sin errores: aparece en cada fila de equipo, lista "Sin
+  // contenedor" + todos los contenedores actuales, y mover la fila es solo
+  // elegir una opción. El drag & drop se deja intacto para quien lo prefiera.
+  function opcionesSelectContenedor(seleccionActualId) {
+    const contenedoresDom = [...equiposPedidoList.querySelectorAll('.contenedor-pedido')];
+    let html = `<option value="">— Sin contenedor —</option>`;
+    contenedoresDom.forEach(div => {
+      const id = div.dataset.contenedorId;
+      const titulo = div.querySelector('.contenedor-pedido-titulo').value.trim() || 'Sin nombre';
+      html += `<option value="${escapeAttr(id)}" ${id === seleccionActualId ? 'selected' : ''}>📦 ${escapeHtml(titulo)}</option>`;
+    });
+    return html;
+  }
+
+  // Se llama cada vez que la lista de contenedores cambia (crear, eliminar,
+  // renombrar) o una fila cambia de padre (drag & drop), para que el select
+  // de CADA fila quede con las opciones y la selección correctas.
+  function actualizarSelectsMoverContenedor() {
+    const hayContenedores = !!equiposPedidoList.querySelector('.contenedor-pedido');
+    equiposPedidoList.querySelectorAll('.equipo-pedido-row-wrap').forEach(row => {
+      const select = row.querySelector('.fila-mover-contenedor');
+      if (!select) return;
+      // Sin contenedores creados, el select solo tendría una opción ("Sin
+      // contenedor") — no aporta nada y solo ocupa espacio.
+      select.style.display = hayContenedores ? '' : 'none';
+      if (!hayContenedores) return;
+      const padre = row.closest('.contenedor-pedido');
+      select.innerHTML = opcionesSelectContenedor(padre ? padre.dataset.contenedorId : '');
+    });
+  }
+
+  // Crea (y agrega al DOM) un contenedor con su encabezado editable y su
+  // zona para soltar equipos. Devuelve el elemento .contenedor-pedido-body
+  // donde nuevaFilaEquipoPedido() debe meter las filas que le correspondan.
+  function crearContenedorPedidoDOM(contenedor) {
+    const id = contenedor?.id || `c${Date.now()}_${contadorContenedoresPedido++}`;
+    const div = document.createElement('div');
+    div.className = 'contenedor-pedido';
+    div.dataset.contenedorId = id;
+    div.innerHTML = `
+      <div class="contenedor-pedido-header">
+        <input type="text" class="contenedor-pedido-titulo" placeholder="Nombre del contenedor (ej. Bodega A)" value="${contenedor?.titulo ? escapeAttr(contenedor.titulo) : ''}">
+        <button type="button" class="btn-eliminar-contenedor-pedido" title="Eliminar contenedor (los equipos quedan sueltos)">✕</button>
+      </div>
+      <div class="contenedor-pedido-body" data-contenedor-id="${id}"></div>
+    `;
+    const body = div.querySelector('.contenedor-pedido-body');
+    body.classList.add('vacio');
+    habilitarZonaDropEquipos(body, 'drag-over');
+
+    if (pedidoBloqueadoPorReparacion || pedidoCompletadoBloqueado) {
+      div.querySelector('.contenedor-pedido-titulo').disabled = true;
+      div.querySelector('.btn-eliminar-contenedor-pedido').style.display = 'none';
+    }
+
+    // El nombre del contenedor aparece en el select de cada fila — si lo
+    // renombra, los selects deben reflejarlo de inmediato.
+    div.querySelector('.contenedor-pedido-titulo').addEventListener('input', actualizarSelectsMoverContenedor);
+
+    div.querySelector('.btn-eliminar-contenedor-pedido').addEventListener('click', () => {
+      const tieneEquipos = body.querySelector('.equipo-pedido-row-wrap');
+      if (tieneEquipos && !confirm('¿Eliminar este contenedor? Los equipos que tiene adentro quedan sueltos (no se borran).')) return;
+      // Los equipos adentro pasan a "sueltos" (la raíz de la lista) antes de
+      // quitar el contenedor — nunca se elimina un equipo por esto.
+      Array.from(body.querySelectorAll('.equipo-pedido-row-wrap')).forEach(fila => equiposPedidoList.appendChild(fila));
+      div.remove();
+      actualizarContenedoresVacios();
+      actualizarSelectsMoverContenedor();
+    });
+
+    equiposPedidoList.appendChild(div);
+    actualizarSelectsMoverContenedor();
+    return body;
+  }
+
+  btnAddContenedorPedido.addEventListener('click', () => {
+    const body = crearContenedorPedidoDOM(null);
+    body.closest('.contenedor-pedido').querySelector('.contenedor-pedido-titulo').focus();
+  });
+
+  function nuevaFilaEquipoPedido(item, originalIndex) {
+    const esMotoreductor = item?.tipoLinea === 'motoreductor';
+    const esSet = item?.tipoLinea === 'set';
+
+    const row = document.createElement('div');
+    row.className = 'equipo-pedido-row-wrap';
+    if (originalIndex !== undefined) row.dataset.originalIndex = String(originalIndex);
+    row.innerHTML = `
+      <div class="fila-drag-handle" draggable="true" title="Arrastra para mover a otro contenedor">⠿ Arrastrar</div>
+      <select class="fila-mover-contenedor" title="Mover a un contenedor"></select>
+
+      <label class="extra-check chk-es-motoreductor" style="margin-bottom:8px;">
+        <input type="checkbox" class="equipo-pedido-es-motoreductor" ${esMotoreductor ? 'checked' : ''}>
+        🔗 Es Motoreductor (Motor + Reductor)
+      </label>
+      <label class="extra-check chk-es-set" style="margin-bottom:8px;">
+        <input type="checkbox" class="equipo-pedido-es-set" ${esSet ? 'checked' : ''}>
+        ⚙️ Es Set (2 sprockets + caja de cadena opcional)
+      </label>
+
+      <div class="equipo-pedido-row bloque-individual tiene-filtro" style="${(esMotoreductor || esSet) ? 'display:none;' : ''}">
+        <div class="buscador-equipo buscador-equipo-tipo">
+          <input type="text" class="buscador-input" placeholder="Tipo (opcional)..." autocomplete="off">
+          <input type="hidden" class="equipo-pedido-tipo-filtro">
+          <div class="buscador-resultados"></div>
+        </div>
+        <div class="buscador-equipo buscador-equipo-nombre">
+          <input type="text" class="buscador-input" placeholder="Buscar equipo por nombre..." autocomplete="off">
+          <input type="hidden" class="equipo-pedido-select">
+          <div class="buscador-resultados"></div>
+        </div>
+        <input type="number" class="equipo-pedido-cantidad" min="1" step="1" placeholder="Cant." value="${item?.cantidad ?? 1}">
+        <input type="text" class="equipo-pedido-oc" placeholder="Orden de compra (opcional)" value="${item?.ordenCompra ? escapeHtml(item.ordenCompra) : ''}">
+        <button type="button" class="remove-equipo-pedido" title="Quitar equipo">✕</button>
+      </div>
+
+      <div class="equipo-pedido-motoreductor" style="${esMotoreductor ? '' : 'display:none;'}">
+        <div class="motoreductor-selects">
+          <div>
+            <label class="mini-label">⚡ Motor</label>
+            <div class="buscador-equipo buscador-equipo-motor">
+              <input type="text" class="buscador-input" placeholder="Escribe para buscar motor..." autocomplete="off">
+              <input type="hidden" class="equipo-pedido-motor">
+              <div class="buscador-resultados"></div>
+            </div>
+          </div>
+          <div>
+            <label class="mini-label">⚙️ Reductor</label>
+            <div class="buscador-equipo buscador-equipo-reductor">
+              <input type="text" class="buscador-input" placeholder="Escribe para buscar reductor..." autocomplete="off">
+              <input type="hidden" class="equipo-pedido-reductor">
+              <div class="buscador-resultados"></div>
+            </div>
+          </div>
+        </div>
+        <div class="equipo-pedido-row" style="grid-template-columns: 80px 1fr auto; margin-top:8px;">
+          <input type="number" class="equipo-pedido-cantidad-mr" min="1" step="1" placeholder="Cant." value="${item?.cantidad ?? 1}">
+          <input type="text" class="equipo-pedido-oc-mr" placeholder="Orden de compra (opcional)" value="${item?.ordenCompra ? escapeHtml(item.ordenCompra) : ''}">
+          <button type="button" class="remove-equipo-pedido" title="Quitar equipo">✕</button>
+        </div>
+      </div>
+
+      <div class="equipo-pedido-set" style="${esSet ? '' : 'display:none;'}">
+        <div class="motoreductor-selects">
+          <div>
+            <label class="mini-label">⚙️ Sprocket 1</label>
+            <div class="buscador-equipo buscador-equipo-sprocket1">
+              <input type="text" class="buscador-input" placeholder="Escribe para buscar sprocket..." autocomplete="off">
+              <input type="hidden" class="equipo-pedido-sprocket1">
+              <div class="buscador-resultados"></div>
+            </div>
+          </div>
+          <div>
+            <label class="mini-label">⚙️ Sprocket 2</label>
+            <div class="buscador-equipo buscador-equipo-sprocket2">
+              <input type="text" class="buscador-input" placeholder="Escribe para buscar sprocket..." autocomplete="off">
+              <input type="hidden" class="equipo-pedido-sprocket2">
+              <div class="buscador-resultados"></div>
+            </div>
+          </div>
+        </div>
+        <label class="extra-check" style="margin-top:8px;">
+          <input type="checkbox" class="equipo-pedido-set-con-caja" ${item?.cajaEquipoId ? 'checked' : ''}>
+          📦 Incluye caja de cadena
+        </label>
+        <div class="buscador-equipo buscador-equipo-caja" style="${item?.cajaEquipoId ? '' : 'display:none;'}">
+          <input type="text" class="buscador-input" placeholder="Escribe para buscar caja de cadena..." autocomplete="off">
+          <input type="hidden" class="equipo-pedido-caja">
+          <div class="buscador-resultados"></div>
+        </div>
+        <div class="equipo-pedido-row" style="grid-template-columns: 80px 1fr auto; margin-top:8px;">
+          <input type="number" class="equipo-pedido-cantidad-set" min="1" step="1" placeholder="Cant." value="${item?.cantidad ?? 1}">
+          <input type="text" class="equipo-pedido-oc-set" placeholder="Orden de compra (opcional)" value="${item?.ordenCompra ? escapeHtml(item.ordenCompra) : ''}">
+          <button type="button" class="remove-equipo-pedido" title="Quitar equipo">✕</button>
+        </div>
+      </div>
+
+      <div class="equipo-pedido-extra">
+        <div class="extra-con-pieza chk-brazo" style="display:none;">
+          <label class="extra-check">
+            <input type="checkbox" class="equipo-pedido-brazo" ${item?.llevaBrazo ? 'checked' : ''}>
+            🦾 Lleva brazo de reacción
+          </label>
+          <div class="buscador-equipo buscador-equipo-brazo-pieza" style="${item?.llevaBrazo ? '' : 'display:none;'}">
+            <input type="text" class="buscador-input" placeholder="Buscar brazo de reacción del catálogo..." autocomplete="off">
+            <input type="hidden" class="equipo-pedido-brazo-id" value="${item?.brazoEquipoId || ''}">
+            <div class="buscador-resultados"></div>
+          </div>
+        </div>
+        <div class="extra-con-pieza chk-eje" style="display:none;">
+          <label class="extra-check">
+            <input type="checkbox" class="equipo-pedido-eje" ${item?.llevaEje ? 'checked' : ''}>
+            🔩 Lleva eje sólido
+          </label>
+          <div class="buscador-equipo buscador-equipo-eje-pieza" style="${item?.llevaEje ? '' : 'display:none;'}">
+            <input type="text" class="buscador-input" placeholder="Buscar eje sólido del catálogo..." autocomplete="off">
+            <input type="hidden" class="equipo-pedido-eje-id" value="${item?.ejeEquipoId || ''}">
+            <div class="buscador-resultados"></div>
+          </div>
+        </div>
+        <div class="extra-con-pieza chk-flanche" style="display:none;">
+          <label class="extra-check">
+            <input type="checkbox" class="equipo-pedido-flanche" ${item?.llevaFlanche ? 'checked' : ''}>
+            🔘 Lleva flanche de salida
+          </label>
+          <div class="buscador-equipo buscador-equipo-flanche-pieza" style="${item?.llevaFlanche ? '' : 'display:none;'}">
+            <input type="text" class="buscador-input" placeholder="Buscar flanche de salida del catálogo..." autocomplete="off">
+            <input type="hidden" class="equipo-pedido-flanche-id" value="${item?.flancheEquipoId || ''}">
+            <div class="buscador-resultados"></div>
+          </div>
+        </div>
+        <label class="extra-check chk-preparado">
+          <input type="checkbox" class="equipo-pedido-preparado" ${(item?.unidadesPreparadas || []).length >= (item?.cantidad || 1) ? 'checked' : ''}>
+          ✅ Preparado
+        </label>
+      </div>
+    `;
+    row.querySelectorAll('.remove-equipo-pedido').forEach(btn => btn.addEventListener('click', () => { row.remove(); actualizarContenedoresVacios(); }));
+
+    // El estado de "preparado" por unidad se gestiona desde la Ficha del
+    // pedido (unidad por unidad). Este checkbox solo sirve para marcar TODAS
+    // las unidades de una vez al momento de crear un equipo nuevo; en un
+    // equipo que ya existía, se oculta para no pisar por accidente lo que ya
+    // se gestionó por unidad en la Ficha.
+    if (item) {
+      const chkPreparadoLabel = row.querySelector('.chk-preparado');
+      chkPreparadoLabel.style.display = 'none';
+    }
+
+    // Si el ítem ya tiene algo despachado (parcial o total), no se puede quitar
+    // de la lista — no tiene lógica borrar algo que ya salió.
+    const yaDespachadoAlgo = item ? algoDespachadoItem(item) : false;
+    if (yaDespachadoAlgo) {
+      row.querySelectorAll('.remove-equipo-pedido').forEach(btn => {
+        btn.disabled = true;
+        btn.title = 'No se puede quitar: ya se despachó parte de este equipo';
+        btn.style.opacity = '0.35';
+        btn.style.cursor = 'not-allowed';
+      });
+      row.querySelectorAll('.equipo-pedido-cantidad, .equipo-pedido-cantidad-mr, .equipo-pedido-cantidad-set').forEach(inp => {
+        inp.min = String(cantidadMinimaDespachada(item));
+      });
+    }
+
+    // Si el pedido viene de una reparación, el equipo (qué es, si es
+    // motoreductor, motor/reductor elegidos) no se edita acá — solo la
+    // logística (cantidad, orden de compra, brazo/eje, preparado) sigue
+    // libre. Se deshabilita en vez de ocultarse para que se siga viendo
+    // claramente qué equipo es.
+    if (pedidoBloqueadoPorReparacion) {
+      row.querySelector('.equipo-pedido-es-motoreductor').disabled = true;
+      row.querySelector('.equipo-pedido-es-set').disabled = true;
+      row.querySelectorAll('.buscador-input').forEach(inp => { inp.disabled = true; });
+      row.querySelectorAll('.remove-equipo-pedido').forEach(btn => {
+        btn.disabled = true;
+        btn.title = 'El equipo viene de la reparación vinculada, no se puede quitar aquí';
+        btn.style.opacity = '0.35';
+        btn.style.cursor = 'not-allowed';
+      });
+      row.querySelector('.fila-drag-handle').style.display = 'none';
+      row.querySelector('.fila-mover-contenedor').style.display = 'none';
+    }
+
+    // Pedido ya completado: acá sí se bloquea TODO dentro de la fila (no
+    // solo la identidad del equipo como arriba) — cantidad, orden de compra,
+    // brazo/eje/flanche, preparado, todo queda fijo.
+    if (pedidoCompletadoBloqueado) {
+      row.querySelectorAll('input, select, button').forEach(el => { el.disabled = true; });
+      row.querySelector('.fila-drag-handle').style.display = 'none';
+    }
+
+    const chkEsMotoreductor = row.querySelector('.equipo-pedido-es-motoreductor');
+    const bloqueIndividual = row.querySelector('.bloque-individual');
+    const bloqueMotoreductor = row.querySelector('.equipo-pedido-motoreductor');
+    const chkEsSet = row.querySelector('.equipo-pedido-es-set');
+    const bloqueSet = row.querySelector('.equipo-pedido-set');
+    const chkSetConCaja = row.querySelector('.equipo-pedido-set-con-caja');
+    const contenedorCaja = row.querySelector('.buscador-equipo-caja');
+    const selectIndividual = row.querySelector('.equipo-pedido-select'); // ahora es un input[hidden]
+    const selectTipoFiltro = row.querySelector('.equipo-pedido-tipo-filtro');
+    const selectReductor = row.querySelector('.equipo-pedido-reductor'); // ídem, input[hidden]
+
+    function actualizarModo() {
+      const activo = chkEsMotoreductor.checked;
+      const activoSet = chkEsSet.checked;
+      bloqueIndividual.style.display = (activo || activoSet) ? 'none' : 'grid';
+      bloqueMotoreductor.style.display = activo ? 'block' : 'none';
+      bloqueSet.style.display = activoSet ? 'block' : 'none';
+      actualizarExtrasVisibles();
+    }
+
+    function actualizarExtrasVisibles() {
+      // El brazo/eje siempre depende del REDUCTOR: en modo individual, si lo que
+      // eligieron ES un reductor; en modo motoreductor, del reductor seleccionado.
+      // Un set no lleva brazo/eje/flanche (esos son del reductor).
+      const equipoRelevante = chkEsSet.checked
+        ? null
+        : (chkEsMotoreductor.checked
+          ? buscarEquipoCatalogo(selectReductor.value)
+          : buscarEquipoCatalogo(selectIndividual.value));
+      const chkBrazo = row.querySelector('.chk-brazo');
+      const chkEje = row.querySelector('.chk-eje');
+      const chkFlanche = row.querySelector('.chk-flanche');
+      const mostrarBrazo = !!equipoRelevante?.puedeLlevarBrazo;
+      const mostrarEje = !!equipoRelevante?.puedeLlevarEjeSolido;
+      const mostrarFlanche = !!equipoRelevante?.puedeLlevarFlancheSalida;
+      chkBrazo.style.display = mostrarBrazo ? 'flex' : 'none';
+      chkEje.style.display = mostrarEje ? 'flex' : 'none';
+      chkFlanche.style.display = mostrarFlanche ? 'flex' : 'none';
+      // Al desactivar el checkbox por código (no por un click real) el evento
+      // 'change' no se dispara solo, así que la limpieza de la pieza elegida
+      // (texto + id) hay que hacerla acá también, o quedaría huérfana.
+      if (!mostrarBrazo) limpiarExtraConPieza(chkBrazo, '.equipo-pedido-brazo', '.buscador-equipo-brazo-pieza');
+      if (!mostrarEje) limpiarExtraConPieza(chkEje, '.equipo-pedido-eje', '.buscador-equipo-eje-pieza');
+      if (!mostrarFlanche) limpiarExtraConPieza(chkFlanche, '.equipo-pedido-flanche', '.buscador-equipo-flanche-pieza');
+    }
+
+    function limpiarExtraConPieza(bloque, claseCheckbox, claseContenedorPieza) {
+      bloque.querySelector(claseCheckbox).checked = false;
+      const contenedorPieza = bloque.querySelector(claseContenedorPieza);
+      contenedorPieza.style.display = 'none';
+      contenedorPieza.querySelector('.buscador-input').value = '';
+      contenedorPieza.querySelector('input[type="hidden"]').value = '';
+    }
+
+    // Cadena se cuenta por metros, así que su cantidad admite decimales
+    // (2.5, 10.75, etc.) — solo aplica al modo individual, un motoreductor
+    // nunca es una cadena.
+    const inputCantidadIndividual = row.querySelector('.equipo-pedido-cantidad');
+    function actualizarCantidadSegunTipoEquipo() {
+      const equipo = buscarEquipoCatalogo(selectIndividual.value);
+      const decimal = esTipoCantidadDecimal(equipo);
+      inputCantidadIndividual.step = decimal ? '0.01' : '1';
+      inputCantidadIndividual.placeholder = decimal ? 'Metros' : 'Cant.';
+      // Si ya hay un mínimo forzado por despacho parcial (ver más arriba),
+      // no se toca — ese mínimo manda por encima de esto.
+      if (!yaDespachadoAlgo) {
+        inputCantidadIndividual.min = decimal ? '0.01' : '1';
+      }
+    }
+
+    // Motoreductor y Set son modos excluyentes entre sí.
+    chkEsMotoreductor.addEventListener('change', () => { if (chkEsMotoreductor.checked) chkEsSet.checked = false; actualizarModo(); });
+    chkEsSet.addEventListener('change', () => { if (chkEsSet.checked) chkEsMotoreductor.checked = false; actualizarModo(); });
+    chkSetConCaja.addEventListener('change', () => {
+      contenedorCaja.style.display = chkSetConCaja.checked ? '' : 'none';
+      if (!chkSetConCaja.checked) {
+        contenedorCaja.querySelector('.buscador-input').value = '';
+        contenedorCaja.querySelector('input[type="hidden"]').value = '';
+      }
+    });
+    actualizarModo(); // aplica el modo inicial y calcula brazo/eje visibles
+
+    const contenedorTipoFiltro = row.querySelector('.buscador-equipo-tipo');
+    const contenedorEquipoIndividual = row.querySelector('.buscador-equipo-nombre');
+    const contenedorMotor = row.querySelector('.buscador-equipo-motor');
+    const contenedorReductor = row.querySelector('.buscador-equipo-reductor');
+
+    // Tipo: buscador de texto igual al de equipo, pero sobre el catálogo de
+    // tipos — al elegir uno, refiltra el buscador de equipo de al lado. Si ya
+    // había un equipo individual elegido (editando un pedido existente), se
+    // precarga con el tipo de ESE equipo.
+    const equipoIndividualPrevio = !esMotoreductor && !esSet && item?.equipoId ? equipoDeItem(item) : null;
+    inicializarBuscadorTipo(contenedorTipoFiltro, {
+      seleccionInicialId: equipoIndividualPrevio?.tipoId || null,
+      onChange: () => buscadorIndividualAPI.refrescar()
+    });
+
+    // Equipo individual: buscador por nombre, filtrable en vivo por el
+    // buscador de tipo de al lado (ambos a la vez, como se pidió).
+    const buscadorIndividualAPI = inicializarBuscadorEquipo(contenedorEquipoIndividual, {
+      obtenerTipoId: () => selectTipoFiltro.value || null,
+      seleccionInicialId: (!esMotoreductor && !esSet) ? item?.equipoId : null,
+      onChange: () => { actualizarExtrasVisibles(); actualizarCantidadSegunTipoEquipo(); }
+    });
+
+    inicializarBuscadorEquipo(contenedorMotor, {
+      tipoNombre: 'motor',
+      seleccionInicialId: esMotoreductor ? item?.motorEquipoId : null
+    });
+    inicializarBuscadorEquipo(contenedorReductor, {
+      tipoNombre: 'reductor',
+      seleccionInicialId: esMotoreductor ? item?.reductorEquipoId : null,
+      onChange: actualizarExtrasVisibles
+    });
+    inicializarBuscadorEquipo(row.querySelector('.buscador-equipo-sprocket1'), {
+      tipoNombre: 'sprocket',
+      seleccionInicialId: esSet ? item?.sprocket1EquipoId : null
+    });
+    inicializarBuscadorEquipo(row.querySelector('.buscador-equipo-sprocket2'), {
+      tipoNombre: 'sprocket',
+      seleccionInicialId: esSet ? item?.sprocket2EquipoId : null
+    });
+    inicializarBuscadorEquipo(contenedorCaja, {
+      tipoNombre: 'caja de cadena',
+      seleccionInicialId: esSet ? item?.cajaEquipoId : null
+    });
+    actualizarExtrasVisibles(); // por si ya venía un reductor precargado (editar pedido)
+    actualizarCantidadSegunTipoEquipo(); // ídem, por si ya venía una cadena precargada
+
+    // Brazo/eje/flanche: cada uno es una PIEZA real del catálogo (para poder
+    // sumar su peso), no solo una bandera — al marcar la casilla aparece un
+    // buscador restringido al tipo correspondiente ('Brazo de reacción',
+    // 'Eje sólido', 'Flanche de salida'; este último tipo hay que crearlo en
+    // Config si todavía no existe, con ese nombre exacto). Al desmarcar la
+    // casilla se limpia la pieza elegida, para no dejar un id huérfano.
+    function conectarExtraConPieza(claseChk, inputCheckbox, contenedorPieza, tipoNombreFiltro) {
+      inicializarBuscadorEquipo(contenedorPieza, { tipoNombre: tipoNombreFiltro });
+      inputCheckbox.addEventListener('change', () => {
+        contenedorPieza.style.display = inputCheckbox.checked ? '' : 'none';
+        if (!inputCheckbox.checked) {
+          contenedorPieza.querySelector('.buscador-input').value = '';
+          contenedorPieza.querySelector('input[type="hidden"]').value = '';
+        }
+      });
+    }
+    conectarExtraConPieza('.chk-brazo', row.querySelector('.equipo-pedido-brazo'), row.querySelector('.buscador-equipo-brazo-pieza'), 'brazo de reaccion');
+    conectarExtraConPieza('.chk-eje', row.querySelector('.equipo-pedido-eje'), row.querySelector('.buscador-equipo-eje-pieza'), 'eje solido');
+    conectarExtraConPieza('.chk-flanche', row.querySelector('.equipo-pedido-flanche'), row.querySelector('.buscador-equipo-flanche-pieza'), 'flanche de salida');
+    // La pieza ya elegida (editando un pedido existente) se precarga por su
+    // id guardado en el value del <input type="hidden"> del propio HTML —
+    // aquí solo falta convertir ese id en el texto visible del buscador.
+    [['brazo', item?.brazoEquipoId], ['eje', item?.ejeEquipoId], ['flanche', item?.flancheEquipoId]].forEach(([nombre, id]) => {
+      if (!id) return;
+      const eq = buscarEquipoCatalogo(id);
+      if (!eq) return;
+      const contenedor = row.querySelector(`.buscador-equipo-${nombre}-pieza`);
+      contenedor.querySelector('.buscador-input').value = nombreMostrableEquipo(eq);
+    });
+
+    habilitarArrastreFila(row);
+
+    // Mover por select: alternativa al drag & drop, más rápida con varios
+    // contenedores. Al elegir, la fila salta directo al body de ese
+    // contenedor (o a la raíz si elige "Sin contenedor").
+    row.querySelector('.fila-mover-contenedor').addEventListener('change', (e) => {
+      const destinoId = e.target.value;
+      const destino = destinoId
+        ? equiposPedidoList.querySelector(`.contenedor-pedido-body[data-contenedor-id="${destinoId}"]`)
+        : equiposPedidoList;
+      (destino || equiposPedidoList).appendChild(row);
+      actualizarContenedoresVacios();
+    });
+
+    // Si el ítem ya tenía un contenedor asignado (viene de un pedido
+    // existente) y ese contenedor ya se creó en el DOM, la fila entra ahí
+    // directo; si no, queda suelta en la raíz de la lista — igual que
+    // siempre se ha visto.
+    const bodyDestino = item?.contenedorId
+      ? equiposPedidoList.querySelector(`.contenedor-pedido-body[data-contenedor-id="${item.contenedorId}"]`)
+      : null;
+    (bodyDestino || equiposPedidoList).appendChild(row);
+    actualizarContenedoresVacios();
+    actualizarSelectsMoverContenedor();
+  }
+
+  function leerEquiposDelFormulario() {
+    const pedidoOriginal = pedidosCache.find(p => p.id === inputId.value);
+    const equiposOriginales = pedidoOriginal?.equipos || [];
+
+    const filas = equiposPedidoList.querySelectorAll('.equipo-pedido-row-wrap');
+    // CRÍTICO: los envíos identifican cada equipo por su POSICIÓN dentro de
+    // este arreglo (itemIndex), no por ningún id propio. Los contenedores
+    // permiten arrastrar una fila a otro grupo (o moverla con el select),
+    // lo cual cambia su posición VISUAL en el DOM — pero guardar en ese
+    // mismo orden visual desordenaría el arreglo real y dejaría a los
+    // envíos ya despachados apuntando al equipo equivocado. Por eso acá se
+    // arma cada item por separado (`filasConItem`) y solo AL FINAL se decide
+    // el orden de guardado, sin usar el orden del DOM para eso.
+    const filasConItem = [];
+    filas.forEach(fila => {
+      const llevaBrazo = fila.querySelector('.equipo-pedido-brazo').checked;
+      const llevaEje = fila.querySelector('.equipo-pedido-eje').checked;
+      const llevaFlanche = fila.querySelector('.equipo-pedido-flanche').checked;
+      // El id solo cuenta si la casilla sigue marcada — evita guardar una
+      // pieza "fantasma" si el campo quedó con algo pero se desmarcó la casilla.
+      const brazoEquipoId = llevaBrazo ? (fila.querySelector('.equipo-pedido-brazo-id').value || null) : null;
+      const ejeEquipoId = llevaEje ? (fila.querySelector('.equipo-pedido-eje-id').value || null) : null;
+      const flancheEquipoId = llevaFlanche ? (fila.querySelector('.equipo-pedido-flanche-id').value || null) : null;
+      const marcarTodasPreparadas = fila.querySelector('.equipo-pedido-preparado').checked;
+      const esMotoreductor = fila.querySelector('.equipo-pedido-es-motoreductor').checked;
+      const esSetFila = fila.querySelector('.equipo-pedido-es-set').checked;
+
+      let item;
+      if (esSetFila) {
+        const sprocket1EquipoId = fila.querySelector('.equipo-pedido-sprocket1').value;
+        const sprocket2EquipoId = fila.querySelector('.equipo-pedido-sprocket2').value;
+        if (!sprocket1EquipoId || !sprocket2EquipoId) return; // ignora sets incompletos
+        const conCaja = fila.querySelector('.equipo-pedido-set-con-caja').checked;
+        const cajaEquipoId = conCaja ? (fila.querySelector('.equipo-pedido-caja').value || null) : null;
+        if (conCaja && !cajaEquipoId) return; // marcó "incluye caja" pero no eligió cuál
+        const cantidad = parseInt(fila.querySelector('.equipo-pedido-cantidad-set').value, 10) || 1;
+        const ordenCompra = fila.querySelector('.equipo-pedido-oc-set').value.trim();
+        const unidadesPreparadas = marcarTodasPreparadas ? Array.from({ length: cantidad }, (_, i) => i) : [];
+        item = { tipoLinea: 'set', sprocket1EquipoId, sprocket2EquipoId, cajaEquipoId, cantidad, ordenCompra, llevaBrazo: false, llevaEje: false, llevaFlanche: false, brazoEquipoId: null, ejeEquipoId: null, flancheEquipoId: null, unidadesPreparadas };
+      } else if (esMotoreductor) {
+        const motorEquipoId = fila.querySelector('.equipo-pedido-motor').value;
+        const reductorEquipoId = fila.querySelector('.equipo-pedido-reductor').value;
+        if (!motorEquipoId || !reductorEquipoId) return; // ignora filas incompletas
+        const cantidad = parseInt(fila.querySelector('.equipo-pedido-cantidad-mr').value, 10) || 1;
+        const ordenCompra = fila.querySelector('.equipo-pedido-oc-mr').value.trim();
+        // Al crear un equipo nuevo, el checkbox "Preparado" marca todas sus
+        // unidades de una vez; en uno que ya existía, se preserva más abajo
+        // lo que ya se gestionó por unidad desde la Ficha.
+        const unidadesPreparadas = marcarTodasPreparadas ? Array.from({ length: cantidad }, (_, i) => i) : [];
+        item = { tipoLinea: 'motoreductor', motorEquipoId, reductorEquipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, llevaFlanche, brazoEquipoId, ejeEquipoId, flancheEquipoId, unidadesPreparadas };
+      } else {
+        const equipoId = fila.querySelector('.equipo-pedido-select').value;
+        if (!equipoId) return; // ignora filas sin equipo elegido
+        const equipoSeleccionado = buscarEquipoCatalogo(equipoId);
+        const cantidadTexto = fila.querySelector('.equipo-pedido-cantidad').value;
+        const cantidad = esTipoCantidadDecimal(equipoSeleccionado)
+          ? (parseFloat(cantidadTexto) || 1)
+          : (parseInt(cantidadTexto, 10) || 1);
+        const ordenCompra = fila.querySelector('.equipo-pedido-oc').value.trim();
+        const porMedida = esTipoCantidadDecimal(equipoSeleccionado);
+        // Cadena: "Preparado" marca todos los metros de una vez; el resto
+        // de tipos marca todas sus unidades.
+        const unidadesPreparadas = (marcarTodasPreparadas && !porMedida) ? Array.from({ length: Math.ceil(cantidad) }, (_, i) => i) : [];
+        item = { tipoLinea: 'individual', equipoId, cantidad, ordenCompra, llevaBrazo, llevaEje, llevaFlanche, brazoEquipoId, ejeEquipoId, flancheEquipoId, unidadesPreparadas };
+        if (porMedida) item.cantidadPreparada = marcarTodasPreparadas ? cantidad : 0;
+      }
+
+      // CRÍTICO: este formulario no tiene campos para los números de serial ni
+      // para el rastreo de completado/devuelto — si no se preservan aquí desde
+      // el pedido original, se perderían cada vez que se guarda el pedido
+      // (por ejemplo, al agregar un equipo nuevo se sobrescribiría TODO el
+      // arreglo de equipos, borrando los seriales de los demás).
+      const origIdxRaw = fila.dataset.originalIndex;
+      const origIdx = (origIdxRaw !== undefined && origIdxRaw !== '') ? parseInt(origIdxRaw, 10) : null;
+      if (origIdx !== null) {
+        const original = equiposOriginales[origIdx];
+        if (original) {
+          if (original.seriales) item.seriales = original.seriales;
+          if (original.serialesMotor) item.serialesMotor = original.serialesMotor;
+          if (original.serialesReductor) item.serialesReductor = original.serialesReductor;
+          if (original.unidadesCompletadas) item.unidadesCompletadas = original.unidadesCompletadas;
+          if (original.unidadesDevueltas) item.unidadesDevueltas = original.unidadesDevueltas;
+          if (original.cantidadCompletada !== undefined) item.cantidadCompletada = original.cantidadCompletada;
+          if (original.cantidadDevuelta !== undefined) item.cantidadDevuelta = original.cantidadDevuelta;
+          if (original.partesCompletadas) item.partesCompletadas = original.partesCompletadas; // set despachado por partes
+          if (original.observacion !== undefined) item.observacion = original.observacion; // observación del equipo
+          // El "preparado" por unidad se gestiona desde la Ficha, no desde
+          // este formulario — siempre se preserva tal cual estaba.
+          item.unidadesPreparadas = original.unidadesPreparadas || [];
+          if (original.cantidadPreparada !== undefined) item.cantidadPreparada = original.cantidadPreparada;
+        }
+      }
+
+      // El contenedor SÍ se determina por dónde está la fila AHORA en el DOM
+      // (pudo haberse arrastrado a otro desde que se abrió el formulario) —
+      // esto es puramente visual/de agrupación y no afecta el itemIndex.
+      const contenedorPadre = fila.closest('.contenedor-pedido');
+      item.contenedorId = contenedorPadre ? contenedorPadre.dataset.contenedorId : null;
+
+      filasConItem.push({ item, origIdx });
+    });
+
+    // Orden de guardado: primero los equipos que YA EXISTÍAN, en su mismo
+    // orden relativo de siempre (sin importar el contenedor al que se hayan
+    // arrastrado), y solo al final los equipos NUEVOS — en una posición que
+    // ningún envío pudo haber referenciado todavía. Esto es lo que evita que
+    // un simple arrastre a un contenedor deje a un envío ya despachado
+    // apuntando al equipo equivocado.
+    const existentes = filasConItem.filter(f => f.origIdx !== null).sort((a, b) => a.origIdx - b.origIdx);
+    const nuevos = filasConItem.filter(f => f.origIdx === null);
+    return [...existentes, ...nuevos].map(f => f.item);
+  }
+
+  // Uno por cada .contenedor-pedido actualmente en el DOM, en el orden en
+  // que aparecen — un contenedor sin ningún equipo adentro simplemente no
+  // se guarda (no tiene sentido conservar uno vacío).
+  function leerContenedoresDelFormulario() {
+    const contenedores = [];
+    equiposPedidoList.querySelectorAll('.contenedor-pedido').forEach(div => {
+      const tieneEquipos = div.querySelector('.equipo-pedido-row-wrap');
+      if (!tieneEquipos) return;
+      contenedores.push({
+        id: div.dataset.contenedorId,
+        titulo: div.querySelector('.contenedor-pedido-titulo').value.trim() || 'Sin nombre'
+      });
+    });
+    return contenedores;
+  }
+
+
+  document.getElementById('btn-add-equipo-pedido').addEventListener('click', () => nuevaFilaEquipoPedido());
+
+  document.addEventListener('equipos-catalogo:cambio', () => {
+    renderTabla();
+  });
+
+  // ---------- Cargar / limpiar formulario ----------
+
+  // ---------- Evidencia fotográfica: link a carpeta compartida ----------
+  // Mismo patrón que en Reparaciones: una vez guardado se ve como link, y
+  // el lápiz abre/cierra el campo de texto para agregarlo o cambiarlo.
+
+  function mostrarEdicionEvidenciaPedido() {
+    evidenciaPedidoInputWrap.style.display = 'block';
+    btnEditarEvidenciaPedido.textContent = '💾';
+    btnEditarEvidenciaPedido.title = 'Guardar este link y cerrar el campo';
+    inputEvidenciaPedido.focus();
+    inputEvidenciaPedido.select();
+  }
+
+  function ocultarEdicionEvidenciaPedido() {
+    evidenciaPedidoInputWrap.style.display = 'none';
+    btnEditarEvidenciaPedido.textContent = '✏️';
+    btnEditarEvidenciaPedido.title = 'Agregar o editar el link';
+    actualizarPreviewEvidenciaPedido();
+  }
+
+  function actualizarPreviewEvidenciaPedido() {
+    const url = inputEvidenciaPedido.value.trim();
+    if (url) {
+      linkEvidenciaPedido.href = escapeAttr(url);
+      previewEvidenciaPedido.style.display = 'block';
+    } else {
+      previewEvidenciaPedido.style.display = 'none';
+    }
+  }
+
+  inputEvidenciaPedido.addEventListener('input', actualizarPreviewEvidenciaPedido);
+
+  btnEditarEvidenciaPedido.addEventListener('click', () => {
+    const estaAbierto = evidenciaPedidoInputWrap.style.display !== 'none';
+    if (estaAbierto) {
+      ocultarEdicionEvidenciaPedido();
+    } else {
+      mostrarEdicionEvidenciaPedido();
+    }
+  });
+
+  function cargarFormularioDesdePedido(pedido) {
+    form.reset();
+    equiposPedidoList.innerHTML = '';
+    resetSubtabs();
+
+    inputId.value = pedido ? pedido.id : '';
+    inputNumero.value = pedido ? pedido.numero : siguienteNumeroDisponible('normal');
+
+    selectCompania.value = pedido?.companiaId || '';
+    poblarSelectCompanias();
+    poblarSelectContacto(pedido?.companiaId || '', pedido?.contacto || '');
+
+    checkboxEnvioSubsidiaria.checked = !!pedido?.envioSubsidiaria;
+    grupoSubsidiaria.style.display = pedido?.envioSubsidiaria ? 'block' : 'none';
+    grupoSubsidiariaContacto.style.display = pedido?.envioSubsidiaria ? 'block' : 'none';
+    if (pedido?.envioSubsidiaria) {
+      poblarSelectSubsidiarias(pedido.subsidiariaId || '');
+      poblarSelectSubsidiariaContacto(pedido.subsidiariaId || '', pedido.subsidiariaContacto || '');
+    } else {
+      poblarSelectSubsidiarias('');
+      poblarSelectSubsidiariaContacto('', '');
+    }
+
+    // Compañía, contacto, tipo y equipo se bloquean cuando el pedido viene de
+    // una reparación: esos datos ya no se editan acá, se sincronizan solos
+    // al guardar la reparación de origen (ver reparaciones.js).
+    pedidoBloqueadoPorReparacion = !!pedido?.reparacionId;
+
+    // Y TODO (salvo la evidencia fotográfica) se bloquea cuando el pedido ya
+    // quedó completado — por ahora esto es fijo, se podría abrir algún campo
+    // más adelante si hace falta.
+    pedidoCompletadoBloqueado = !!(pedido && pedidoEstaCompletado(pedido));
+
+    const bloqueoTotal = pedidoBloqueadoPorReparacion || pedidoCompletadoBloqueado;
+    selectCompania.disabled = bloqueoTotal;
+    inputCompaniaTexto.disabled = bloqueoTotal;
+    selectContacto.disabled = bloqueoTotal;
+    inputContactoTexto.disabled = inputContactoTexto.disabled || bloqueoTotal;
+    radiosTipoPedido.forEach(r => { r.disabled = bloqueoTotal; });
+    radiosPlantaPedido.forEach(r => { r.disabled = pedidoCompletadoBloqueado; });
+    checkboxEnvioSubsidiaria.disabled = pedidoCompletadoBloqueado;
+    selectSubsidiaria.disabled = pedidoCompletadoBloqueado;
+    inputSubsidiariaTexto.disabled = pedidoCompletadoBloqueado;
+    selectSubsidiariaContacto.disabled = pedidoCompletadoBloqueado;
+    inputSubsidiariaContactoTexto.disabled = inputSubsidiariaContactoTexto.disabled || pedidoCompletadoBloqueado;
+    btnAddEquipoPedido.style.display = bloqueoTotal ? 'none' : '';
+    btnAddContenedorPedido.style.display = bloqueoTotal ? 'none' : '';
+    notaReparacionEquipos.style.display = pedidoBloqueadoPorReparacion ? 'block' : 'none';
+    notaCompletadoDatos.style.display = pedidoCompletadoBloqueado ? 'block' : 'none';
+    notaCompletadoEquipos.style.display = pedidoCompletadoBloqueado ? 'block' : 'none';
+    // La evidencia fotográfica es la excepción: se sigue pudiendo editar
+    // aunque el pedido ya esté completado — solo se bloquea si viene
+    // sincronizada desde una reparación (esa sí es una razón real para no
+    // tocarla acá).
+    btnEditarEvidenciaPedido.disabled = pedidoBloqueadoPorReparacion;
+    btnEditarEvidenciaPedido.title = pedidoBloqueadoPorReparacion
+      ? 'Se sincroniza sola desde la reparación de origen'
+      : 'Agregar o editar el link';
+    if (pedidoBloqueadoPorReparacion) {
+      const reparacion = (window.reparacionesCache || []).find(r => r.id === pedido.reparacionId);
+      notaReparacionNumero.textContent = reparacion ? ('R' + String(reparacion.numero).padStart(2, '0')) : 'de origen';
+      notaReparacionDatos.style.display = 'block';
+    } else {
+      notaReparacionDatos.style.display = 'none';
+    }
+
+    // Los contenedores se crean PRIMERO, así cada fila de equipo ya tiene
+    // dónde caer si trae un contenedorId guardado (ver nuevaFilaEquipoPedido).
+    (pedido?.contenedores || []).forEach(cont => crearContenedorPedidoDOM(cont));
+
+    const items = pedido?.equipos || [];
+    if (items.length) {
+      items.forEach((item, idx) => nuevaFilaEquipoPedido(item, idx));
+    } else {
+      nuevaFilaEquipoPedido();
+    }
+
+    const tipoActual = pedido?.tipo || 'normal';
+    radiosTipoPedido.forEach(r => { r.checked = (r.value === tipoActual); });
+    const plantaActual = plantaDePedido(pedido);
+    radiosPlantaPedido.forEach(r => { r.checked = (r.value === plantaActual); });
+
+    inputEvidenciaPedido.value = pedido?.evidenciaFotografica || '';
+    ocultarEdicionEvidenciaPedido();
+  }
+
+  btnVerReparacionDesdePedido.addEventListener('click', () => {
+    const pedido = pedidosCache.find(p => p.id === inputId.value);
+    if (!pedido?.reparacionId) return;
+    if (!window.abrirFichaReparacion) {
+      alert('No se pudo abrir la reparación: la pestaña de Reparaciones no está cargada en esta página.');
+      return;
+    }
+    cerrarModalConservandoBorrador();
+    window.abrirFichaReparacion(pedido.reparacionId);
+  });
+
+  // ---------- Número según el tipo elegido ----------
+  // Normal y Traslado tienen numeraciones separadas, así que al cambiar el
+  // radio de tipo se recalcula el número que va a recibir el pedido y se
+  // actualiza el título del modal.
+  function tipoSeleccionadoEnFormulario() {
+    return Array.from(radiosTipoPedido).find(r => r.checked)?.value || 'normal';
+  }
+
+  function actualizarNumeroYTituloSegunTipo() {
+    const id = inputId.value;
+    const tipo = tipoSeleccionadoEnFormulario();
+
+    if (!id) {
+      const numero = siguienteNumeroDisponible(tipo);
+      inputNumero.value = numero;
+      modalTitulo.textContent = `Nuevo pedido (N° ${textoNumeroPedido({ tipo, numero })})`;
+      return;
+    }
+
+    const original = pedidosCache.find(p => p.id === id);
+    if (!original || original.reparacionId) return;
+    const cambiaSerie = esPedidoTraslado(original) !== (tipo === 'traslado');
+    const proyectado = { ...original, tipo, numero: cambiaSerie ? siguienteNumeroDisponible(tipo, id) : original.numero };
+    inputNumero.value = proyectado.numero;
+    modalTitulo.textContent = `Editar pedido ${textoNumeroPedido(proyectado)}`;
+  }
+
+  radiosTipoPedido.forEach(r => r.addEventListener('change', actualizarNumeroYTituloSegunTipo));
+
+  // ---------- Abrir / cerrar modal ----------
+
+  function abrirModalNuevo() {
+    if (borradorId === '') {
+      actualizarNumeroYTituloSegunTipo();
+      modal.classList.add('open');
+      return;
+    }
+    cargarFormularioDesdePedido(null);
+    actualizarNumeroYTituloSegunTipo();
+    borradorId = '';
+    modal.classList.add('open');
+  }
+
+  function abrirModalEditar(pedido, subtabInicial) {
+    if (borradorId === pedido.id) {
+      modalTitulo.textContent = `Editar pedido ${textoNumeroPedido(pedido)}`;
+      if (subtabInicial) activarSubtab(subtabInicial);
+      modal.classList.add('open');
+      return;
+    }
+    cargarFormularioDesdePedido(pedido);
+    if (subtabInicial) activarSubtab(subtabInicial);
+    modalTitulo.textContent = `Editar pedido ${textoNumeroPedido(pedido)}`;
+    borradorId = pedido.id;
+    modal.classList.add('open');
+  }
+
+  function cerrarModalConservandoBorrador() {
+    modal.classList.remove('open');
+  }
+
+  function cancelarYLimpiar() {
+    form.reset();
+    equiposPedidoList.innerHTML = '';
+    resetSubtabs();
+    grupoSubsidiaria.style.display = 'none';
+    grupoSubsidiariaContacto.style.display = 'none';
+    ocultarEdicionEvidenciaPedido();
+    previewEvidenciaPedido.style.display = 'none';
+    borradorId = null;
+    modal.classList.remove('open');
+  }
+
+  document.getElementById('btn-nuevo-pedido').addEventListener('click', () => {
+    origenEdicion = null;
+    abrirModalNuevo();
+  });
+  document.getElementById('btn-cancelar-pedido').addEventListener('click', cancelarYLimpiar);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) cerrarModalConservandoBorrador();
+  });
+
+  // ---------- Guardar (crear/editar) ----------
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const companiaId = selectCompania.value;
+    if (!companiaId) {
+      subtabButtons[0].click();
+      inputCompaniaTexto.focus();
+      return;
+    }
+
+    const datos = {
+      companiaId,
+      contacto: selectContacto.value,
+      tipo: Array.from(radiosTipoPedido).find(r => r.checked)?.value || 'normal',
+      planta: Array.from(radiosPlantaPedido).find(r => r.checked)?.value || 'envigado',
+      equipos: leerEquiposDelFormulario(),
+      contenedores: leerContenedoresDelFormulario(),
+      envioSubsidiaria: checkboxEnvioSubsidiaria.checked,
+      subsidiariaId: checkboxEnvioSubsidiaria.checked ? (selectSubsidiaria.value || null) : null,
+      subsidiariaContacto: checkboxEnvioSubsidiaria.checked ? (selectSubsidiariaContacto.value || null) : null,
+      evidenciaFotografica: inputEvidenciaPedido.value.trim()
+    };
+
+    const id = inputId.value;
+
+    // Si estamos editando un pedido que YA tenía equipos pendientes, y el
+    // resultado de esta edición (ej: se quitó el equipo que faltaba, y lo
+    // que queda ya salió despachado) deja el pedido completo, se lo
+    // confirmamos al usuario antes de guardar: puede que no se haya dado
+    // cuenta de que esta edición equivale a completar el pedido.
+    if (id) {
+      const pedidoOriginal = pedidosCache.find(p => p.id === id);
+      const yaEstabaCompletado = pedidoOriginal ? pedidoEstaCompletado(pedidoOriginal) : false;
+      const quedaraCompletado = pedidoEstaCompletado({ equipos: datos.equipos });
+
+      if (!yaEstabaCompletado && quedaraCompletado) {
+        const confirmar = confirm(
+          `Con estos cambios, todos los equipos que quedan en el pedido ${pedidoOriginal ? textoNumeroPedido(pedidoOriginal) : ''} ya están despachados.\n\n` +
+          `¿Desea completar este pedido?\n\n` +
+          `Aceptar = el pedido queda marcado como COMPLETADO.\n` +
+          `Cancelar = no se guarda ningún cambio.`
+        );
+        if (!confirmar) return; // No se guarda nada, el usuario sigue editando
+      }
+    }
+
+    const btnGuardar = form.querySelector('button[type="submit"]');
+    btnGuardar.disabled = true;
+    btnGuardar.textContent = 'Guardando...';
+
+    try {
+      let numeroFinal = id ? parseInt(inputNumero.value, 10) : null;
+      if (id) {
+        // Si el tipo cambió entre Normal <-> Traslado, el pedido pasa a la
+        // otra numeración y recibe el menor número libre de ella.
+        const original = pedidosCache.find(p => p.id === id);
+        if (original && !original.reparacionId && esPedidoTraslado(original) !== (datos.tipo === 'traslado')) {
+          numeroFinal = siguienteNumeroDisponible(datos.tipo, id);
+          datos.numero = numeroFinal;
+        }
+        await db.collection(COLECCION).doc(id).update(datos);
+      } else {
+        numeroFinal = siguienteNumeroDisponible(datos.tipo); // recalculado justo antes de guardar
+        datos.numero = numeroFinal;
+        datos.creadoEn = firebase.firestore.FieldValue.serverTimestamp();
+        await db.collection(COLECCION).add(datos);
+      }
+      form.reset();
+      equiposPedidoList.innerHTML = '';
+      resetSubtabs();
+      grupoSubsidiaria.style.display = 'none';
+      grupoSubsidiariaContacto.style.display = 'none';
+      ocultarEdicionEvidenciaPedido();
+      previewEvidenciaPedido.style.display = 'none';
+      borradorId = null;
+      modal.classList.remove('open');
+
+      if (id && origenEdicion === 'ficha') {
+        // Volvemos a abrir la ficha del mismo pedido con los datos recién guardados
+        // (sin esperar al próximo snapshot, para que se sienta instantáneo).
+        // Se parte del pedido original en caché (no solo de los campos del
+        // formulario) para no perder campos que el form no edita, como
+        // reparacionId — si no, el botón "Ver ficha de reparación" y el
+        // bloqueo de campos ligados a la reparación desaparecen hasta refrescar.
+        const pedidoOriginalParaFicha = pedidosCache.find(p => p.id === id);
+        abrirFicha({ ...pedidoOriginalParaFicha, id, numero: numeroFinal, ...datos });
+      }
+      origenEdicion = null;
+    } catch (err) {
+      console.error('Error guardando pedido:', err);
+      alert('No se pudo guardar el pedido. Revisa la consola.');
+    } finally {
+      btnGuardar.disabled = false;
+      btnGuardar.textContent = 'Guardar';
+    }
+  });
+
+  // ---------- Eliminar ----------
+
+  async function eliminarPedido(pedido) {
+    if (pedidoTieneAlgoDespachado(pedido)) {
+      alert(`El pedido ${textoNumeroPedido(pedido)} ya tiene equipos despachados en un envío y no se puede eliminar.`);
+      return;
+    }
+    const ok = confirm(`¿Eliminar el pedido ${textoNumeroPedido(pedido)}? Esta acción no se puede deshacer. El número quedará libre para un pedido nuevo.`);
+    if (!ok) return;
+    try {
+      await db.collection(COLECCION).doc(pedido.id).delete();
+      // Si el pedido venía de una reparación (enlace 1 a 1 vía mismo ID),
+      // esta queda con un `pedidoId` apuntando a un documento que ya no
+      // existe — sin esto, su ficha sigue mostrando "Ver pedido" en vez de
+      // volver a ofrecer "Crear pedido".
+      if (pedido.reparacionId) {
+        await db.collection('reparaciones').doc(pedido.reparacionId).update({
+          pedidoId: firebase.firestore.FieldValue.delete()
+        });
+      }
+    } catch (err) {
+      console.error('Error eliminando pedido:', err);
+      alert('No se pudo eliminar el pedido. Revisa la consola.');
+    }
+  }
+
+  // ---------- Ficha de pedido (solo lectura, distinta al modal de crear/editar) ----------
+
+  function campoFicha(label, valor) {
+    return `
+      <div class="ficha-campo">
+        <div class="campo-label">${escapeHtml(label)}</div>
+        <div class="campo-valor">${valor}</div>
+      </div>
+    `;
+  }
+
+  let pedidoIdEnFicha = null; // qué pedido está abierto en la ficha (para poder guardar seriales)
+  let volverAEnvioId = null; // si la ficha se abrió desde dentro de un envío (envios.js), aquí queda su id
+  let volverAEnvioOpciones = null; // cadena de retorno propia de ese envío (ej. su propio volverAPedidoId), para no perderla al volver
+
+  function renderSeccionCliente(pedido) {
+    const compania = buscarCompania(pedido.companiaId);
+    const nit = compania?.nit ? escapeHtml(compania.nit) : '—';
+    const direccion = compania?.direccion ? escapeHtml(compania.direccion) : '—';
+    const direccionRemision = compania?.direccionRemision ? escapeHtml(compania.direccionRemision) : '—';
+    const contraentrega = compania?.contraentrega ? 'Sí' : 'No';
+    const persona = pedido.contacto ? escapeHtml(pedido.contacto) : '— (sin asignar)';
+    const nombreCliente = compania ? escapeHtml(compania.nombre) : '<span style="color:var(--danger);">Compañía no encontrada</span>';
+
+    // Si el pedido se envía a una Subsidiaria, tanto el nombre del cliente
+    // como el encargado se muestran combinados: "lo normal / lo de la
+    // subsidiaria" — así queda claro que hay un desvío hacia otro destino.
+    let nombreClienteMostrado = nombreCliente;
+    let personaMostrada = persona;
+    if (pedido.envioSubsidiaria) {
+      const subsidiaria = (window.clientesCache || []).find(c => c.id === pedido.subsidiariaId);
+      const nombreSubsidiaria = subsidiaria ? escapeHtml(subsidiaria.nombre) : '<span style="color:var(--danger);">Subsidiaria no encontrada</span>';
+      const contactoSubsidiaria = pedido.subsidiariaContacto ? escapeHtml(pedido.subsidiariaContacto) : '— (sin asignar)';
+      nombreClienteMostrado = `${nombreCliente} / ${nombreSubsidiaria}`;
+      personaMostrada = `${persona} / ${contactoSubsidiaria}`;
+    }
+
+    // Si este pedido se generó a partir de una reparación (mismo ID en las
+    // dos colecciones), se muestra de dónde viene. El enlace a esa ficha ya
+    // no va acá — se movió al lado del título (ver abrirFicha), como botón
+    // "Ver ficha de reparación".
+    let origenHtml = '';
+    if (pedido.reparacionId) {
+      const reparacion = (window.reparacionesCache || []).find(r => r.id === pedido.reparacionId);
+      const numeroTexto = reparacion ? ('R' + String(reparacion.numero).padStart(2, '0')) : 'reparación de origen';
+      origenHtml = campoFicha('Viene de', `🔧 ${escapeHtml(numeroTexto)}`);
+    }
+
+    const evidenciaHtml = pedido.evidenciaFotografica
+      ? `<a href="${escapeAttr(pedido.evidenciaFotografica)}" target="_blank" rel="noopener noreferrer">📷 Ver evidencia ↗</a><button type="button" class="btn-copiar-link" data-link="${encodeURIComponent(pedido.evidenciaFotografica)}" title="Copiar el link de la evidencia">🔗 Copiar link</button>`
+      : '— (sin evidencia)';
+
+    fichaSeccionCliente.innerHTML = `
+      <h4>Cliente</h4>
+      <div class="ficha-campos">
+        ${campoFicha('Cliente', nombreClienteMostrado)}
+        ${campoFicha('Nombre de quien recibe', personaMostrada)}
+        ${campoFicha('NIT', nit)}
+        ${campoFicha('Dirección', direccion)}
+        ${campoFicha('Dirección de remisión', direccionRemision)}
+        ${campoFicha('¿Contraentrega?', contraentrega)}
+        ${origenHtml}
+        ${campoFicha('Evidencia fotográfica', evidenciaHtml)}
+      </div>
+    `;
+  }
+
+  function formatearPesoFicha(peso) {
+    if (peso === undefined || peso === null || peso === '') return 'Sin peso';
+    return `${peso} kg`;
+  }
+
+  // Igual que en equipos.js: para un Acople compuesto, el peso real es la suma
+  // de (peso de cada pieza x su cantidad) — se recalcula aquí también porque
+  // esta pestaña usa su propio window.equiposCache.
+  function calcularPesoEquipo(equipo) {
+    if (!equipo?.esCompuesto || !(equipo.piezasCompuesto || []).length) {
+      return equipo?.peso ?? null;
+    }
+    let total = 0;
+    for (const p of equipo.piezasCompuesto) {
+      const pieza = buscarEquipoCatalogo(p.piezaId);
+      if (!pieza || pieza.peso === undefined || pieza.peso === null) return null;
+      total += pieza.peso * (p.cantidad || 1);
+    }
+    return Math.round(total * 100) / 100;
+  }
+
+  // Peso a mostrar en la Ficha para un ítem: el del equipo/motoreductor en sí
+  // más el de sus piezas de brazo/eje/flanche (si eligió alguna). Si no hay
+  // ningún dato de peso disponible (ni base ni extras), sigue mostrando
+  // "Sin peso" en vez de "0 kg", que sería engañoso.
+  function pesoConExtrasFicha(pesoBase, item) {
+    const extras = pesoExtrasItem(item);
+    if ((pesoBase === null || pesoBase === undefined) && extras === 0) return null;
+    return Math.round(((pesoBase || 0) + extras) * 100) / 100;
+  }
+
+  // Candado que acompaña a un serial/unidad que ya salió en un envío
+  // despachado. Solo se muestra cuando el ítem tiene más de una unidad (con
+  // una sola, la tarjeta ya dice "Completado").
+  const CANDADO_DESPACHADO_HTML = ' <span class="candado-serial" title="Ya despachado">🔒</span>';
+  // Documento: la unidad ya está en un envío ARMADO (remisión hecha, todavía
+  // sin despachar). Al despacharse pasa a candado.
+  const DOCUMENTO_ARMADO_HTML = ' <span class="documento-serial" title="En un envío armado, aún sin despachar">📄</span>';
+
+  // Índices de unidad (con serial) de este ítem que están en un envío armado.
+  function unidadesEnEnvioArmado(pedidoId, itemIndex) {
+    const set = new Set();
+    (window.enviosCache || []).forEach(envio => {
+      if (envio.estado !== 'armado') return;
+      (envio.pedidos || []).forEach(pInfo => {
+        if (pInfo.pedidoId !== pedidoId) return;
+        (pInfo.items || []).forEach(it => {
+          if (it.itemIndex !== itemIndex) return;
+          (it.unidades || []).forEach(u => set.add(u));
+        });
+      });
+    });
+    return set;
+  }
+
+  // Marca de una unidad: candado si ya salió, documento si está en un envío
+  // armado, nada en otro caso. (El candado solo se muestra con cantidad > 1.)
+  function marcaEnvioUnidad(i, completadas, enArmado) {
+    if (completadas.has(i)) return CANDADO_DESPACHADO_HTML;
+    if (enArmado.has(i)) return DOCUMENTO_ARMADO_HTML;
+    return '';
+  }
+
+  function resumenSeriales(item, cantidad, enArmado = new Set()) {
+    // Se conserva el índice de cada serial (la unidad a la que pertenece)
+    // para saber cuáles ya fueron despachadas.
+    const conIndice = (item.seriales || [])
+      .map((s, i) => ({ s: (s || '').trim(), i }))
+      .filter(x => x.s);
+    const completadas = new Set(cantidad > 1 ? (item.unidadesCompletadas || []) : []);
+    const textoSeriales = conIndice
+      .map(x => escapeHtml(x.s) + marcaEnvioUnidad(x.i, completadas, enArmado))
+      .join(', ');
+    if (!conIndice.length) {
+      return `<span class="equipo-card-serial pendiente">🔴 Sin serial (0/${cantidad})</span>`;
+    }
+    if (conIndice.length >= cantidad) {
+      return `<span class="equipo-card-serial completo">🔢 ${textoSeriales}</span>`;
+    }
+    return `<span class="equipo-card-serial pendiente">🟡 ${textoSeriales} (${conIndice.length}/${cantidad})</span>`;
+  }
+
+  // Para un Motoreductor: combina el serial del motor y del reductor de cada
+  // unidad en una sola línea "motor / reductor". Con cantidad > 1 se enumera
+  // por unidad, para saber cuál motor va emparejado con cuál reductor.
+  function resumenSerialesMotoreductor(item, cantidad, enArmado = new Set()) {
+    const filas = Array.from({ length: cantidad }).map((_, i) => {
+      const sm = (item.serialesMotor?.[i] || '').trim();
+      const sr = (item.serialesReductor?.[i] || '').trim();
+      const completa = sm && sr;
+      const vacia = !sm && !sr;
+      const icono = completa ? '🔢' : (vacia ? '🔴' : '🟡');
+      const clase = completa ? 'completo' : 'pendiente';
+      const prefijo = cantidad > 1 ? `Unidad ${i + 1}: ` : '';
+      // Una sola marca por unidad (candado o documento): motor y reductor se
+      // envían juntos.
+      const completadasMr = new Set(cantidad > 1 ? (item.unidadesCompletadas || []) : []);
+      const candado = marcaEnvioUnidad(i, completadasMr, enArmado);
+      return `<div class="equipo-card-serial ${clase}" style="display:block;">${icono} ${prefijo}${escapeHtml(sm || '—')} / ${escapeHtml(sr || '—')}${candado}</div>`;
+    }).join('');
+    return `<div class="serial-par-lista">${filas}</div>`;
+  }
+
+  const COLOR_PREPARADO = '#2f8f5b'; // mismo verde que --ok
+  const COLOR_COMPLETADO = '#1c2128'; // graphite — para distinguirlo claramente de "preparado"
+  const COLOR_DEVUELTO = '#1f5c8a'; // azul — mismo tono que el tag-variante, para consistencia
+
+  // ---------- Preparado / devolución por unidad ----------
+  // "Preparado" ahora se guarda por unidad (item.unidadesPreparadas: [0,1,...])
+  // en vez de un solo booleano — así, si el ítem tiene más de una unidad, cada
+  // una se prepara por separado. Aplica igual a equipos con o sin serial.
+  //
+  // Las devoluciones, en cambio, se registran distinto según el equipo use
+  // serial o no:
+  //  - Con serial (itemUsaSerialPorUnidad): se sabe EXACTAMENTE cuál unidad se
+  //    devuelve -> item.unidadesDevueltas: [index, index, ...]
+  //  - Sin serial: no hay forma de saber cuál es cuál, así que solo se cuentan
+  //    cuántas se devolvieron -> item.cantidadDevuelta: number
+
+  // Índices de unidad que quedan bloqueados para "preparado" porque ya fueron
+  // devueltos. Para equipos sin serial (anónimos) se bloquean las últimas N
+  // unidades, donde N = cantidadDevuelta (no importa cuál en concreto, ya que
+  // son indistinguibles entre sí).
+  function indicesDevueltosItem(item) {
+    if (itemUsaSerialPorUnidad(item)) {
+      return new Set(item.unidadesDevueltas || []);
+    }
+    const total = item.cantidad || 0;
+    const devueltas = item.cantidadDevuelta || 0;
+    const set = new Set();
+    for (let i = Math.max(0, total - devueltas); i < total; i++) set.add(i);
+    return set;
+  }
+
+  // Cuántas unidades de este ítem tienen registrada una devolución (sirve
+  // tanto para equipos con serial como sin serial).
+  function devueltasCountItem(item) {
+    if (itemUsaSerialPorUnidad(item)) return (item.unidadesDevueltas || []).length;
+    return item.cantidadDevuelta || 0;
+  }
+
+  // Cuántas unidades están marcadas como preparadas, sin contar las que ya
+  // fueron devueltas (una unidad devuelta no debe seguir contando como lista).
+  function cantidadPreparadaItem(item) {
+    // Por medida: lo preparado ya es un total en metros (nunca más de lo
+    // que queda por preparar tras las devoluciones).
+    if (itemEsPorMedida(item)) {
+      const tope = Math.max(0, redondear2((item.cantidad || 0) - devueltasCountItem(item)));
+      return Math.min(redondear2(item.cantidadPreparada || 0), tope);
+    }
+    const devueltos = indicesDevueltosItem(item);
+    return (item.unidadesPreparadas || []).filter(u => !devueltos.has(u)).length;
+  }
+
+  // Determina el color/ícono/tag "principal" de una tarjeta de equipo cuando
+  // hay que resumir varios estados posibles en uno solo (puede tener varias
+  // unidades con estados distintos). Prioridad: Devuelto > Completado > Preparado > normal.
+  // `tipo` es el registro completo del catálogo de tipos (para poder usar su
+  // logo cuando no hay ningún estado especial); iconoRespaldo/colorRespaldo
+  // se usan si el tipo no se encontró (equipo/tipo eliminado, motoreductor
+  // sin tipo "Motoreductor" en el catálogo, etc). El campo devuelto ya es
+  // HTML listo para insertar (imagen o emoji), no texto plano.
+  function estadoPrincipalItem(item, tipo, colorRespaldo, iconoRespaldo) {
+    const tieneDevueltas = devueltasCountItem(item) > 0;
+    const completado = estaItemCompletado(item);
+    const totalPreparable = redondear2((item.cantidad || 0) - devueltasCountItem(item));
+    const preparado = totalPreparable > 0 && cantidadPreparadaItem(item) >= totalPreparable;
+
+    if (tieneDevueltas) return { tag: 'Devuelto', color: COLOR_DEVUELTO, icono: '🔵' };
+    if (completado) return { tag: 'Completado', color: COLOR_COMPLETADO, icono: '🔒' };
+    if (preparado) return { tag: 'Preparado', color: COLOR_PREPARADO, icono: '✅' };
+    return { tag: null, color: tipo?.color || colorRespaldo, icono: window.iconoTipoHtml(tipo, iconoRespaldo) };
+  }
+
+  // Un ítem queda "completado" cuando TODA su cantidad (o todas sus unidades,
+  // si usa serial) ya salió en algún envío despachado. Se guarda en Firestore
+  // al momento de despachar (ver envios.js), acá solo se lee/calcula.
+  //
+  // Una devolución saca la unidad de "completada" (para que dentro del
+  // detalle del equipo se vea como "Devuelto" y no como "Completado" — ver
+  // estadoPrincipalItem) pero eso NO debe hacer que el ítem — ni el pedido
+  // completo — "regrese" a en proceso: ya se despachó, solo que después
+  // volvió. Por eso acá se le vuelve a sumar devueltasCountItem(item): lo
+  // completado-ahora-mismo más lo que se devolvió reconstruye cuánto se
+  // llegó a despachar en total alguna vez.
+  function estaItemCompletado(item) {
+    const total = item.cantidad || 0;
+    if (!total) return false;
+    if (item.unidadesCompletadas) return (item.unidadesCompletadas.length + devueltasCountItem(item)) >= total;
+    return ((item.cantidadCompletada || 0) + devueltasCountItem(item)) >= total;
+  }
+
+  // Cuántas unidades de este ítem ya salieron despachadas (puede ser parcial:
+  // ej. 1 de 2). Se usa para lockear SOLO esa porción, no el ítem completo.
+  function conteoCompletadoItem(item) {
+    const total = item.cantidad || 0;
+    const hecho = item.unidadesCompletadas ? item.unidadesCompletadas.length : (item.cantidadCompletada || 0);
+    return { hecho: Math.min(hecho, total), total };
+  }
+
+  function pedidoEstaCompletado(pedido) {
+    const equipos = pedido.equipos || [];
+    return equipos.length > 0 && equipos.every(estaItemCompletado);
+  }
+  window.pedidoEstaCompletado = pedidoEstaCompletado;
+
+  // Prioridad: el pedido guarda prioridad: true/false (el botón ❗ de la
+  // tarjeta). Solo cuenta mientras el pedido NO esté despachado por completo:
+  // al completarse, la prioridad se retira sola (envios.js además borra la
+  // marca en la base de datos al despachar).
+  function esPrioritario(pedido) {
+    return !!pedido.prioridad && !pedidoEstaCompletado(pedido);
+  }
+
+  function pedidoTieneDevolucion(pedido) {
+    return (pedido.equipos || []).some(item => devueltasCountItem(item) > 0);
+  }
+
+  // Un pedido ya no se puede eliminar si AL MENOS uno de sus equipos ya salió
+  // (parcial o totalmente) en algún envío despachado. No hace falta que el
+  // pedido esté completo del todo: basta con que ya haya algo despachado.
+  function pedidoTieneAlgoDespachado(pedido) {
+    return (pedido.equipos || []).some(item => algoDespachadoItem(item));
+  }
+  window.pedidoTieneAlgoDespachado = pedidoTieneAlgoDespachado;
+
+  // Permite que reparaciones.js elimine el pedido vinculado al eliminar su
+  // reparación de origen (mismo ID en las dos colecciones). Respeta la misma
+  // regla que "Eliminar" tiene acá: si el pedido ya tiene algo despachado en
+  // un envío, no se borra nada. Devuelve { ok: true } o { ok: false }.
+  window.eliminarPedidoDesdeReparacion = async function (pedidoId) {
+    const pedido = pedidosCache.find(p => p.id === pedidoId);
+    if (pedido && pedidoTieneAlgoDespachado(pedido)) return { ok: false, motivo: 'despachado' };
+    try {
+      await db.collection(COLECCION).doc(pedidoId).delete();
+      return { ok: true };
+    } catch (err) {
+      console.error('Error eliminando pedido vinculado desde reparación:', err);
+      return { ok: false, motivo: 'error' };
+    }
+  };
+
+  // ---------- Ficha de Devolución (vista reducida: solo lo devuelto) ----------
+  // Se abre desde la tabla cuando el filtro activo es "Devolución": en vez de
+  // la ficha completa del pedido, muestra solamente el/los equipo(s) a los
+  // que se les hizo devolución, con su serial si el equipo lo maneja.
+
+  function serialesDeUnidadDevuelta(item, unidad) {
+    if (item.tipoLinea === 'motoreductor') {
+      const motor = buscarEquipoCatalogo(item.motorEquipoId);
+      const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      const partes = [];
+      if (motor?.usaSerial) partes.push(`Motor: <span class="serial-valor">${escapeHtml(item.serialesMotor?.[unidad] || '—')}</span>`);
+      if (reductor?.usaSerial) partes.push(`Reductor: <span class="serial-valor">${escapeHtml(item.serialesReductor?.[unidad] || '—')}</span>`);
+      return partes.join(' · ');
+    }
+    const equipo = equipoDeItem(item);
+    if (equipo?.usaSerial) return `Serial: <span class="serial-valor">${escapeHtml(item.seriales?.[unidad] || '—')}</span>`;
+    return '';
+  }
+
+  function nombreLineaDevolucion(item) {
+    if (item.tipoLinea === 'motoreductor') {
+      const motor = buscarEquipoCatalogo(item.motorEquipoId);
+      const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      const nombreMotor = motor ? escapeHtml(motor.nombre) : 'Motor no encontrado';
+      const nombreReductor = reductor ? escapeHtml(reductor.nombre) : 'Reductor no encontrado';
+      return `🔧 Motoreductor — ${nombreMotor} / ${nombreReductor}`;
+    }
+    const equipo = equipoDeItem(item);
+    return equipo ? `📦 ${escapeHtml(nombreMostrableEquipo(equipo))}` : '<span style="color:var(--danger);">Equipo no encontrado</span>';
+  }
+
+  function renderDevolucionItem(item) {
+    const conSerial = itemUsaSerialPorUnidad(item);
+    let filasHtml;
+    if (conSerial) {
+      const devueltos = Array.from(indicesDevueltosItem(item)).sort((a, b) => a - b);
+      filasHtml = devueltos.map(u => {
+        const seriales = serialesDeUnidadDevuelta(item, u);
+        return `<div class="devolucion-item-unidad">Unidad ${u + 1}${seriales ? ' — ' + seriales : ''}</div>`;
+      }).join('');
+    } else {
+      const cant = item.cantidadDevuelta || 0;
+      filasHtml = `<div class="devolucion-item-unidad">${cant} unidad${cant > 1 ? 'es' : ''} devuelta${cant > 1 ? 's' : ''} (equipo sin serial)</div>`;
+    }
+    return `
+      <div class="devolucion-item">
+        <div class="devolucion-item-nombre">${nombreLineaDevolucion(item)}</div>
+        ${filasHtml}
+      </div>
+    `;
+  }
+
+  function abrirFichaDevolucion(pedido) {
+    const compania = buscarCompania(pedido.companiaId);
+    const nombreCompania = compania ? compania.nombre : 'Compañía no encontrada';
+    fichaDevolucionNumero.textContent = `${textoNumeroPedido(pedido)} - ${nombreCompania}`;
+
+    const itemsConDevolucion = (pedido.equipos || []).filter(item => devueltasCountItem(item) > 0);
+    fichaDevolucionContenido.innerHTML = itemsConDevolucion.length
+      ? itemsConDevolucion.map(renderDevolucionItem).join('')
+      : '<div class="empty-equipos-pedido">Este pedido no tiene devoluciones registradas.</div>';
+
+    modalFichaDevolucion.classList.add('open');
+  }
+
+  function cerrarFichaDevolucion() {
+    modalFichaDevolucion.classList.remove('open');
+  }
+
+  btnCerrarFichaDevolucion.addEventListener('click', cerrarFichaDevolucion);
+  modalFichaDevolucion.addEventListener('click', (e) => {
+    if (e.target === modalFichaDevolucion) cerrarFichaDevolucion();
+  });
+
+  // Texto corto que resume el estado de "preparado" de un ítem, ya sea de
+  // una sola unidad o de varias (se prepara por unidad cuando cantidad > 1).
+  function textoResumenPreparado(item) {
+    const totalPreparable = redondear2((item.cantidad || 0) - devueltasCountItem(item));
+    if (totalPreparable <= 0) return 'Sin unidades disponibles para preparar (todas devueltas)';
+    const cantPreparadas = cantidadPreparadaItem(item);
+    if (itemEsPorMedida(item)) {
+      return `${cantPreparadas >= totalPreparable ? '✅' : '⬜'} Preparado ${cantPreparadas}/${totalPreparable} m`;
+    }
+    if ((item.cantidad || 1) > 1) {
+      return `${cantPreparadas >= totalPreparable ? '✅' : '⬜'} Preparado ${cantPreparadas}/${totalPreparable}`;
+    }
+    return cantPreparadas > 0 ? '✅ Preparado' : '⬜ Sin preparar';
+  }
+
+  function itemEstaFullyPreparado(item) {
+    const totalPreparable = redondear2((item.cantidad || 0) - devueltasCountItem(item));
+    return totalPreparable > 0 && cantidadPreparadaItem(item) >= totalPreparable;
+  }
+
+  // ---------- Reemplazo de equipo (exclusivo a pedidos de Reparación) ----------
+  // Cambia el motor, el reductor, o el equipo individual por otro del mismo
+  // catálogo (mismo Tipo), conservando en item.reemplazo[<parte>] la
+  // identidad + serial del equipo que trajo la reparación, para poder
+  // "Volver al original" en cualquier momento sin perder ese dato. Solo
+  // tiene sentido con cantidad 1 (siempre una unidad, un serial) y solo en
+  // pedidos que vienen de una reparación (ver reparaciones.js).
+  function puedeReemplazarEquipo(pedido, item) {
+    return !!pedido.reparacionId && (item.cantidad || 1) === 1 && conteoCompletadoItem(item).hecho === 0;
+  }
+
+  function reemplazoDeParte(item, parte) {
+    return item.reemplazo && item.reemplazo[parte] ? item.reemplazo[parte] : null;
+  }
+
+  function camposDeParte(parte) {
+    return parte === 'motor'
+      ? { campoId: 'motorEquipoId', campoSeriales: 'serialesMotor' }
+      : parte === 'reductor'
+        ? { campoId: 'reductorEquipoId', campoSeriales: 'serialesReductor' }
+        : { campoId: 'equipoId', campoSeriales: 'seriales' };
+  }
+
+  let reemplazoEnCurso = null; // { indexItem, parte }
+
+  function abrirModalReemplazoEquipo(indexItem, parte) {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) return;
+    const item = (pedido.equipos || [])[indexItem];
+    if (!item) return;
+
+    const { campoId } = camposDeParte(parte);
+    const equipoActual = buscarEquipoCatalogo(item[campoId]);
+    reemplazoEnCurso = { indexItem, parte, tipoId: equipoActual ? equipoActual.tipoId : null };
+
+    const etiquetaParte = parte === 'motor' ? 'el motor' : (parte === 'reductor' ? 'el reductor' : 'el equipo');
+    reemplazoEquipoTitulo.textContent = `Reemplazar ${etiquetaParte}`;
+    reemplazoEquipoOriginalTexto.textContent = equipoActual
+      ? `Equipo actual: ${nombreMostrableEquipo(equipoActual)}`
+      : 'Equipo actual no encontrado en el catálogo.';
+
+    reemplazoEquipoSerialWrap.style.display = 'none';
+    inputReemplazoEquipoSerial.value = '';
+    // Se regenera el buscador desde cero en cada apertura para no ir
+    // acumulando listeners de aperturas anteriores sobre el mismo
+    // contenedor (a diferencia de una fila de equipo del formulario, que
+    // se crea nueva cada vez, este contenedor es fijo en el HTML).
+    contenedorBuscadorReemplazo.innerHTML = `
+      <input type="text" class="buscador-input" id="reemplazo-equipo-buscador-input" placeholder="Escribe para buscar el equipo nuevo..." autocomplete="off">
+      <input type="hidden" id="reemplazo-equipo-select">
+      <div class="buscador-resultados"></div>
+    `;
+
+    inicializarBuscadorEquipo(contenedorBuscadorReemplazo, {
+      obtenerTipoId: () => reemplazoEnCurso.tipoId,
+      onChange: (equipoId) => {
+        const eq = equipoId ? buscarEquipoCatalogo(equipoId) : null;
+        reemplazoEquipoSerialWrap.style.display = eq?.usaSerial ? 'block' : 'none';
+        if (!eq?.usaSerial) inputReemplazoEquipoSerial.value = '';
+      }
+    });
+
+    modalReemplazoEquipo.classList.add('open');
+  }
+
+  btnCancelarReemplazoEquipo.addEventListener('click', () => {
+    modalReemplazoEquipo.classList.remove('open');
+    reemplazoEnCurso = null;
+  });
+  modalReemplazoEquipo.addEventListener('click', (e) => {
+    if (e.target === modalReemplazoEquipo) {
+      modalReemplazoEquipo.classList.remove('open');
+      reemplazoEnCurso = null;
+    }
+  });
+
+  btnConfirmarReemplazoEquipo.addEventListener('click', async () => {
+    if (!reemplazoEnCurso) return;
+    const nuevoEquipoId = contenedorBuscadorReemplazo.querySelector('input[type="hidden"]').value;
+    if (!nuevoEquipoId) {
+      alert('Elige el equipo de reemplazo del catálogo.');
+      return;
+    }
+    const eq = buscarEquipoCatalogo(nuevoEquipoId);
+    if (eq?.usaSerial && !inputReemplazoEquipoSerial.value.trim()) {
+      alert('Este equipo usa número de serial: escríbelo antes de confirmar.');
+      return;
+    }
+    const { indexItem, parte } = reemplazoEnCurso;
+    await confirmarReemplazoEquipo(indexItem, parte, nuevoEquipoId, inputReemplazoEquipoSerial.value.trim());
+    modalReemplazoEquipo.classList.remove('open');
+    reemplazoEnCurso = null;
+  });
+
+  async function confirmarReemplazoEquipo(indexItem, parte, nuevoEquipoId, nuevoSerial) {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) return;
+    const equipos = [...(pedido.equipos || [])];
+    const item = { ...equipos[indexItem] };
+    const { campoId, campoSeriales } = camposDeParte(parte);
+
+    // Se guarda la identidad + serial de lo que había ANTES de este cambio
+    // (que puede ser el equipo original de la reparación, o un reemplazo
+    // anterior si ya se había cambiado más de una vez) para poder volver.
+    item.reemplazo = {
+      ...(item.reemplazo || {}),
+      [parte]: { equipoId: item[campoId], serial: (item[campoSeriales] || [])[0] || '' }
+    };
+    item[campoId] = nuevoEquipoId;
+    const seriales = [...(item[campoSeriales] || [])];
+    seriales[0] = nuevoSerial || '';
+    item[campoSeriales] = seriales;
+
+    equipos[indexItem] = item;
+    try {
+      await db.collection(COLECCION).doc(pedido.id).update({ equipos });
+    } catch (err) {
+      console.error('Error reemplazando equipo:', err);
+      alert('No se pudo reemplazar el equipo. Revisa la consola.');
+    }
+  }
+
+  async function deshacerReemplazoEquipo(indexItem, parte) {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) return;
+    const item = (pedido.equipos || [])[indexItem];
+    const original = item ? reemplazoDeParte(item, parte) : null;
+    if (!original) return;
+
+    const ok = confirm('¿Volver al equipo original? Se deshace este reemplazo.');
+    if (!ok) return;
+
+    const equipos = [...(pedido.equipos || [])];
+    const itemNuevo = { ...equipos[indexItem] };
+    const { campoId, campoSeriales } = camposDeParte(parte);
+
+    itemNuevo[campoId] = original.equipoId;
+    const seriales = [...(itemNuevo[campoSeriales] || [])];
+    seriales[0] = original.serial || '';
+    itemNuevo[campoSeriales] = seriales;
+
+    const reemplazoRestante = { ...(itemNuevo.reemplazo || {}) };
+    delete reemplazoRestante[parte];
+    if (Object.keys(reemplazoRestante).length) itemNuevo.reemplazo = reemplazoRestante;
+    else delete itemNuevo.reemplazo;
+
+    equipos[indexItem] = itemNuevo;
+    try {
+      await db.collection(COLECCION).doc(pedido.id).update({ equipos });
+    } catch (err) {
+      console.error('Error deshaciendo el reemplazo:', err);
+      alert('No se pudo deshacer el reemplazo. Revisa la consola.');
+    }
+  }
+
+  // Fila visual "equipo viejo → equipo nuevo" para una parte reemplazada
+  // (motor, reductor, o el equipo individual). Se usa tanto para el ícono de
+  // la parte (⚡/⚙️/el que corresponda) como para el botón "Volver al
+  // original".
+  function filaReemplazoHtml(parte, icono, viejo, viejoSerial, nuevo, nuevoSerial, indexItem, puedeDeshacer) {
+    const nombreViejo = viejo ? escapeHtml(nombreMostrableEquipo(viejo)) : '<span style="color:var(--danger);">Equipo no encontrado</span>';
+    const nombreNuevo = nuevo ? escapeHtml(nombreMostrableEquipo(nuevo)) : '<span style="color:var(--danger);">Equipo no encontrado</span>';
+    return `
+      <div class="reemplazo-fila">
+        <div class="equipo-mini-card viejo">
+          <div class="equipo-mini-card-header">${icono} Original</div>
+          <div class="equipo-mini-card-body">
+            <div class="equipo-mini-nombre">${nombreViejo}</div>
+            ${viejoSerial ? `<div class="equipo-mini-serial">S/N ${escapeHtml(viejoSerial)}</div>` : ''}
+          </div>
+        </div>
+        <div class="flecha-reemplazo">
+          <svg width="30" height="16" viewBox="0 0 30 16" fill="none"><path d="M0 8H24" stroke="#6b3fa0" stroke-width="2"/><path d="M19 2L25 8L19 14" stroke="#6b3fa0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="equipo-mini-card nuevo">
+          <div class="equipo-mini-card-header">${icono} Nuevo<span class="tag-reemplazado">REEMPLAZO</span></div>
+          <div class="equipo-mini-card-body">
+            <div class="equipo-mini-nombre">${nombreNuevo}</div>
+            ${nuevoSerial ? `<div class="equipo-mini-serial">S/N ${escapeHtml(nuevoSerial)}</div>` : ''}
+          </div>
+        </div>
+      </div>
+      ${puedeDeshacer ? `<button type="button" class="btn-deshacer-reemplazo" data-deshacer-reemplazo data-index="${indexItem}" data-parte="${parte}">↩️ Volver al original</button>` : ''}
+    `;
+  }
+
+  // ---------- Botón 👁 de las tarjetas de equipo ----------
+  // Un clic en el ojo cambia la tarjeta a "solo seriales y OC" (en grande);
+  // otro clic la devuelve a la vista normal. El estado NO se recuerda: vive
+  // solo mientras la ficha está abierta (se borra al cerrarla o al abrir
+  // otro pedido) y sirve para que la tarjeta no se vuelva a cerrar si la
+  // ficha se redibuja por un cambio en vivo.
+  const indicesVistaSeriales = new Set();
+
+  const ICONO_OJO_HTML =
+    '<svg class="ojo-cerrado" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>' +
+    '<svg class="ojo-abierto" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" fill="none"/><circle cx="12" cy="12" r="3.6"/></svg>';
+
+  // Tamaño de letra de la vista del ojo: 5 niveles con TOPE (el más grande es
+  // 1.75 veces el base; más allá los seriales largos se desbordarían). Es el
+  // mismo para todas las tarjetas y se recuerda en este navegador.
+  const ESCALAS_OJO = [0.85, 1, 1.25, 1.5, 1.75];
+  const CLAVE_TAMANO_OJO = 'pedidos_ojo_tamano';
+  let nivelTamanoOjo = (function () {
+    try {
+      const n = parseInt(localStorage.getItem(CLAVE_TAMANO_OJO), 10);
+      return (n >= 0 && n < ESCALAS_OJO.length) ? n : 1;
+    } catch (e) { return 1; }
+  })();
+
+  function aplicarTamanoOjo() {
+    fichaEquiposContenido.style.setProperty('--ojo-escala', ESCALAS_OJO[nivelTamanoOjo]);
+    fichaEquiposContenido.querySelectorAll('[data-ojo-tamano="menos"]').forEach(b => { b.disabled = nivelTamanoOjo <= 0; });
+    fichaEquiposContenido.querySelectorAll('[data-ojo-tamano="mas"]').forEach(b => { b.disabled = nivelTamanoOjo >= ESCALAS_OJO.length - 1; });
+  }
+
+  function cambiarTamanoOjo(delta) {
+    nivelTamanoOjo = Math.max(0, Math.min(ESCALAS_OJO.length - 1, nivelTamanoOjo + delta));
+    try { localStorage.setItem(CLAVE_TAMANO_OJO, String(nivelTamanoOjo)); } catch (e) { /* sin almacenamiento: queda solo en esta sesión */ }
+    aplicarTamanoOjo();
+  }
+
+  // ---------- Observación por equipo ----------
+  // Cada equipo del pedido puede tener una observación (texto con formato:
+  // negrilla, cursiva y listas). Se guarda en item.observacion como HTML
+  // saneado. No existe en pedidos tipo reparación (ahí manda la observación
+  // de la reparación) y se bloquea cuando el equipo ya salió completo.
+  const ETIQUETAS_RTE_OBS = new Set(['B', 'STRONG', 'I', 'EM', 'UL', 'OL', 'LI', 'BR', 'DIV', 'P']);
+
+  // Deja solo negrilla/cursiva/listas/saltos de línea; cualquier otra etiqueta
+  // se "desenvuelve" y se borran los atributos (style, onclick…).
+  function sanearHtmlObservacion(html) {
+    const temp = document.createElement('div');
+    temp.innerHTML = html || '';
+    (function limpiar(nodo) {
+      Array.from(nodo.childNodes).forEach(hijo => {
+        if (hijo.nodeType === Node.ELEMENT_NODE) {
+          limpiar(hijo);
+          if (!ETIQUETAS_RTE_OBS.has(hijo.tagName)) {
+            while (hijo.firstChild) nodo.insertBefore(hijo.firstChild, hijo);
+            nodo.removeChild(hijo);
+          } else {
+            while (hijo.attributes.length) hijo.removeAttribute(hijo.attributes[0].name);
+          }
+        } else if (hijo.nodeType !== Node.TEXT_NODE) {
+          nodo.removeChild(hijo);
+        }
+      });
+    })(temp);
+    return temp.innerHTML;
+  }
+
+  function observacionVacia(html) {
+    const temp = document.createElement('div');
+    temp.innerHTML = html || '';
+    return temp.textContent.trim() === '';
+  }
+
+  function pedidoPermiteObservaciones(pedido) {
+    return tipoEfectivoPedido(pedido) !== 'reparacion';
+  }
+
+  // 📄 junto al nombre del equipo: solo si tiene observación. En los equipos
+  // de reparación no hay observación propia: sus observaciones viven en la
+  // reparación de origen, y el 📄 abre su ventana de observaciones.
+  function botonObservacionHtml(item, index, pedido) {
+    if (pedido.reparacionId) {
+      return `<button type="button" class="btn-obs-equipo" data-obs-reparacion="${escapeHtml(pedido.reparacionId)}" title="Ver observaciones de la reparación" aria-label="Ver observaciones de la reparación">📄</button>`;
+    }
+    if (!pedidoPermiteObservaciones(pedido) || observacionVacia(item.observacion)) return '';
+    return `<button type="button" class="btn-obs-equipo" data-obs-index="${index}" title="Ver observación" aria-label="Ver observación">📄</button>`;
+  }
+
+  // Botón "?" con la sugerencia de remisión: solo aparece si el equipo está en
+  // alguna guía (Config → Guías de remisión). El clic lo maneja guias.js.
+  function botonGuiaHtml(item, pedido) {
+    const guia = window.guiaRemisionDeItem
+      ? window.guiaRemisionDeItem(item, { reparacion: !!pedido.reparacionId })
+      : null;
+    if (!guia) return '';
+    return `<button type="button" class="btn-guia-equipo" data-guia-id="${guia.id}" title="Sugerencia de remisión" aria-label="Sugerencia de remisión">?</button>`;
+  }
+
+  function botonOjoHtml(index, abierto) {
+    return `<button type="button" class="btn-ojo-equipo" data-ojo data-index="${index}" aria-pressed="${abierto}" title="${abierto ? 'Volver a la vista normal' : 'Ver solo seriales y OC'}">${ICONO_OJO_HTML}</button>`;
+  }
+
+  // El ojo solo aparece si el ítem tiene algo que mostrar: OC o algún serial.
+  function itemTieneOCOSerial(item) {
+    const llena = (lista) => (lista || []).some(s => s && String(s).trim());
+    return !!(item.ordenCompra || '').trim() ||
+      llena(item.seriales) || llena(item.serialesMotor) || llena(item.serialesReductor);
+  }
+
+  // Vista grande: OC arriba y una fila por unidad con su(s) serial(es) y su
+  // marca (🔒 despachada / 📄 en envío armado). `partes(i)` devuelve los
+  // textos de serial de la unidad i (uno, o motor y reductor).
+  function vistaSerialesHtml(item, index, pedido, partes) {
+    const oc = (item.ordenCompra || '').trim();
+    const completadas = new Set(item.cantidad > 1 ? (item.unidadesCompletadas || []) : []);
+    const enArmado = unidadesEnEnvioArmado(pedido.id, index);
+    let filas = '';
+    if (partes) {
+      for (let i = 0; i < Math.floor(item.cantidad || 0); i++) {
+        const textos = partes(i);
+        const hayFalta = textos.every(t => !t);
+        filas += `
+          <div class="fila-serial-grande">
+            <span class="u">${item.cantidad > 1 ? 'Unidad ' + (i + 1) : 'Serial'}</span>
+            <span class="sn ${hayFalta ? 'falta' : ''}">${hayFalta ? 'Falta serial' : textos.map(t => escapeHtml(t || '—')).join(' / ')}</span>
+            <span class="est">${marcaEnvioUnidad(i, completadas, enArmado)}</span>
+          </div>`;
+      }
+    }
+    return `
+      <div class="vista-grande">
+        <div class="ojo-tamano-barra" role="group" aria-label="Tamaño de letra">
+          <button type="button" class="btn-ojo-tamano" data-ojo-tamano="menos" title="Letra más pequeña" aria-label="Letra más pequeña" ${nivelTamanoOjo <= 0 ? 'disabled' : ''}>A−</button>
+          <button type="button" class="btn-ojo-tamano" data-ojo-tamano="mas" title="Letra más grande" aria-label="Letra más grande" ${nivelTamanoOjo >= ESCALAS_OJO.length - 1 ? 'disabled' : ''}>A+</button>
+        </div>
+        ${oc ? `<div class="oc-grande"><small>Orden de compra</small>${escapeHtml(oc)}</div>` : ''}
+        ${filas}
+      </div>`;
+  }
+
+  function renderTarjetaIndividual(item, index, pedido) {
+    const equipo = equipoDeItem(item);
+    const tipo = equipo ? buscarTipoEquipo(equipo.tipoId) : null;
+    const preparado = itemEstaFullyPreparado(item);
+    const completado = estaItemCompletado(item);
+    const estadoPrincipal = estadoPrincipalItem(item, tipo, '#5b6472', '📦');
+    const color = estadoPrincipal.color;
+    const icono = estadoPrincipal.icono;
+    const nombreTipo = tipo?.nombre || 'Tipo desconocido';
+
+    const extrasNombre = [
+      item.llevaBrazo ? '+ Brazo de reacción' : '',
+      item.llevaEje ? '+ Eje sólido' : '',
+      item.llevaFlanche ? '+ Flanche de salida' : ''
+    ].filter(Boolean).map(t => ` ${escapeHtml(t)}`).join('');
+
+    const nombreEquipo = equipo
+      ? escapeHtml(equipo.nombre) + (equipo.variante ? ` <span class="tag-variante">${escapeHtml(equipo.variante)}</span>` : '') + extrasNombre
+      : '<span style="color:var(--danger);">Equipo no encontrado</span>';
+
+    const reemplazo = reemplazoDeParte(item, 'individual');
+    const reemplazoHtml = reemplazo
+      ? filaReemplazoHtml('individual', icono, buscarEquipoCatalogo(reemplazo.equipoId), reemplazo.serial, equipo, (item.seriales || [])[0], index, conteoCompletadoItem(item).hecho === 0)
+      : (puedeReemplazarEquipo(pedido, item) ? `<button type="button" class="btn-reemplazar-equipo" data-reemplazar data-index="${index}" data-parte="individual">🔁 Reemplazar equipo</button>` : '');
+
+    const usaSerial = !!equipo?.usaSerial;
+    const tieneOjo = !reemplazo && itemTieneOCOSerial(item);
+    const ojoAbierto = tieneOjo && indicesVistaSeriales.has(index);
+    const ocHtml = item.ordenCompra
+      ? `<div class="equipo-card-oc">📄 OC: ${escapeHtml(item.ordenCompra)}</div>`
+      : '';
+    const { hecho, total } = conteoCompletadoItem(item);
+    const chipParcial = (hecho > 0 && hecho < total) ? `<span class="meta-chip" title="Ya se despachó parte de este ítem">🔒 ${hecho}/${total} despachado</span>` : '';
+    const cantDevueltas = devueltasCountItem(item);
+    const chipDevuelto = cantDevueltas ? `<span class="meta-chip chip-devuelto" title="Unidad(es) devuelta(s)">🔵 ${cantDevueltas} devuelta${cantDevueltas > 1 ? 's' : ''}</span>` : '';
+    // Set con caja de cadena: si ya salió alguna parte, se muestra cuál.
+    let chipPartes = '';
+    if (setTienePartes(item) && !completado) {
+      const pc = partesCompletadasSet(item);
+      if (pc.sprockets > 0 || pc.caja > 0) {
+        chipPartes = `<span class="meta-chip" title="Cuántos sets tienen ya despachada cada parte">📦 Sprockets ${pc.sprockets}/${total} · Caja de cadena ${pc.caja}/${total} despachado</span>`;
+      }
+    }
+    const metaChips = `<span class="meta-chip">${formatearPesoFicha(pesoConExtrasFicha(calcularPesoEquipo(equipo), item))}</span>${chipParcial}${chipPartes}${chipDevuelto}`;
+
+    return `
+      <div class="equipo-card clicable ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''} ${cantDevueltas ? 'devuelto' : ''} ${ojoAbierto ? 'vista-seriales' : ''}" data-index="${index}" style="border-color:${color};">
+        <div class="equipo-card-header" style="background:${color};">
+          <span>${icono}</span><span>${escapeHtml(nombreTipo)} x ${item.cantidad}${itemEsPorMedida(item) ? ' m' : ''}</span>${botonObservacionHtml(item, index, pedido)}
+          ${estadoPrincipal.tag ? `<span class="equipo-card-preparado-tag">${estadoPrincipal.tag}</span>` : ''}
+          ${botonGuiaHtml(item, pedido)}${tieneOjo ? botonOjoHtml(index, ojoAbierto) : ''}
+        </div>
+        <div class="equipo-card-body" style="background:${color}15;">
+          <div class="vista-normal">
+            <div>
+              ${reemplazo ? '' : `<div class="equipo-card-nombre">${nombreEquipo}</div>`}
+              ${ocHtml}
+              <div class="equipo-card-meta">${metaChips}</div>
+              ${reemplazoHtml}
+            </div>
+            ${(usaSerial && !reemplazo) ? resumenSeriales(item, item.cantidad, unidadesEnEnvioArmado(pedido.id, index)) : ''}
+          </div>
+          ${tieneOjo ? vistaSerialesHtml(item, index, pedido, usaSerial ? (i) => [((item.seriales || [])[i] || '').trim()] : null) : ''}
+        </div>
+        <div class="equipo-card-preparado-toggle">
+          ${textoResumenPreparado(item)} <span style="opacity:.6;">(clic para gestionar)</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTarjetaMotoreductor(item, index, pedido) {
+    const motor = buscarEquipoCatalogo(item.motorEquipoId);
+    const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
+    const tipoMotoreductor = (window.tiposEquipoCache || []).find(t => normalizar(t.nombre) === 'motoreductor');
+    const preparado = itemEstaFullyPreparado(item);
+    const completado = estaItemCompletado(item);
+    const estadoPrincipal = estadoPrincipalItem(item, tipoMotoreductor, '#2e7d32', '🔧');
+    const color = estadoPrincipal.color;
+    const icono = estadoPrincipal.icono;
+
+    const extrasReductor = [
+      item.llevaBrazo ? '+ Brazo de reacción' : '',
+      item.llevaEje ? '+ Eje sólido' : '',
+      item.llevaFlanche ? '+ Flanche de salida' : ''
+    ].filter(Boolean).map(t => ` ${escapeHtml(t)}`).join('');
+
+    const nombreMotor = motor
+      ? escapeHtml(motor.nombre) + (motor.variante ? ` <span class="tag-variante">${escapeHtml(motor.variante)}</span>` : '')
+      : '<span style="color:var(--danger);">Motor no encontrado</span>';
+    const nombreReductor = reductor
+      ? escapeHtml(reductor.nombre) + (reductor.variante ? ` <span class="tag-variante">${escapeHtml(reductor.variante)}</span>` : '') + extrasReductor
+      : '<span style="color:var(--danger);">Reductor no encontrado</span>';
+
+    const usaSerialMotor = !!motor?.usaSerial;
+    const usaSerialReductor = !!reductor?.usaSerial;
+    const tieneOjo = !reemplazoDeParte(item, 'motor') && !reemplazoDeParte(item, 'reductor') && itemTieneOCOSerial(item);
+    const ojoAbierto = tieneOjo && indicesVistaSeriales.has(index);
+
+    const ocHtml = item.ordenCompra
+      ? `<div class="equipo-card-oc">📄 OC: ${escapeHtml(item.ordenCompra)}</div>`
+      : '';
+    const { hecho, total } = conteoCompletadoItem(item);
+    const chipParcial = (hecho > 0 && hecho < total) ? `<span class="meta-chip" title="Ya se despachó parte de este ítem">🔒 ${hecho}/${total} despachado</span>` : '';
+    const cantDevueltas = devueltasCountItem(item);
+    const chipDevuelto = cantDevueltas ? `<span class="meta-chip chip-devuelto" title="Unidad(es) devuelta(s)">🔵 ${cantDevueltas} devuelta${cantDevueltas > 1 ? 's' : ''}</span>` : '';
+
+    // El reemplazo (exclusivo a pedidos de Reparación, cantidad 1) sustituye,
+    // parte por parte, la fila normal del motor y/o del reductor por la fila
+    // "original → nuevo". Fuera de ese caso, todo se ve exactamente igual
+    // que siempre.
+    const puedeReemplazar = puedeReemplazarEquipo(pedido, item);
+    const reemplazoMotor = reemplazoDeParte(item, 'motor');
+    const reemplazoReductor = reemplazoDeParte(item, 'reductor');
+
+    // Cuando se reemplaza SOLO una parte, el resumen combinado de abajo
+    // ("Serial motor / Serial reductor") se oculta entero — así que la
+    // parte que NO se tocó necesita mostrar su propio serial aquí mismo, o
+    // se queda sin ningún lugar donde aparecer. Si NINGUNA se reemplazó,
+    // esto se deja vacío a propósito: el resumen combinado de siempre ya lo
+    // muestra, y no hace falta duplicarlo.
+    function serialParteSola(usaSerial, serial) {
+      if (!usaSerial) return '';
+      const s = (serial || '').trim();
+      return `<div class="equipo-card-serial ${s ? 'completo' : 'pendiente'}" style="display:block;">${s ? '🔢' : '🔴'} ${escapeHtml(s || 'Falta serial')}</div>`;
+    }
+    const serialMotorSolo = (!reemplazoMotor && reemplazoReductor) ? serialParteSola(usaSerialMotor, (item.serialesMotor || [])[0]) : '';
+    const serialReductorSolo = (!reemplazoReductor && reemplazoMotor) ? serialParteSola(usaSerialReductor, (item.serialesReductor || [])[0]) : '';
+
+    const filaMotorHtml = reemplazoMotor
+      ? filaReemplazoHtml('motor', '⚡', buscarEquipoCatalogo(reemplazoMotor.equipoId), reemplazoMotor.serial, motor, (item.serialesMotor || [])[0], index, conteoCompletadoItem(item).hecho === 0)
+      : `
+        <div class="motoreductor-subitem">
+          <div class="equipo-card-nombre">⚡ ${nombreMotor}</div>
+          <div class="equipo-card-meta">
+            <span class="meta-chip">${formatearPesoFicha(motor?.peso)}</span>
+          </div>
+          ${serialMotorSolo}
+          ${puedeReemplazar ? `<button type="button" class="btn-reemplazar-equipo" data-reemplazar data-index="${index}" data-parte="motor">🔁 Reemplazar motor</button>` : ''}
+        </div>
+      `;
+    const filaReductorHtml = reemplazoReductor
+      ? filaReemplazoHtml('reductor', '⚙️', buscarEquipoCatalogo(reemplazoReductor.equipoId), reemplazoReductor.serial, reductor, (item.serialesReductor || [])[0], index, conteoCompletadoItem(item).hecho === 0)
+      : `
+        <div class="motoreductor-subitem">
+          <div class="equipo-card-nombre">⚙️ ${nombreReductor}</div>
+          <div class="equipo-card-meta">
+            <span class="meta-chip">${formatearPesoFicha(pesoConExtrasFicha(reductor?.peso, item))}</span>
+          </div>
+          ${serialReductorSolo}
+          ${puedeReemplazar ? `<button type="button" class="btn-reemplazar-equipo" data-reemplazar data-index="${index}" data-parte="reductor">🔁 Reemplazar reductor</button>` : ''}
+        </div>
+      `;
+
+    return `
+      <div class="equipo-card clicable ${preparado ? 'preparado' : ''} ${completado ? 'completado' : ''} ${cantDevueltas ? 'devuelto' : ''} ${ojoAbierto ? 'vista-seriales' : ''}" data-index="${index}" style="border-color:${color};">
+        <div class="equipo-card-header" style="background:${color};">
+          <span>${icono}</span><span>Motoreductor x ${item.cantidad}</span>${botonObservacionHtml(item, index, pedido)}
+          ${estadoPrincipal.tag ? `<span class="equipo-card-preparado-tag">${estadoPrincipal.tag}</span>` : ''}
+          ${chipParcial}${chipDevuelto}
+          ${botonGuiaHtml(item, pedido)}${tieneOjo ? botonOjoHtml(index, ojoAbierto) : ''}
+        </div>
+        <div class="equipo-card-body" style="background:${color}15; flex-direction:column; align-items:stretch;">
+          <div class="vista-normal">
+          ${ocHtml}
+          ${filaMotorHtml}
+          ${filaReductorHtml}
+          ${((usaSerialMotor || usaSerialReductor) && !reemplazoMotor && !reemplazoReductor) ? `
+            <div class="motoreductor-subitem" style="border-bottom:none;">
+              <div class="equipo-card-nombre" style="font-size:12px; color:var(--ink-soft); margin-bottom:4px;">Serial motor / Serial reductor</div>
+              ${resumenSerialesMotoreductor(item, item.cantidad, unidadesEnEnvioArmado(pedido.id, index))}
+            </div>
+          ` : ''}
+          </div>
+          ${tieneOjo ? vistaSerialesHtml(item, index, pedido, (usaSerialMotor || usaSerialReductor) ? (i) => [
+            usaSerialMotor ? ((item.serialesMotor || [])[i] || '').trim() : null,
+            usaSerialReductor ? ((item.serialesReductor || [])[i] || '').trim() : null
+          ].filter(t => t !== null) : null) : ''}
+        </div>
+        <div class="equipo-card-preparado-toggle">
+          ${textoResumenPreparado(item)} <span style="opacity:.6;">(clic para gestionar)</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderSeccionEquipos(pedido) {
+    const equipos = pedido.equipos || [];
+    if (!equipos.length) {
+      fichaEquiposContenido.innerHTML = '<div class="empty-equipos-pedido">Este pedido no tiene equipos agregados.</div>';
+      return;
+    }
+
+    function tarjetaHtml(item, index) {
+      return item.tipoLinea === 'motoreductor' ? renderTarjetaMotoreductor(item, index, pedido) : renderTarjetaIndividual(item, index, pedido);
+    }
+
+    const contenedores = pedido.contenedores || [];
+    if (!contenedores.length) {
+      // Sin contenedores: exactamente la misma vista de siempre, sin ningún título.
+      fichaEquiposContenido.innerHTML = `<div class="equipos-cards-list">${equipos.map(tarjetaHtml).join('')}</div>`;
+    } else {
+      // Con contenedores: los equipos sueltos van primero (igual que
+      // siempre, sin título), y debajo cada contenedor con su nombre como
+      // encabezado — un contenedor sin equipos adentro no se muestra.
+      const sueltos = [];
+      const porContenedor = new Map();
+      equipos.forEach((item, index) => {
+        if (item.contenedorId && contenedores.some(c => c.id === item.contenedorId)) {
+          if (!porContenedor.has(item.contenedorId)) porContenedor.set(item.contenedorId, []);
+          porContenedor.get(item.contenedorId).push(tarjetaHtml(item, index));
+        } else {
+          sueltos.push(tarjetaHtml(item, index));
+        }
+      });
+
+      let html = sueltos.length ? `<div class="equipos-cards-list">${sueltos.join('')}</div>` : '';
+      contenedores.forEach(cont => {
+        const tarjetas = porContenedor.get(cont.id);
+        if (!tarjetas || !tarjetas.length) return;
+        html += `
+          <div class="contenedor-ficha-titulo">📦 ${escapeHtml(cont.titulo || 'Sin nombre')}</div>
+          <div class="equipos-cards-list">${tarjetas.join('')}</div>
+        `;
+      });
+      fichaEquiposContenido.innerHTML = html;
+    }
+
+    fichaEquiposContenido.querySelectorAll('.equipo-card.clicable').forEach(card => {
+      card.addEventListener('click', () => {
+        abrirModalSeriales(parseInt(card.dataset.index, 10));
+      });
+    });
+    fichaEquiposContenido.querySelectorAll('.btn-obs-equipo').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (btn.dataset.obsReparacion) {
+          if (window.abrirObservacionesReparacion) window.abrirObservacionesReparacion(btn.dataset.obsReparacion);
+          return;
+        }
+        const pedidoVisor = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+        const itemVisor = pedidoVisor && (pedidoVisor.equipos || [])[parseInt(btn.dataset.obsIndex, 10)];
+        if (!itemVisor) return;
+        const equipoVisor = itemVisor.tipoLinea === 'motoreductor' ? null : equipoDeItem(itemVisor);
+        document.getElementById('obs-equipo-visor-nombre').textContent = itemVisor.tipoLinea === 'motoreductor' ? 'Motoreductor' : (equipoVisor ? equipoVisor.nombre : 'Equipo');
+        document.getElementById('obs-equipo-visor-texto').innerHTML = sanearHtmlObservacion(itemVisor.observacion);
+        document.getElementById('modal-observacion-equipo').classList.add('open');
+      });
+    });
+    fichaEquiposContenido.querySelectorAll('[data-ojo]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation(); // que no abra el modal de seriales
+        const idx = parseInt(btn.dataset.index, 10);
+        const abierto = !indicesVistaSeriales.has(idx);
+        if (abierto) indicesVistaSeriales.add(idx); else indicesVistaSeriales.delete(idx);
+        btn.closest('.equipo-card').classList.toggle('vista-seriales', abierto);
+        btn.setAttribute('aria-pressed', String(abierto));
+        btn.title = abierto ? 'Volver a la vista normal' : 'Ver solo seriales y OC';
+      });
+    });
+    fichaEquiposContenido.querySelectorAll('[data-ojo-tamano]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation(); // que no abra el modal de seriales
+        cambiarTamanoOjo(btn.dataset.ojoTamano === 'mas' ? 1 : -1);
+      });
+    });
+    aplicarTamanoOjo();
+    fichaEquiposContenido.querySelectorAll('[data-reemplazar]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        abrirModalReemplazoEquipo(parseInt(btn.dataset.index, 10), btn.dataset.parte);
+      });
+    });
+    fichaEquiposContenido.querySelectorAll('[data-deshacer-reemplazo]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deshacerReemplazoEquipo(parseInt(btn.dataset.index, 10), btn.dataset.parte);
+      });
+    });
+  }
+
+  function buscarTipoEquipo(tipoId) {
+    // Tipo "virtual" de los sets: usa el icono de Sprocket.
+    if (tipoId === TIPO_SET_ID) {
+      const sprocket = (window.tiposEquipoCache || []).find(t => normalizar(t.nombre) === 'sprocket');
+      return { id: TIPO_SET_ID, nombre: 'Set', icono: sprocket?.icono || '⚙️' };
+    }
+    return (window.tiposEquipoCache || []).find(t => t.id === tipoId) || null;
+  }
+
+  // Marca/desmarca UNA unidad concreta como preparada (index de la unidad
+  // dentro del ítem, no del ítem en sí). Aplica igual con o sin serial.
+  // Si el usuario ya había escrito algún serial pero no le había dado clic
+  // a "Guardar seriales", varias acciones (marcar preparado, registrar una
+  // devolución) necesitan refrescar este mismo modal para reflejar el
+  // cambio — sin esto, ese refresco reconstruye los campos desde lo que ya
+  // está guardado en Firestore y borra lo que se había escrito.
+  function refrescarModalSerialesConservandoSinGuardar(indexItem) {
+    const sinGuardar = new Map();
+    serialesCampos.querySelectorAll('.serial-input-campo').forEach(inp => {
+      sinGuardar.set(`${inp.dataset.campo}-${inp.dataset.unidad}`, inp.value);
+    });
+    abrirModalSeriales(indexItem);
+    serialesCampos.querySelectorAll('.serial-input-campo').forEach(inp => {
+      const clave = `${inp.dataset.campo}-${inp.dataset.unidad}`;
+      if (sinGuardar.has(clave) && !inp.disabled) inp.value = sinGuardar.get(clave);
+    });
+  }
+
+  // Cadena (por medida): guarda el total de metros preparados, entre 0 y la
+  // cantidad pedida (menos lo devuelto).
+  async function guardarMetrosPreparados(indexItem, metros) {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) return;
+    const item = (pedido.equipos || [])[indexItem];
+    if (!item) return;
+
+    const tope = Math.max(0, redondear2((item.cantidad || 0) - devueltasCountItem(item)));
+    const valor = Math.min(tope, Math.max(0, redondear2(metros)));
+    const itemActualizado = { ...item, cantidadPreparada: valor };
+    const equiposActualizados = (pedido.equipos || []).map((it, i) => i === indexItem ? itemActualizado : it);
+
+    try {
+      await db.collection(COLECCION).doc(pedido.id).update({ equipos: equiposActualizados });
+      renderSeccionEquipos({ ...pedido, equipos: equiposActualizados });
+      if (indexEquipoEnSeriales === indexItem) refrescarModalSerialesConservandoSinGuardar(indexItem);
+    } catch (err) {
+      console.error('Error actualizando metros preparados:', err);
+      alert('No se pudo actualizar. Revisa la consola.');
+    }
+  }
+
+  async function toggleUnidadPreparada(indexItem, unidad, marcado) {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) return;
+    const item = (pedido.equipos || [])[indexItem];
+    if (!item) return;
+
+    const set = new Set(item.unidadesPreparadas || []);
+    if (marcado) set.add(unidad); else set.delete(unidad);
+    const itemActualizado = { ...item, unidadesPreparadas: Array.from(set) };
+    const equiposActualizados = (pedido.equipos || []).map((it, i) => i === indexItem ? itemActualizado : it);
+
+    try {
+      await db.collection(COLECCION).doc(pedido.id).update({ equipos: equiposActualizados });
+      renderSeccionEquipos({ ...pedido, equipos: equiposActualizados });
+      if (indexEquipoEnSeriales === indexItem) refrescarModalSerialesConservandoSinGuardar(indexItem); // refresca el modal abierto
+    } catch (err) {
+      console.error('Error actualizando estado preparado:', err);
+      alert('No se pudo actualizar. Revisa la consola.');
+    }
+  }
+
+  function abrirFicha(pedido, subtabInicial) {
+    if (pedidoIdEnFicha !== pedido.id) indicesVistaSeriales.clear(); // otro pedido: ojos cerrados
+    pedidoIdEnFicha = pedido.id;
+    const tipoInfo = TIPO_PEDIDO_LABEL[pedido.tipo] || TIPO_PEDIDO_LABEL.normal;
+    const compania = buscarCompania(pedido.companiaId);
+    const nombreCompania = compania ? compania.nombre : 'Compañía no encontrada';
+
+    fichaHeaderNumero.textContent = `${textoNumeroPedido(pedido)} - ${nombreCompania}`;
+    fichaHeaderTags.innerHTML = `<span class="${tipoInfo.clase}">${tipoInfo.texto}</span>` + tagPlantaHtml(pedido) +
+      (pedidoEstaCompletado(pedido) ? '<span class="tag-pedido-completado">COMPLETADO</span>' : '') +
+      (pedidoTieneDevolucion(pedido) ? '<span class="tag-pedido-devolucion">DEVOLUCIÓN</span>' : '') +
+      (pedido.reparacionId ? '<button type="button" class="btn-pill-header" id="btn-ver-ficha-reparacion-header">🔧 Ver ficha de reparación ↗</button>' : '');
+
+    if (pedido.reparacionId) {
+      document.getElementById('btn-ver-ficha-reparacion-header').addEventListener('click', () => {
+        if (!window.abrirFichaReparacion) {
+          alert('No se pudo abrir la reparación: la pestaña de Reparaciones no está cargada en esta página.');
+          return;
+        }
+        cerrarFicha();
+        window.abrirFichaReparacion(pedido.reparacionId);
+      });
+    }
+
+    renderSeccionCliente(pedido);
+    renderSeccionEquipos(pedido);
+    renderEnviosVinculados();
+    if (subtabInicial) activarFichaSubtab(subtabInicial);
+    else resetFichaSubtabs();
+
+    btnEditarDesdeFicha.dataset.id = pedido.id;
+    const completado = pedidoEstaCompletado(pedido);
+    // Antes esto bloqueaba TODO el botón. Ahora sí se puede entrar al
+    // formulario aunque esté completado — adentro, cargarFormularioDesdePedido
+    // se encarga de dejar editable solo la evidencia fotográfica.
+    btnEditarDesdeFicha.disabled = false;
+    btnEditarDesdeFicha.title = completado ? 'Pedido completado: solo se puede editar la evidencia fotográfica' : '';
+    modalFicha.classList.add('open');
+  }
+
+  // Permite reabrir la ficha de un pedido desde otro archivo (envios.js), por
+  // ejemplo al cerrar/guardar/cancelar un envío que se abrió desde aquí, o al
+  // navegar desde la ficha de un envío a uno de sus pedidos (opciones.volverAEnvioId).
+  window.abrirFichaPedido = function (pedidoId, subtabInicial, opciones) {
+    volverAEnvioId = opciones?.volverAEnvioId || null;
+    volverAEnvioOpciones = opciones?.volverAEnvioOpciones || null;
+    const pedido = pedidosCache.find(p => p.id === pedidoId);
+    if (pedido) abrirFicha(pedido, subtabInicial);
+  };
+
+  // Cierre "real" de la ficha (botón Cerrar o clic en el backdrop): si se
+  // llegó aquí desde la ficha de un envío, vuelve a abrirla. El parámetro
+  // mantenerVolver evita este retorno automático cuando cerrarFicha() se usa
+  // solo como paso intermedio de una navegación explícita (editar el pedido,
+  // o saltar a un envío distinto) — en esos casos el volverAEnvioId debe
+  // seguir intacto para cuando la ficha se cierre de verdad más adelante.
+  function cerrarFicha(opciones) {
+    indicesVistaSeriales.clear(); // el ojo no se recuerda
+    modalFicha.classList.remove('open');
+    pedidoIdEnFicha = null;
+    if (opciones?.mantenerVolver) return;
+    if (volverAEnvioId && window.abrirFichaEnvio) {
+      const idEnvio = volverAEnvioId;
+      const opcionesEnvio = volverAEnvioOpciones;
+      volverAEnvioId = null;
+      volverAEnvioOpciones = null;
+      const envio = (window.enviosCache || []).find(en => en.id === idEnvio);
+      if (envio) window.abrirFichaEnvio(envio, opcionesEnvio || undefined);
+    } else {
+      volverAEnvioId = null;
+      volverAEnvioOpciones = null;
+    }
+  }
+
+  btnCerrarFicha.addEventListener('click', () => cerrarFicha());
+  modalFicha.addEventListener('click', (e) => {
+    if (e.target === modalFicha) cerrarFicha();
+  });
+  btnEditarDesdeFicha.addEventListener('click', () => {
+    const pedido = pedidosCache.find(p => p.id === btnEditarDesdeFicha.dataset.id);
+    origenEdicion = 'ficha';
+    // Si estaba viendo Equipos en la ficha, el formulario de edición abre
+    // directo en Equipos. La sub-pestaña Envío no existe en el formulario
+    // de edición, así que en ese caso (y en Datos) se abre en Datos, como
+    // siempre.
+    const subtabFichaActiva = modalFicha.querySelector('.subtab-btn.active')?.dataset.subtab;
+    const subtabDestino = subtabFichaActiva === 'ficha-equipos' ? 'equipos' : 'datos';
+    cerrarFicha({ mantenerVolver: true });
+    if (pedido) abrirModalEditar(pedido, subtabDestino);
+  });
+
+  // ---------- Sub-modal: números de serial de un equipo del pedido ----------
+
+  let indexEquipoEnSeriales = null;
+
+  function camposSerialesHtml(prefijoClase, campoNombre, cantidad, serialesActuales, etiqueta, unidadesCompletadas, unidadesDevueltas, unidadesBloqueadasReparacion) {
+    return `
+      <div class="seriales-grupo-titulo">${etiqueta}</div>
+      <div class="seriales-campos-list">${
+        Array.from({ length: cantidad }).map((_, i) => {
+          const devuelta = (unidadesDevueltas || []).includes(i);
+          const completada = (unidadesCompletadas || []).includes(i);
+          const desdeReparacion = (unidadesBloqueadasReparacion || new Set()).has(i);
+          const bloqueada = devuelta || completada || desdeReparacion;
+          const etiquetaUnidad = devuelta ? ' 🔵 (devuelto)' : (completada ? ' 🔒 (ya despachada)' : (desdeReparacion ? ' 🔧 (de la reparación)' : ''));
+          const tituloBloqueo = desdeReparacion && !devuelta && !completada ? ' title="Este serial viene de la reparación vinculada, se edita allá"' : '';
+          return `
+            <div class="serial-campo ${devuelta ? 'devuelto' : ''}">
+              <label>Unidad ${i + 1}${etiquetaUnidad}</label>
+              <input type="text" class="serial-input-campo ${prefijoClase}" data-campo="${campoNombre}" data-unidad="${i}" value="${serialesActuales[i] ? escapeHtml(serialesActuales[i]) : ''}" placeholder="Número de serial" ${bloqueada ? 'disabled' : ''}${tituloBloqueo}>
+              <div class="serial-duplicado-aviso" style="display:none;"></div>
+            </div>
+          `;
+        }).join('')
+      }</div>
+    `;
+  }
+
+  // Sección unificada de "Unidades": un checkbox de Preparado por cada
+  // unidad del ítem (aplica con o sin serial), más el control de devolución.
+  // - Equipos CON serial (identidad conocida por unidad): botón de devolución
+  //   por unidad concreta.
+  // - Equipos SIN serial (unidades indistinguibles entre sí): un solo botón
+  //   de devolución que resta 1 de la cantidad completada, sin decir cuál.
+  function unidadesEstadoHtml(item) {
+    const cantidad = item.cantidad || 1;
+    const conSerial = itemUsaSerialPorUnidad(item);
+    const preparadas = new Set(item.unidadesPreparadas || []);
+    const devueltosSet = indicesDevueltosItem(item);
+    const completadasSet = new Set(item.unidadesCompletadas || []);
+
+    // Por medida (cadena): en vez de una fila por unidad, un solo campo con
+    // los metros preparados en total.
+    if (itemEsPorMedida(item)) {
+      const total = redondear2(item.cantidad || 0);
+      const despachados = redondear2(item.cantidadCompletada || 0);
+      const devueltos = redondear2(item.cantidadDevuelta || 0);
+      const disponibles = redondear2(despachados - devueltos);
+      return `
+        <div class="seriales-grupo-titulo">Metros</div>
+        <div class="seriales-campos-list">
+          <div class="unidad-preparado-fila">
+            <label class="chk-unidad-preparado">
+              Preparados
+              <input type="number" id="input-metros-preparados" min="0" max="${total}" step="0.01" value="${redondear2(item.cantidadPreparada || 0)}" style="width:100px; margin:0 6px;">
+              de ${total} m
+            </label>
+            <button type="button" class="btn-devolucion" id="btn-metros-todo">✅ Todo</button>
+          </div>
+          ${despachados > 0 ? `<div class="unidad-estado-tag" style="margin-top:6px;">🔒 Despachado: ${despachados} m</div>` : ''}
+          ${devueltos > 0 ? `<div class="unidad-estado-tag" style="margin-top:6px;">🔵 Devuelto: ${devueltos} m</div>` : ''}
+        </div>
+        ${disponibles > 0 ? `
+          <button type="button" id="btn-devolucion-cantidad" class="btn-devolucion" style="margin-top:10px;">
+            ↩️ Registrar devolución (${disponibles} m despachados disponibles)
+          </button>` : ''}
+      `;
+    }
+
+    const filas = Array.from({ length: cantidad }).map((_, i) => {
+      const devuelta = devueltosSet.has(i);
+      const completada = conSerial ? completadasSet.has(i) : (i < (item.cantidadCompletada || 0));
+      const bloqueada = devuelta || completada;
+      const estadoTexto = devuelta ? '🔵 Devuelta' : (completada ? '🔒 Despachada' : '');
+      return `
+        <div class="unidad-preparado-fila">
+          <label class="chk-unidad-preparado">
+            <input type="checkbox" class="chk-preparado-unidad" data-unidad="${i}" ${preparadas.has(i) ? 'checked' : ''} ${bloqueada ? 'disabled' : ''}>
+            Unidad ${i + 1}
+          </label>
+          ${estadoTexto ? `<span class="unidad-estado-tag">${estadoTexto}</span>` : ''}
+          ${(conSerial && completada && !devuelta) ? `<button type="button" class="btn-devolucion btn-devolucion-unidad" data-unidad="${i}" title="Registrar devolución de esta unidad">↩️ Devolución</button>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    let botonCantidad = '';
+    if (!conSerial) {
+      const totalCompletadas = item.cantidadCompletada || 0;
+      const totalDevueltas = item.cantidadDevuelta || 0;
+      const disponibles = totalCompletadas - totalDevueltas;
+      if (disponibles > 0) {
+        botonCantidad = `
+          <button type="button" id="btn-devolucion-cantidad" class="btn-devolucion" style="margin-top:10px;">
+            ↩️ Registrar devolución (${disponibles} despachada${disponibles > 1 ? 's' : ''} disponible${disponibles > 1 ? 's' : ''})
+          </button>
+        `;
+      }
+    }
+
+    return `
+      <div class="seriales-grupo-titulo">Unidades</div>
+      <div class="seriales-campos-list">${filas}</div>
+      ${botonCantidad}
+    `;
+  }
+
+  // Busca en TODOS los pedidos (en progreso o despachados) dónde más se usa
+  // este número de serial, para que no se repita por error.
+  // "Categoría" de un uso de serial = el tipo de equipo real detrás de ese
+  // campo (Motor, Reductor, Sprocket, etc.). Dos seriales solo se consideran
+  // en conflicto si son de la MISMA categoría — un Motor y un Reductor pueden
+  // coincidir en el mismo número sin problema, pero dos Reductores no.
+  function categoriaDeUso(item, campo) {
+    let equipo;
+    if (campo === 'motor') equipo = buscarEquipoCatalogo(item.motorEquipoId);
+    else if (campo === 'reductor') equipo = buscarEquipoCatalogo(item.reductorEquipoId);
+    else equipo = equipoDeItem(item);
+    const tipo = equipo ? buscarTipoEquipo(equipo.tipoId) : null;
+    return tipo ? normalizar(tipo.nombre) : null;
+  }
+
+  function buscarUsosDeSerial(serial, excluir, categoriaActual) {
+    serial = (serial || '').trim();
+    if (!serial || !categoriaActual) return [];
+    const usos = [];
+
+    function revisarLista(pedido, item, indexItem, lista, campo) {
+      if (categoriaDeUso(item, campo) !== categoriaActual) return; // categoría distinta: no es conflicto
+      // Unidades devueltas de este ítem (por unidad si lleva serial por
+      // unidad, o las últimas N si solo se contó cuántas se devolvieron).
+      const devueltas = indicesDevueltosItem(item);
+      (lista || []).forEach((s, u) => {
+        if (!s || s.trim() !== serial) return;
+        if (devueltas.has(u)) return; // devuelto: el serial queda libre otra vez
+        // Traslado ya despachado: el equipo se considera que YA llegó a la
+        // otra sede, así que ese serial queda libre para usarse en
+        // cualquier otro pedido — igual que una devolución. Mientras el
+        // traslado todavía se está armando (no despachado), SÍ cuenta como
+        // uso normal y genera el aviso de conflicto, como cualquier pedido.
+        if (pedido.tipo === 'traslado' && (item.unidadesCompletadas || []).includes(u)) return;
+        if (excluir && pedido.id === excluir.pedidoId && indexItem === excluir.indexItem && campo === excluir.campo && u === excluir.unidad) return;
+        usos.push({ pedido, item, campo, unidad: u });
+      });
+    }
+
+    pedidosCache.forEach(pedido => {
+      (pedido.equipos || []).forEach((item, indexItem) => {
+        if (item.tipoLinea === 'motoreductor') {
+          revisarLista(pedido, item, indexItem, item.serialesMotor, 'motor');
+          revisarLista(pedido, item, indexItem, item.serialesReductor, 'reductor');
+        } else {
+          revisarLista(pedido, item, indexItem, item.seriales, 'individual');
+        }
+      });
+    });
+    return usos;
+  }
+
+  function describirUsoSerial(uso) {
+    const compania = buscarCompania(uso.pedido.companiaId);
+    const nombreCompania = compania ? compania.nombre : 'Compañía no encontrada';
+    const yaDespachado = (uso.item.unidadesCompletadas || []).includes(uso.unidad);
+    const campoTexto = uso.campo === 'motor' ? ' (Motor)' : uso.campo === 'reductor' ? ' (Reductor)' : '';
+    return `${textoNumeroPedido(uso.pedido)} - ${nombreCompania}${campoTexto} — ${yaDespachado ? 'Despachado' : 'En progreso'}`;
+  }
+
+  function conectarValidacionSerialesDuplicados() {
+    const pedidoActual = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    const itemActual = pedidoActual ? (pedidoActual.equipos || [])[indexEquipoEnSeriales] : null;
+    if (!itemActual) return;
+
+    serialesCampos.querySelectorAll('.serial-input-campo').forEach(input => {
+      input.addEventListener('input', () => {
+        const aviso = input.closest('.serial-campo').querySelector('.serial-duplicado-aviso');
+        const campo = input.dataset.campo;
+        const excluir = {
+          pedidoId: pedidoIdEnFicha,
+          indexItem: indexEquipoEnSeriales,
+          campo,
+          unidad: parseInt(input.dataset.unidad, 10)
+        };
+        const categoriaActual = categoriaDeUso(itemActual, campo);
+        const usos = buscarUsosDeSerial(input.value, excluir, categoriaActual);
+        if (usos.length) {
+          aviso.style.display = 'block';
+          aviso.textContent = `⚠️ Este serial ya está en: ${usos.map(describirUsoSerial).join(' · ')}`;
+          input.classList.add('serial-duplicado');
+        } else {
+          aviso.style.display = 'none';
+          aviso.textContent = '';
+          input.classList.remove('serial-duplicado');
+        }
+      });
+    });
+  }
+
+  // Devolución de una unidad ya despachada (equipo CON serial, identidad
+  // conocida): libera su serial (queda vacío, ya no cuenta como "en uso" en
+  // ningún otro lado) y la unidad vuelve a quedar editable/no completada. En
+  // un motoreductor, la devolución de la unidad libera motor Y reductor
+  // juntos (van emparejados como una unidad). La devolución también quita
+  // esa unidad de "preparado": una unidad devuelta no puede quedar marcada
+  // como lista para despacho.
+  async function registrarDevolucionUnidad(pedidoId, indexItem, unidad) {
+    const ok = confirm(`¿Registrar devolución de la Unidad ${unidad + 1}? Queda marcada como devuelta y bloqueada para reenvío, pero el serial se conserva (para poder rastrearla) y deja de contar como "en uso".`);
+    if (!ok) return;
+
+    const pedido = pedidosCache.find(p => p.id === pedidoId);
+    if (!pedido) return;
+    const item = (pedido.equipos || [])[indexItem];
+    if (!item) return;
+
+    const itemActualizado = { ...item };
+    // Sale de "completado" (ya no cuenta como entregado) pero entra a
+    // "devuelto" (sigue lockeada, no se puede volver a enviar esa unidad).
+    // El serial NO se borra — se conserva para poder rastrear de qué pedido
+    // se hizo la devolución si alguien pregunta más adelante.
+    itemActualizado.unidadesCompletadas = (item.unidadesCompletadas || []).filter(u => u !== unidad);
+    itemActualizado.unidadesDevueltas = Array.from(new Set([...(item.unidadesDevueltas || []), unidad]));
+    // No se puede quedar "preparada" una unidad ya devuelta.
+    itemActualizado.unidadesPreparadas = (item.unidadesPreparadas || []).filter(u => u !== unidad);
+
+    const equiposActualizados = (pedido.equipos || []).map((it, i) => i === indexItem ? itemActualizado : it);
+
+    try {
+      await db.collection(COLECCION).doc(pedidoId).update({ equipos: equiposActualizados });
+      refrescarModalSerialesConservandoSinGuardar(indexItem); // refresca el modal mostrando la unidad como devuelta
+      renderSeccionEquipos({ ...pedido, equipos: equiposActualizados }); // refresca la tarjeta detrás
+    } catch (err) {
+      console.error('Error registrando devolución:', err);
+      alert('No se pudo registrar la devolución. Revisa la consola.');
+    }
+  }
+
+  // Devolución para equipos SIN serial: no hay forma de identificar cuál
+  // unidad física es cuál, así que solo se dice CUÁNTAS se devuelven (resta
+  // 1 de "completada" y suma 1 a "devuelta"). También libera una unidad de
+  // "preparado" (la que ya no debe seguir contando como lista).
+  async function registrarDevolucionCantidad(pedidoId, indexItem) {
+    const pedido = pedidosCache.find(p => p.id === pedidoId);
+    if (!pedido) return;
+    const item = (pedido.equipos || [])[indexItem];
+    if (!item) return;
+
+    const completadas = item.cantidadCompletada || 0;
+    const devueltasActuales = item.cantidadDevuelta || 0;
+    if (completadas - devueltasActuales <= 0) return;
+
+    const ok = confirm('¿Registrar la devolución de una unidad de este equipo? Deja de contar como completada, pero se conserva el registro. Como este equipo no maneja serial, no se distingue cuál unidad física es.');
+    if (!ok) return;
+
+    const itemActualizado = { ...item };
+    itemActualizado.cantidadCompletada = Math.max(0, completadas - 1);
+    itemActualizado.cantidadDevuelta = devueltasActuales + 1;
+    // Set por partes: un set devuelto era un set COMPLETO, así que ambas
+    // partes bajan una unidad.
+    if (setTienePartes(item) && item.partesCompletadas) {
+      itemActualizado.partesCompletadas = {
+        sprockets: Math.max(0, (item.partesCompletadas.sprockets || 0) - 1),
+        caja: Math.max(0, (item.partesCompletadas.caja || 0) - 1)
+      };
+    }
+    // Libera una unidad "preparada" (la de índice más alto disponible), ya
+    // que la que se devolvió deja de estar lista para despacho.
+    const preparadas = [...(item.unidadesPreparadas || [])].sort((a, b) => a - b);
+    if (preparadas.length) preparadas.pop();
+    itemActualizado.unidadesPreparadas = preparadas;
+
+    const equiposActualizados = (pedido.equipos || []).map((it, i) => i === indexItem ? itemActualizado : it);
+
+    try {
+      await db.collection(COLECCION).doc(pedidoId).update({ equipos: equiposActualizados });
+      refrescarModalSerialesConservandoSinGuardar(indexItem);
+      renderSeccionEquipos({ ...pedido, equipos: equiposActualizados });
+    } catch (err) {
+      console.error('Error registrando devolución:', err);
+      alert('No se pudo registrar la devolución. Revisa la consola.');
+    }
+  }
+
+  // ---------- Observación dentro de la ventana del equipo ----------
+  const seccionObservacion = document.getElementById('seriales-observacion');
+  const modalObsVisor = document.getElementById('modal-observacion-equipo');
+  document.getElementById('btn-cerrar-ficha-observacion').addEventListener('click', () => modalObsVisor.classList.remove('open'));
+  modalObsVisor.addEventListener('mousedown', (e) => { if (e.target === modalObsVisor) modalObsVisor.classList.remove('open'); });
+  let obsEdicionIndex = null; // equipo cuya observación se está editando
+
+  function renderObservacionEquipo(pedido, index) {
+    const item = (pedido.equipos || [])[index];
+    if (!item || !pedidoPermiteObservaciones(pedido)) { seccionObservacion.innerHTML = ''; return; }
+    const html = sanearHtmlObservacion(item.observacion);
+    const hay = !observacionVacia(html);
+    const bloqueada = estaItemCompletado(item);
+
+    let contenido = '<div class="obs-equipo-titulo">📄 Observación</div>';
+    if (obsEdicionIndex === index && !bloqueada) {
+      contenido += `
+        <div class="rte-toolbar" id="obs-equipo-toolbar">
+          <button type="button" class="rte-btn" data-cmd="bold" title="Negrilla (Ctrl+B)"><b>N</b></button>
+          <button type="button" class="rte-btn" data-cmd="italic" title="Cursiva (Ctrl+I)"><i>K</i></button>
+          <span class="rte-sep"></span>
+          <button type="button" class="rte-btn" data-cmd="insertUnorderedList" title="Lista con viñetas">☰ •</button>
+          <button type="button" class="rte-btn" data-cmd="insertOrderedList" title="Lista numerada">☰ 1.</button>
+        </div>
+        <div id="obs-equipo-editor" class="rte-editable" contenteditable="true" data-placeholder="Escribe la observación de este equipo…"></div>
+        <div class="obs-equipo-acciones">
+          <button type="button" class="btn secondary" id="btn-obs-cancelar">Cancelar</button>
+          <button type="button" class="btn" id="btn-obs-guardar">Guardar observación</button>
+        </div>`;
+    } else if (hay) {
+      contenido += `<div class="obs-equipo-texto">${html}</div>` +
+        (bloqueada ? '' : '<button type="button" class="btn secondary" id="btn-obs-editar">✏️ Editar observación</button>');
+    } else if (bloqueada) {
+      contenido += '<div class="obs-equipo-vacia">Sin observación.</div>';
+    } else {
+      contenido += '<button type="button" class="btn secondary" id="btn-obs-agregar">＋ Agregar observación</button>';
+    }
+    if (bloqueada) {
+      contenido += `<div class="obs-equipo-aviso">🔒 Este equipo ya salió completo (${item.cantidad} de ${item.cantidad}): la observación no se puede agregar ni cambiar.</div>`;
+    }
+    seccionObservacion.innerHTML = contenido;
+
+    const editor = seccionObservacion.querySelector('#obs-equipo-editor');
+    if (editor) {
+      editor.innerHTML = html;
+      editor.focus();
+      seccionObservacion.querySelectorAll('#obs-equipo-toolbar .rte-btn').forEach(btn => {
+        btn.addEventListener('mousedown', (e) => e.preventDefault()); // no perder la selección
+        btn.addEventListener('click', () => { document.execCommand(btn.dataset.cmd, false, null); editor.focus(); });
+      });
+    }
+    const abrirEdicion = () => { obsEdicionIndex = index; renderObservacionEquipo(pedido, index); };
+    const btnAgregar = seccionObservacion.querySelector('#btn-obs-agregar');
+    const btnEditar = seccionObservacion.querySelector('#btn-obs-editar');
+    if (btnAgregar) btnAgregar.addEventListener('click', abrirEdicion);
+    if (btnEditar) btnEditar.addEventListener('click', abrirEdicion);
+    const btnCancelar = seccionObservacion.querySelector('#btn-obs-cancelar');
+    if (btnCancelar) btnCancelar.addEventListener('click', () => { obsEdicionIndex = null; renderObservacionEquipo(pedido, index); });
+    const btnGuardar = seccionObservacion.querySelector('#btn-obs-guardar');
+    if (btnGuardar) btnGuardar.addEventListener('click', () => guardarObservacionEquipo(index));
+  }
+
+  async function guardarObservacionEquipo(index) {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    const item = pedido && (pedido.equipos || [])[index];
+    if (!item || !pedidoPermiteObservaciones(pedido) || estaItemCompletado(item)) return;
+
+    const editor = document.getElementById('obs-equipo-editor');
+    const limpio = sanearHtmlObservacion(editor.innerHTML);
+    const observacion = observacionVacia(limpio) ? '' : limpio;
+    const equiposActualizados = (pedido.equipos || []).map((it, i) => i === index ? { ...it, observacion } : it);
+
+    const btn = document.getElementById('btn-obs-guardar');
+    btn.disabled = true;
+    btn.textContent = 'Guardando...';
+    try {
+      await db.collection(COLECCION).doc(pedido.id).update({ equipos: equiposActualizados });
+      obsEdicionIndex = null;
+      const pedidoNuevo = { ...pedido, equipos: equiposActualizados };
+      renderObservacionEquipo(pedidoNuevo, index);
+      renderSeccionEquipos(pedidoNuevo); // el 📄 aparece/desaparece en la tarjeta
+    } catch (err) {
+      console.error('Error guardando la observación:', err);
+      alert('No se pudo guardar la observación. Revisa la consola.');
+      btn.disabled = false;
+      btn.textContent = 'Guardar observación';
+    }
+  }
+
+  function abrirModalSeriales(index) {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) return;
+    const item = (pedido.equipos || [])[index];
+    if (!item) return;
+
+    indexEquipoEnSeriales = index;
+    const cantidad = item.cantidad || 1;
+    const unidadesCompletadas = item.unidadesCompletadas || [];
+    const unidadesDevueltas = item.unidadesDevueltas || [];
+
+    let htmlSeriales = '';
+    // La unidad 0 es siempre la que trae la reparación de origen (si la hay)
+    // — su serial se sincroniza solo al guardar esa reparación (ver
+    // sincronizarPedidoDesdeReparacion en reparaciones.js) y no se edita
+    // acá. Unidades adicionales (si la cantidad se subió desde Pedidos) sí
+    // son libres. Si esa parte ya se reemplazó (ver reemplazoDeParte), el
+    // serial activo ya no es el de la reparación sino el que se escribió al
+    // reemplazar, así que vuelve a quedar editable acá.
+    const bloqueoUnidad0 = (parte) => (pedido.reparacionId && !reemplazoDeParte(item, parte)) ? new Set([0]) : new Set();
+    if (item.tipoLinea === 'motoreductor') {
+      const motor = buscarEquipoCatalogo(item.motorEquipoId);
+      const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      modalSerialesTitulo.textContent = 'Unidades — Motoreductor';
+
+      if (motor?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input-motor', 'motor', cantidad, item.serialesMotor || [], `⚡ Motor — ${escapeHtml(motor.nombre)}`, unidadesCompletadas, unidadesDevueltas, bloqueoUnidad0('motor'));
+      if (reductor?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input-reductor', 'reductor', cantidad, item.serialesReductor || [], `⚙️ Reductor — ${escapeHtml(reductor.nombre)}`, unidadesCompletadas, unidadesDevueltas, bloqueoUnidad0('reductor'));
+    } else {
+      const equipo = equipoDeItem(item);
+      modalSerialesTitulo.textContent = `Unidades — ${equipo ? equipo.nombre : 'Equipo'}`;
+      if (equipo?.usaSerial) htmlSeriales += camposSerialesHtml('serial-input', 'individual', cantidad, item.seriales || [], '', unidadesCompletadas, unidadesDevueltas, bloqueoUnidad0('individual'));
+    }
+
+    serialesCampos.innerHTML = htmlSeriales + unidadesEstadoHtml(item);
+    conectarValidacionSerialesDuplicados();
+
+    const inputMetros = serialesCampos.querySelector('#input-metros-preparados');
+    if (inputMetros) {
+      inputMetros.addEventListener('change', () => guardarMetrosPreparados(index, inputMetros.value));
+      serialesCampos.querySelector('#btn-metros-todo').addEventListener('click', () => guardarMetrosPreparados(index, item.cantidad || 0));
+    }
+    serialesCampos.querySelectorAll('.chk-preparado-unidad').forEach(chk => {
+      chk.addEventListener('change', () => toggleUnidadPreparada(index, parseInt(chk.dataset.unidad, 10), chk.checked));
+    });
+    serialesCampos.querySelectorAll('.btn-devolucion-unidad').forEach(btn => {
+      btn.addEventListener('click', () => registrarDevolucionUnidad(pedido.id, index, parseInt(btn.dataset.unidad, 10)));
+    });
+    const btnDevCantidad = serialesCampos.querySelector('#btn-devolucion-cantidad');
+    if (btnDevCantidad) btnDevCantidad.addEventListener('click', () => registrarDevolucionCantidad(pedido.id, index));
+
+    // La observación vive aparte de los campos de serial; si se está
+    // editando (y esta ventana se refresca por otra acción), no se pisa.
+    if (obsEdicionIndex !== index) { obsEdicionIndex = null; renderObservacionEquipo(pedido, index); }
+
+    modalSeriales.classList.add('open');
+  }
+
+  function cerrarModalSeriales() {
+    modalSeriales.classList.remove('open');
+    indexEquipoEnSeriales = null;
+    obsEdicionIndex = null;
+  }
+
+  btnCancelarSeriales.addEventListener('click', cerrarModalSeriales);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') modalObsVisor.classList.remove('open'); });
+  modalSeriales.addEventListener('click', (e) => {
+    if (e.target === modalSeriales) cerrarModalSeriales();
+  });
+
+  btnGuardarSeriales.addEventListener('click', async () => {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido || indexEquipoEnSeriales === null) return;
+    const itemActual = (pedido.equipos || [])[indexEquipoEnSeriales];
+    if (!itemActual) return;
+
+    if (serialesCampos.querySelector('.serial-duplicado')) {
+      const seguir = confirm('Hay al menos un serial repetido con otro pedido (ver aviso en rojo). ¿Guardar de todas formas?');
+      if (!seguir) return;
+    }
+
+    let cambios;
+    if (itemActual.tipoLinea === 'motoreductor') {
+      const serialesMotor = Array.from(serialesCampos.querySelectorAll('.serial-input-motor')).map(inp => inp.value.trim());
+      const serialesReductor = Array.from(serialesCampos.querySelectorAll('.serial-input-reductor')).map(inp => inp.value.trim());
+      cambios = {
+        ...(serialesMotor.length ? { serialesMotor } : {}),
+        ...(serialesReductor.length ? { serialesReductor } : {})
+      };
+    } else {
+      const seriales = Array.from(serialesCampos.querySelectorAll('.serial-input')).map(inp => inp.value.trim());
+      cambios = { seriales };
+    }
+
+    const equiposActualizados = (pedido.equipos || []).map((item, i) =>
+      i === indexEquipoEnSeriales ? { ...item, ...cambios } : item
+    );
+
+    btnGuardarSeriales.disabled = true;
+    btnGuardarSeriales.textContent = 'Guardando...';
+    try {
+      await db.collection(COLECCION).doc(pedido.id).update({ equipos: equiposActualizados });
+      cerrarModalSeriales();
+      // La ficha se refresca sola con el próximo snapshot; refrescamos ya
+      // mismo con los datos locales para que se sienta instantáneo.
+      renderSeccionEquipos({ ...pedido, equipos: equiposActualizados });
+    } catch (err) {
+      console.error('Error guardando seriales:', err);
+      alert('No se pudieron guardar los seriales. Revisa la consola.');
+    } finally {
+      btnGuardarSeriales.disabled = false;
+      btnGuardarSeriales.textContent = 'Guardar';
+    }
+  });
+
+  // ---------- Envío / Despacho (sub-pestaña de la Ficha) ----------
+  // Los envíos son documentos independientes (colección "envios", ver envios.js)
+  // porque VARIOS pedidos pueden compartir el mismo envío/remesa. Aquí solo se
+  // vinculan/consultan desde la ficha del pedido.
+
+  const COLECCION_ENVIOS = 'envios';
+  const btnAgregarAEnvio = document.getElementById('btn-agregar-a-envio');
+  const enviosVinculadosContenido = document.getElementById('envios-vinculados-contenido');
+
+  const modalAgregarEnvio = document.getElementById('modal-agregar-envio');
+  const formAgregarEnvio = document.getElementById('form-agregar-envio');
+  const grupoEnvioNuevo = document.getElementById('grupo-envio-nuevo');
+  const selectQuienEncarga = document.getElementById('envio-quien-encarga');
+  const grupoPersonaRecoge = document.getElementById('grupo-persona-recoge');
+  const inputPersonaRecoge = document.getElementById('envio-persona-recoge');
+  const radiosModoEnvio = formAgregarEnvio.querySelectorAll('input[name="modo-envio"]');
+  const grupoEnvioExistente = document.getElementById('grupo-envio-existente');
+  const selectEnvioExistente = document.getElementById('envio-existente-select');
+  const grupoRemisionExistente = document.getElementById('grupo-remision-existente');
+  const radiosModoRemision = formAgregarEnvio.querySelectorAll('input[name="modo-remision"]');
+  const selectRemisionExistente = document.getElementById('remision-existente-select');
+  const grupoRemisionNueva = document.getElementById('grupo-remision-nueva');
+  const grupoRemesa = document.getElementById('grupo-remesa');
+  const inputRemesaEnvio = document.getElementById('envio-remesa');
+  const inputRemisionEnvio = document.getElementById('envio-remision');
+  const equiposEnvioList = document.getElementById('equipos-envio-list');
+  const btnCancelarAgregarEnvio = document.getElementById('btn-cancelar-agregar-envio');
+
+  function nombreItemPedido(item) {
+    if (item.tipoLinea === 'motoreductor') {
+      const motor = buscarEquipoCatalogo(item.motorEquipoId);
+      const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      return `Motoreductor (${motor ? motor.nombre : '?'} + ${reductor ? reductor.nombre : '?'})`;
+    }
+    const equipo = equipoDeItem(item);
+    return equipo ? equipo.nombre + (equipo.variante ? ` (${equipo.variante})` : '') : 'Equipo no encontrado';
+  }
+
+  // `parte` (solo sets con caja): cuenta únicamente lo reservado de esa
+  // parte ('sprockets' o 'caja'); una entrada sin it.partes lleva el set
+  // completo, o sea ambas partes.
+  function cantidadReservadaEnEnvios(pedidoId, itemIndex, excluirEnvioId, parte) {
+    let total = 0;
+    (window.enviosCache || []).forEach(envio => {
+      if (excluirEnvioId && envio.id === excluirEnvioId) return;
+      (envio.pedidos || []).forEach(pInfo => {
+        if (pInfo.pedidoId !== pedidoId) return;
+        (pInfo.items || []).forEach(it => {
+          if (it.itemIndex !== itemIndex) return;
+          if (parte && it.partes && it.partes.length && !it.partes.includes(parte)) return;
+          total += it.cantidad || 0;
+        });
+      });
+    });
+    return total;
+  }
+
+  // Un ítem se selecciona por UNIDAD individual (checkbox por unidad) cuando
+  // usa número serial — así se sabe exactamente cuál unidad va en cuál remisión,
+  // porque puede que no todas quepan en una sola.
+  function itemUsaSerialPorUnidad(item) {
+    if (item.tipoLinea === 'motoreductor') {
+      const motor = buscarEquipoCatalogo(item.motorEquipoId);
+      const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      return !!(motor?.usaSerial || reductor?.usaSerial);
+    }
+    const equipo = equipoDeItem(item);
+    return !!equipo?.usaSerial;
+  }
+
+  function unidadesReservadasEnEnvios(pedidoId, itemIndex, excluirEnvioId) {
+    const set = new Set();
+    (window.enviosCache || []).forEach(envio => {
+      if (excluirEnvioId && envio.id === excluirEnvioId) return;
+      (envio.pedidos || []).forEach(pInfo => {
+        if (pInfo.pedidoId !== pedidoId) return;
+        (pInfo.items || []).forEach(it => {
+          if (it.itemIndex !== itemIndex) return;
+          (it.unidades || []).forEach(u => set.add(u));
+        });
+      });
+    });
+    return set;
+  }
+
+  function etiquetaUnidad(item, unidadIdx) {
+    if (item.tipoLinea === 'motoreductor') {
+      const sm = item.serialesMotor?.[unidadIdx];
+      const sr = item.serialesReductor?.[unidadIdx];
+      return `Unidad ${unidadIdx + 1}` + ((sm || sr) ? ` — Motor: ${escapeHtml(sm || '—')} / Reductor: ${escapeHtml(sr || '—')}` : ' — sin serial asignado');
+    }
+    const serial = item.seriales?.[unidadIdx];
+    return `Unidad ${unidadIdx + 1}` + (serial ? ` — Serial: ${escapeHtml(serial)}` : ' — sin serial asignado');
+  }
+
+  function nombreQuienEncargaEnvio(envio) {
+    if (envio.esInterno) return '🏠 Interno' + (envio.personaRecoge ? ` — ${escapeHtml(envio.personaRecoge)}` : '');
+    const empresa = (window.empresasEnvioCache || []).find(e => e.id === envio.empresaEnvioId);
+    return empresa ? escapeHtml(empresa.nombre) : '<span style="color:var(--danger);">Empresa no encontrada</span>';
+  }
+
+  // Para envíos Interno no hay remesa real de transportadora — se muestra el
+  // nombre de la persona encargada de recogerlo en su lugar.
+  function remesaMostrable(envio) {
+    if (envio.esInterno) return envio.personaRecoge ? escapeHtml(envio.personaRecoge) : 'Interno (sin encargado aún)';
+    return envio.remesa ? escapeHtml(envio.remesa) : null;
+  }
+
+  // Lista legible de qué pedidos (con su compañía) ya están metidos en un
+  // envío armado — para poder distinguir, por ejemplo, entre dos envíos con
+  // la misma transportadora (dos "TCC") a la hora de elegir a cuál sumar el
+  // pedido actual. Sin HTML, porque va dentro de un <option> de <select>.
+  function resumenPedidosVinculadosEnvio(envio, maxNombres = 3) {
+    const ids = [...new Set((envio.pedidos || []).map(p => p.pedidoId))];
+    if (!ids.length) return 'Sin pedidos todavía';
+    const nombres = ids.map(id => {
+      const pedido = pedidosCache.find(p => p.id === id);
+      if (!pedido) return 'Pedido no encontrado';
+      const compania = buscarCompania(pedido.companiaId);
+      return `${textoNumeroPedido(pedido)}${compania ? ' - ' + compania.nombre : ''}`;
+    });
+    if (nombres.length <= maxNombres) return nombres.join(', ');
+    return `${nombres.slice(0, maxNombres).join(', ')} y ${nombres.length - maxNombres} más`;
+  }
+
+  // Peso unitario (kg) de un equipo del catálogo. Si es un equipo compuesto
+  // (ej. un acople armado de varias piezas), suma peso x cantidad de cada
+  // pieza — igual criterio que usa envios.js para el total de un envío.
+  function pesoUnitarioEquipoEnvio(equipo) {
+    if (!equipo?.esCompuesto || !(equipo.piezasCompuesto || []).length) {
+      return parseFloat(equipo?.peso) || 0;
+    }
+    let total = 0;
+    for (const p of equipo.piezasCompuesto) {
+      const pieza = buscarEquipoCatalogo(p.piezaId);
+      if (!pieza || pieza.peso === undefined || pieza.peso === null) continue;
+      total += (parseFloat(pieza.peso) || 0) * (p.cantidad || 1);
+    }
+    return total;
+  }
+
+  // Peso (kg) que aportan las piezas de brazo de reacción/eje sólido/flanche
+  // de salida de UN ítem (si eligió alguna del catálogo). No se multiplica
+  // por cantidad acá — quien llama a esto ya multiplica el total del ítem.
+  function pesoExtrasItem(item) {
+    let total = 0;
+    if (item?.llevaBrazo && item.brazoEquipoId) total += pesoUnitarioEquipoEnvio(buscarEquipoCatalogo(item.brazoEquipoId));
+    if (item?.llevaEje && item.ejeEquipoId) total += pesoUnitarioEquipoEnvio(buscarEquipoCatalogo(item.ejeEquipoId));
+    if (item?.llevaFlanche && item.flancheEquipoId) total += pesoUnitarioEquipoEnvio(buscarEquipoCatalogo(item.flancheEquipoId));
+    return total;
+  }
+
+  // Peso (kg) de un ítem puntual de una remisión, buscando el equipo real
+  // en SU pedido de origen (puede ser distinto al pedido cuya ficha se está
+  // mostrando, si el envío agrupa varios pedidos).
+  function pesoItemEnvio(pedidoDeOrigen, it) {
+    const item = pedidoDeOrigen?.equipos?.[it.itemIndex];
+    if (!item) return 0;
+    const cantidad = (it.unidades && it.unidades.length) ? it.unidades.length : (it.cantidad || 0);
+
+    let pesoUnitario = 0;
+    if (item.tipoLinea === 'motoreductor') {
+      const equipoMotor = buscarEquipoCatalogo(item.motorEquipoId);
+      const equipoReductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      pesoUnitario = pesoUnitarioEquipoEnvio(equipoMotor) + pesoUnitarioEquipoEnvio(equipoReductor);
+    } else if (setTienePartes(item) && it.partes && it.partes.length === 1) {
+      // Set enviado por partes: pesa solo la parte que lleva.
+      pesoUnitario = pesoParteSetUnitario(item, it.partes[0]);
+    } else {
+      const equipo = equipoDeItem(item);
+      pesoUnitario = pesoUnitarioEquipoEnvio(equipo);
+    }
+    pesoUnitario += pesoExtrasItem(item);
+    return pesoUnitario * cantidad;
+  }
+
+  // Peso TOTAL (kg) de todo lo que lleva un envío — igual que se ve en la
+  // pestaña Envíos — sumando los ítems de TODOS los pedidos que agrupa ese
+  // envío, no solo el pedido cuya ficha se está mirando.
+  function pesoTotalEnvioVinculado(envio) {
+    return (envio.pedidos || []).reduce((total, pInfo) => {
+      const pedidoDeOrigen = pedidosCache.find(p => p.id === pInfo.pedidoId);
+      const pesoRemision = (pInfo.items || []).reduce((sub, it) => sub + pesoItemEnvio(pedidoDeOrigen, it), 0);
+      return total + pesoRemision;
+    }, 0);
+  }
+
+  // Pedidos distintos que están enlazados a un envío (puede ser más de uno,
+  // ej. cuando varios pedidos comparten una misma remesa/remisión).
+  function pedidosEnlazadosEnvio(envio) {
+    const vistos = new Set();
+    const nombres = [];
+    (envio.pedidos || []).forEach(pInfo => {
+      if (vistos.has(pInfo.pedidoId)) return;
+      vistos.add(pInfo.pedidoId);
+      const p = pedidosCache.find(x => x.id === pInfo.pedidoId);
+      if (!p) { nombres.push('Pedido no encontrado'); return; }
+      const compania = buscarCompania(p.companiaId);
+      nombres.push(`${textoNumeroPedido(p)} - ${escapeHtml(compania ? compania.nombre : 'Compañía no encontrada')}`);
+    });
+    return nombres;
+  }
+
+  function renderEnviosVinculados() {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) return;
+
+    const vinculados = (window.enviosCache || []).filter(envio =>
+      (envio.pedidos || []).some(pInfo => pInfo.pedidoId === pedido.id)
+    );
+
+    if (!vinculados.length) {
+      enviosVinculadosContenido.innerHTML = '<div class="empty-equipos-pedido">Este pedido todavía no está en ningún envío.</div>';
+      return;
+    }
+
+    enviosVinculadosContenido.innerHTML = vinculados.map(envio => {
+      const entradas = (envio.pedidos || []).filter(p => p.pedidoId === pedido.id);
+      const estadoTag = envio.estado === 'despachado'
+        ? '<span class="tag-envio-despachado">Despachado</span>'
+        : '<span class="tag-envio-armado">Armado</span>';
+
+      const remisionesHtml = entradas.map(pInfo => {
+        const itemsHtml = (pInfo.items || []).map(it => {
+          const item = pedido.equipos?.[it.itemIndex];
+          const parteTxt = item ? textoPartesEntrada(it, item) : '';
+          return item ? `<div class="item-linea"><span>${escapeHtml(nombreItemPedido(item))}${parteTxt ? ` <span class="tag-parte-set">${parteTxt}</span>` : ''}</span><span>${it.unidades ? `unidad(es): ${it.unidades.map(u => u + 1).join(', ')}` : `cant. ${it.cantidad}`}</span></div>` : '';
+        }).join('');
+        return `
+          <div class="remision-card">
+            <div class="remision-card-header">
+              <span class="remision-card-pedido">${envio.esInterno ? '🏠 ' + remesaMostrable(envio) : (envio.remesa ? 'Remesa ' + escapeHtml(envio.remesa) : 'Sin remesa')}</span>
+              <span class="remision-card-numero">Remisión ${escapeHtml(pInfo.remision || '—')}</span>
+            </div>
+            <div class="remision-card-items">${itemsHtml || 'Sin equipos'}</div>
+          </div>
+        `;
+      }).join('');
+
+      const peso = pesoTotalEnvioVinculado(envio);
+      const enlazadosHtml = pedidosEnlazadosEnvio(envio)
+        .map(nombre => `<span class="chip-remision">${nombre} Enlazado</span>`)
+        .join('');
+
+      return `
+        <div class="envio-vinculado-card" data-envio-id="${envio.id}">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <strong style="font-size:13.5px;">${nombreQuienEncargaEnvio(envio)}</strong>
+            ${estadoTag}
+          </div>
+          <div class="envio-vinculado-resumen">⚖️ ${peso.toFixed(2)} kg en total en este envío</div>
+          <div class="envio-vinculado-chips">${enlazadosHtml}</div>
+          ${remisionesHtml}
+        </div>
+      `;
+    }).join('');
+
+    enviosVinculadosContenido.querySelectorAll('.envio-vinculado-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const id = card.dataset.envioId;
+        const envio = (window.enviosCache || []).find(en => en.id === id);
+        const idPedidoOrigen = pedidoIdEnFicha; // cerrarFicha() lo pone en null, así que se guarda antes
+        cerrarFicha({ mantenerVolver: true });
+        if (envio && window.abrirFichaEnvio) window.abrirFichaEnvio(envio, { volverAPedidoId: idPedidoOrigen });
+      });
+    });
+  }
+
+  document.addEventListener('envios:cambio', () => {
+    if (pedidoIdEnFicha) renderEnviosVinculados();
+  });
+  document.addEventListener('empresas-envio:cambio', () => {
+    if (pedidoIdEnFicha) renderEnviosVinculados();
+  });
+
+  // El buscador de tipo lee window.tiposEquipoCache en vivo cada vez que se
+  // busca, así que un tipo nuevo agregado en Config ya aparece solo la
+  // próxima vez que se escriba ahí. Lo único que hay que refrescar a mano es
+  // el TEXTO visible de un tipo que ya estaba elegido (por si le cambiaron
+  // el nombre o el ícono).
+  document.addEventListener('tipos-equipo:cambio', () => {
+    equiposPedidoList.querySelectorAll('.buscador-equipo-tipo').forEach(contenedor => {
+      const inputValor = contenedor.querySelector('.equipo-pedido-tipo-filtro');
+      const inputTexto = contenedor.querySelector('.buscador-input');
+      if (!inputValor.value) return;
+      const tipo = (window.tiposEquipoCache || []).find(t => t.id === inputValor.value);
+      if (tipo) inputTexto.value = `${tipo.icono ? tipo.icono + ' ' : ''}${tipo.nombre}`;
+    });
+  });
+
+  // Devuelve el nombre del subtab activo de la ficha, para poder refrescarla
+  // sin que el usuario "salte" de vuelta al primer subtab.
+  function subtabFichaActiva() {
+    const activo = Array.from(fichaSubtabButtons).find(b => b.classList.contains('active'));
+    return activo ? activo.dataset.subtab : null;
+  }
+
+  // Reemplazar/deshacer un equipo, guardar seriales, etc. actualizan
+  // Firestore directamente (sin volver a llamar abrirFicha), así que sin
+  // esto la ficha se queda mostrando datos viejos hasta cerrarla y
+  // reabrirla. Al llegar el snapshot con los datos frescos, si esa ficha
+  // sigue abierta, se refresca conservando el subtab en el que estaba.
+  document.addEventListener('pedidos:cambio', () => {
+    if (!pedidoIdEnFicha) return;
+    const pedidoActual = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (pedidoActual) abrirFicha(pedidoActual, subtabFichaActiva());
+  });
+
+  // Si cambian las guías de remisión, la ficha abierta muestra/oculta su "?".
+  document.addEventListener('guias:cambio', () => {
+    if (!pedidoIdEnFicha) return;
+    const pedidoActual = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (pedidoActual) abrirFicha(pedidoActual, subtabFichaActiva());
+  });
+
+  // Igual, pero para cuando lo que cambia es la reparación de origen (ej. se
+  // edita su número o se elimina el vínculo) — la ficha de Pedidos muestra
+  // ese dato en la sección "Cliente" ("Viene de R0X").
+  document.addEventListener('reparaciones:cambio', () => {
+    if (!pedidoIdEnFicha) return;
+    const pedidoActual = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (pedidoActual?.reparacionId) renderSeccionCliente(pedidoActual);
+  });
+
+  // ---------- Modal: agregar el pedido actual a un envío ----------
+
+  function poblarSelectQuienEncarga() {
+    const empresas = window.empresasEnvioCache || [];
+    const actual = selectQuienEncarga.value;
+    selectQuienEncarga.innerHTML = '<option value="interno">🏠 Interno</option>' +
+      empresas.map(e => `<option value="${e.id}">${escapeHtml(e.nombre)}</option>`).join('');
+    selectQuienEncarga.value = actual || 'interno';
+  }
+
+  function poblarSelectEnvioExistente() {
+    const candidatos = (window.enviosCache || []).filter(envio => envio.estado === 'armado');
+    if (!candidatos.length) {
+      selectEnvioExistente.innerHTML = '<option value="">No hay envíos armados todavía</option>';
+      return;
+    }
+    selectEnvioExistente.innerHTML = '<option value="">Selecciona...</option>' + candidatos.map(envio => {
+      const cant = (envio.pedidos || []).length;
+      const quien = nombreQuienEncargaEnvio(envio).replace(/<[^>]+>/g, '');
+      const remesaTxt = envio.remesa ? ' — Remesa ' + envio.remesa : '';
+      const pedidosTxt = resumenPedidosVinculadosEnvio(envio);
+      const label = `${quien}${remesaTxt} (${cant} ${cant === 1 ? 'pedido' : 'pedidos'}): ${pedidosTxt}`;
+      return `<option value="${envio.id}">${escapeHtml(label)}</option>`;
+    }).join('');
+  }
+
+  // Si el pedido actual ya tiene una o más remisiones dentro del envío elegido,
+  // ofrece sumar equipos a una de ellas en vez de crear una remisión separada.
+  async function actualizarGrupoRemisionExistente() {
+    const envioId = selectEnvioExistente.value;
+    if (!envioId || !pedidoIdEnFicha) {
+      grupoRemisionExistente.style.display = 'none';
+      grupoRemisionNueva.style.display = 'block';
+      inputRemisionEnvio.required = true;
+      return;
+    }
+
+    let pedidosFrescos = [];
+    try {
+      const snap = await db.collection(COLECCION_ENVIOS).doc(envioId).get();
+      if (snap.exists) pedidosFrescos = snap.data().pedidos || [];
+    } catch (err) {
+      console.error('Error consultando remisiones existentes del envío:', err);
+    }
+
+    const entradas = pedidosFrescos.filter(p => p.pedidoId === pedidoIdEnFicha);
+
+    if (!entradas.length) {
+      grupoRemisionExistente.style.display = 'none';
+      grupoRemisionNueva.style.display = 'block';
+      inputRemisionEnvio.required = true;
+      return;
+    }
+
+    grupoRemisionExistente.style.display = 'block';
+    selectRemisionExistente.innerHTML = entradas.map(p => {
+      const idxReal = pedidosFrescos.indexOf(p);
+      return `<option value="${idxReal}">Remisión ${escapeHtml(p.remision || '—')}</option>`;
+    }).join('');
+
+    const modoRemision = Array.from(radiosModoRemision).find(r => r.checked)?.value || 'existente';
+    grupoRemisionNueva.style.display = modoRemision === 'nueva' ? 'block' : 'none';
+    inputRemisionEnvio.required = modoRemision === 'nueva';
+  }
+
+  radiosModoRemision.forEach(r => r.addEventListener('change', actualizarGrupoRemisionExistente));
+
+  function actualizarVisibilidadCamposEnvio() {
+    const modo = Array.from(radiosModoEnvio).find(r => r.checked)?.value || 'nuevo';
+
+    grupoEnvioNuevo.style.display = modo === 'nuevo' ? 'block' : 'none';
+    grupoEnvioExistente.style.display = modo === 'existente' ? 'block' : 'none';
+
+    if (modo === 'nuevo') {
+      const esInterno = selectQuienEncarga.value === 'interno';
+      grupoPersonaRecoge.style.display = esInterno ? 'block' : 'none';
+      grupoRemesa.style.display = esInterno ? 'none' : 'block';
+      grupoRemisionExistente.style.display = 'none';
+      grupoRemisionNueva.style.display = 'block';
+      inputRemisionEnvio.required = true;
+    } else {
+      poblarSelectEnvioExistente(); // ahora lista TODOS los armados, sin filtrar por quién se encarga
+      actualizarGrupoRemisionExistente();
+    }
+  }
+
+  selectEnvioExistente.addEventListener('change', actualizarGrupoRemisionExistente);
+
+
+  selectQuienEncarga.addEventListener('change', actualizarVisibilidadCamposEnvio);
+  radiosModoEnvio.forEach(r => r.addEventListener('change', actualizarVisibilidadCamposEnvio));
+
+  // Recalcula el contador "X de N seleccionadas" y el estado (marcada /
+  // intermedia / vacía) de la casilla "Todas" de un grupo de unidades con serial.
+  function refrescarGrupoSerial(grupo) {
+    const todas = grupo.querySelector('.equipo-envio-todas');
+    const habilitadas = Array.from(grupo.querySelectorAll('.equipo-envio-unidad:not(:disabled)'));
+    const marcadas = habilitadas.filter(c => c.checked).length;
+    const total = grupo.querySelectorAll('.equipo-envio-unidad').length;
+    todas.checked = habilitadas.length > 0 && marcadas === habilitadas.length;
+    todas.indeterminate = marcadas > 0 && marcadas < habilitadas.length;
+    grupo.querySelector('.contador-unidades').textContent = `${marcadas} de ${total} seleccionadas`;
+    grupo.querySelectorAll('.unidad-envio-row').forEach(fila => {
+      fila.classList.toggle('seleccionada', !!fila.querySelector('.equipo-envio-unidad')?.checked);
+    });
+  }
+
+  function poblarChecklistEquipos() {
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) { equiposEnvioList.innerHTML = ''; return; }
+
+    const items = pedido.equipos || [];
+    if (!items.length) {
+      equiposEnvioList.innerHTML = '<div class="empty-equipos-pedido">Este pedido no tiene equipos.</div>';
+      return;
+    }
+
+    equiposEnvioList.innerHTML = items.map((item, index) => {
+      const total = item.cantidad || 0;
+
+      if (itemUsaSerialPorUnidad(item)) {
+        const reservadas = unidadesReservadasEnEnvios(pedido.id, index);
+        const unidadesHtml = Array.from({ length: total }).map((_, u) => {
+          const reservada = reservadas.has(u);
+          return `
+            <label class="unidad-envio-row ${reservada ? 'sin-disponible' : ''}">
+              <input type="checkbox" class="equipo-envio-unidad" data-index="${index}" data-unidad="${u}" ${reservada ? 'disabled' : ''}>
+              ${etiquetaUnidad(item, u)}${reservada ? ' (ya asignada a otro envío)' : ''}
+            </label>
+          `;
+        }).join('');
+        const disponiblesSerial = Array.from({ length: total }).filter((_, u) => !reservadas.has(u)).length;
+        return `
+          <div class="equipo-envio-group equipo-envio-serial" data-index="${index}">
+            <div class="equipo-envio-group-titulo equipo-envio-serial-titulo">
+              <span>${escapeHtml(nombreItemPedido(item))} — elige unidades
+                <span class="contador-unidades">0 de ${total} seleccionadas</span>
+              </span>
+              <label class="chk-todas-unidades ${disponiblesSerial <= 0 ? 'sin-disponible' : ''}">
+                <input type="checkbox" class="equipo-envio-todas" data-index="${index}" ${disponiblesSerial <= 0 ? 'disabled' : ''}>
+                <span class="todas-texto">Todas (${disponiblesSerial} disponibles)</span>
+              </label>
+            </div>
+            ${unidadesHtml}
+          </div>
+        `;
+      }
+
+      // Set con caja de cadena: se puede enviar por partes (sprockets / caja).
+      if (setTienePartes(item)) {
+        const filaParte = (parte, icono, etiqueta) => {
+          const disp = Math.max(0, total - cantidadReservadaEnEnvios(pedido.id, index, null, parte));
+          return `
+            <div class="equipo-envio-row ${disp <= 0 ? 'sin-disponible' : ''}" data-index="${index}" data-parte="${parte}">
+              <input type="checkbox" class="equipo-envio-check" ${disp <= 0 ? 'disabled' : ''}>
+              <label>
+                ${icono} ${etiqueta}
+                <span class="disponible-nota">Disponible: ${disp} de ${total}</span>
+              </label>
+              <input type="number" class="equipo-envio-cantidad" min="1" step="1" max="${disp}" value="${disp}" ${disp <= 0 ? 'disabled' : ''}>
+            </div>
+          `;
+        };
+        return `
+          <div class="equipo-envio-group equipo-envio-set" data-index="${index}">
+            <div class="equipo-envio-group-titulo equipo-envio-set-titulo">
+              <span>${escapeHtml(nombreItemPedido(item))} — elige qué parte(s) envías</span>
+              <button type="button" class="btn secondary btn-set-todo" data-index="${index}" title="Marcar sprockets y caja de cadena">✔ Todo</button>
+            </div>
+            ${filaParte('sprockets', '⚙️', 'Sprockets (los 2)')}
+            ${filaParte('caja', '⛓️', 'Caja de cadena')}
+          </div>
+        `;
+      }
+
+      const reservado = cantidadReservadaEnEnvios(pedido.id, index);
+      // Se redondea a 2 decimales para que 2.5 - 0.3 no quede en
+      // 2.1999999999999997 y el input lo rechace por no cuadrar con el step.
+      const disponible = redondear2(Math.max(0, total - reservado));
+
+      // Cadena va por metros: aquí también debe aceptar decimales, si no el
+      // navegador bloquea el envío diciendo que el valor no es válido/entero
+      // (con step="1" un valor como 2.5 nunca pasa la validación).
+      const esDecimal = item.tipoLinea !== 'motoreductor'
+        && esTipoCantidadDecimal(equipoDeItem(item));
+      const paso = esDecimal ? '0.01' : '1';
+
+      return `
+        <div class="equipo-envio-row ${disponible <= 0 ? 'sin-disponible' : ''}" data-index="${index}">
+          <input type="checkbox" class="equipo-envio-check" ${disponible <= 0 ? 'disabled' : ''}>
+          <label>
+            ${escapeHtml(nombreItemPedido(item))}
+            <span class="disponible-nota">Disponible: ${disponible} de ${total}</span>
+          </label>
+          <input type="number" class="equipo-envio-cantidad" min="${paso}" step="${paso}" max="${disponible}" value="${disponible}" ${disponible <= 0 ? 'disabled' : ''}>
+        </div>
+      `;
+    }).join('');
+    equiposEnvioList.querySelectorAll('.equipo-envio-serial').forEach(refrescarGrupoSerial);
+  }
+
+  function abrirModalAgregarEnvio() {
+    formAgregarEnvio.reset();
+    poblarSelectQuienEncarga();
+    poblarChecklistEquipos();
+    actualizarVisibilidadCamposEnvio();
+    modalAgregarEnvio.classList.add('open');
+  }
+
+  function cerrarModalAgregarEnvio() {
+    modalAgregarEnvio.classList.remove('open');
+  }
+
+  // Botón "✔ Todo" de un set: marca sprockets + caja de cadena (cada parte con
+  // todo lo que tenga disponible; una parte ya asignada a otro envío se omite).
+  equiposEnvioList.addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-set-todo');
+    if (!btn) return;
+    const grupo = btn.closest('.equipo-envio-set');
+    if (!grupo) return;
+    grupo.querySelectorAll('.equipo-envio-row').forEach(fila => {
+      const chk = fila.querySelector('.equipo-envio-check');
+      if (chk.disabled) return;
+      chk.checked = true;
+      const inp = fila.querySelector('.equipo-envio-cantidad');
+      inp.value = inp.max;
+    });
+  });
+
+  // Unidades con serial: casilla "Todas" del grupo (solo las habilitadas; las
+  // ya asignadas a otro envío se saltan solas).
+  equiposEnvioList.addEventListener('change', (e) => {
+    const todas = e.target.closest('.equipo-envio-todas');
+    if (!todas) return;
+    const grupo = todas.closest('.equipo-envio-serial');
+    grupo.querySelectorAll('.equipo-envio-unidad:not(:disabled)').forEach(c => { c.checked = todas.checked; });
+    delete grupo.dataset.ultimaUnidad;
+    refrescarGrupoSerial(grupo);
+  });
+
+  // Unidades con serial: Shift + clic marca (o desmarca) todo el rango entre la
+  // última unidad tocada y la actual, saltando las deshabilitadas.
+  equiposEnvioList.addEventListener('click', (e) => {
+    const chk = e.target.closest('.equipo-envio-unidad');
+    if (!chk) return;
+    const grupo = chk.closest('.equipo-envio-serial');
+    const idx = parseInt(chk.dataset.unidad, 10);
+    const ultima = grupo.dataset.ultimaUnidad !== undefined ? parseInt(grupo.dataset.ultimaUnidad, 10) : null;
+    if (e.shiftKey && ultima !== null) {
+      const desde = Math.min(ultima, idx);
+      const hasta = Math.max(ultima, idx);
+      grupo.querySelectorAll('.equipo-envio-unidad').forEach(c => {
+        const u = parseInt(c.dataset.unidad, 10);
+        if (u >= desde && u <= hasta && !c.disabled) c.checked = chk.checked;
+      });
+    }
+    grupo.dataset.ultimaUnidad = String(idx);
+    refrescarGrupoSerial(grupo);
+  });
+
+  btnAgregarAEnvio.addEventListener('click', abrirModalAgregarEnvio);
+  btnCancelarAgregarEnvio.addEventListener('click', cerrarModalAgregarEnvio);
+  modalAgregarEnvio.addEventListener('click', (e) => {
+    if (e.target === modalAgregarEnvio) cerrarModalAgregarEnvio();
+  });
+
+  formAgregarEnvio.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pedido = pedidosCache.find(p => p.id === pedidoIdEnFicha);
+    if (!pedido) return;
+
+    const quien = selectQuienEncarga.value;
+    const esInterno = quien === 'interno';
+    const modo = Array.from(radiosModoEnvio).find(r => r.checked)?.value || 'nuevo';
+    const modoRemision = Array.from(radiosModoRemision).find(r => r.checked)?.value || 'existente';
+    const usaRemisionExistente = modo === 'existente' && grupoRemisionExistente.style.display !== 'none' && modoRemision === 'existente';
+    const remision = inputRemisionEnvio.value.trim();
+
+    if (!usaRemisionExistente && !remision) {
+      inputRemisionEnvio.focus();
+      return;
+    }
+    if (modo === 'existente' && !selectEnvioExistente.value) {
+      selectEnvioExistente.focus();
+      return;
+    }
+    if (usaRemisionExistente && !selectRemisionExistente.value) {
+      selectRemisionExistente.focus();
+      return;
+    }
+
+    const filas = equiposEnvioList.querySelectorAll('.equipo-envio-row');
+    const items = [];
+    const partesPorIndice = {};
+    filas.forEach(fila => {
+      const chk = fila.querySelector('.equipo-envio-check');
+      if (!chk.checked) return;
+      // El step del input ya dice si ese ítem se maneja por metros (0.01) o
+      // por unidades enteras (1) — se respeta al leerlo, si no parseInt
+      // truncaría "2.5" a 2 al guardar.
+      const inputCantidad = fila.querySelector('.equipo-envio-cantidad');
+      const cantidad = inputCantidad.step === '0.01'
+        ? redondear2(parseFloat(inputCantidad.value) || 0)
+        : (parseInt(inputCantidad.value, 10) || 0);
+      if (cantidad <= 0) return;
+      const indiceFila = parseInt(fila.dataset.index, 10);
+      // Filas de un set por partes: se juntan abajo para decidir si va todo
+      // el set o solo una parte.
+      if (fila.dataset.parte) {
+        if (!partesPorIndice[indiceFila]) partesPorIndice[indiceFila] = [];
+        partesPorIndice[indiceFila].push({ parte: fila.dataset.parte, cantidad });
+        return;
+      }
+      items.push({ itemIndex: indiceFila, cantidad });
+    });
+    Object.entries(partesPorIndice).forEach(([idx, lista]) => {
+      const indice = parseInt(idx, 10);
+      if (lista.length === 2 && lista[0].cantidad === lista[1].cantidad) {
+        items.push({ itemIndex: indice, cantidad: lista[0].cantidad }); // set completo
+      } else {
+        lista.forEach(({ parte, cantidad }) => items.push({ itemIndex: indice, cantidad, partes: [parte] }));
+      }
+    });
+
+    // Ítems con serial: se agrupan las unidades marcadas por índice de ítem.
+    const unidadesPorIndice = {};
+    equiposEnvioList.querySelectorAll('.equipo-envio-unidad:checked').forEach(chk => {
+      const idx = parseInt(chk.dataset.index, 10);
+      const unidad = parseInt(chk.dataset.unidad, 10);
+      if (!unidadesPorIndice[idx]) unidadesPorIndice[idx] = [];
+      unidadesPorIndice[idx].push(unidad);
+    });
+    Object.entries(unidadesPorIndice).forEach(([idx, unidades]) => {
+      items.push({ itemIndex: parseInt(idx, 10), unidades, cantidad: unidades.length });
+    });
+
+    if (!items.length) {
+      alert('Selecciona al menos un equipo para agregar al envío.');
+      return;
+    }
+
+    const btnGuardar = formAgregarEnvio.querySelector('button[type="submit"]');
+    btnGuardar.disabled = true;
+    btnGuardar.textContent = 'Guardando...';
+
+    try {
+      if (modo === 'existente') {
+        const envioRef = db.collection(COLECCION_ENVIOS).doc(selectEnvioExistente.value);
+        const snap = await envioRef.get(); // se lee fresco de Firestore, no del caché local,
+        if (!snap.exists) throw new Error('Envío existente no encontrado'); // para no pisar remisiones de otros pedidos agregados justo antes
+        const pedidosActuales = snap.data().pedidos || [];
+
+        let nuevosPedidos;
+        if (usaRemisionExistente) {
+          // Suma los equipos elegidos a la MISMA remisión ya existente de este
+          // pedido (no crea una entrada separada).
+          const idxRemision = parseInt(selectRemisionExistente.value, 10);
+          nuevosPedidos = pedidosActuales.map((p, i) => {
+            if (i !== idxRemision) return p;
+            const itemsCombinados = [...(p.items || [])];
+            items.forEach(nuevo => {
+              const clavePartes = (x) => (x.partes && x.partes.length) ? [...x.partes].sort().join(',') : '';
+              const existente = itemsCombinados.find(it => it.itemIndex === nuevo.itemIndex && !!it.unidades === !!nuevo.unidades && clavePartes(it) === clavePartes(nuevo));
+              if (existente) {
+                if (nuevo.unidades) {
+                  existente.unidades = Array.from(new Set([...(existente.unidades || []), ...nuevo.unidades]));
+                  existente.cantidad = existente.unidades.length;
+                } else {
+                  existente.cantidad = (existente.cantidad || 0) + nuevo.cantidad;
+                }
+              } else {
+                itemsCombinados.push(nuevo);
+              }
+            });
+            return { ...p, items: itemsCombinados };
+          });
+        } else {
+          // Remisión NUEVA y separada — un mismo pedido puede tener varias
+          // remisiones distintas dentro de un mismo envío (ej: por espacio
+          // físico limitado en la remisión física).
+          nuevosPedidos = [...pedidosActuales, { pedidoId: pedido.id, remision, items }];
+        }
+        await envioRef.update({ pedidos: nuevosPedidos });
+      } else {
+        const nuevoEnvio = {
+          esInterno,
+          empresaEnvioId: esInterno ? null : quien,
+          personaRecoge: esInterno ? inputPersonaRecoge.value.trim() : '',
+          remesa: (!esInterno && inputRemesaEnvio.value.trim()) ? inputRemesaEnvio.value.trim() : '',
+          estado: 'armado',
+          fechaDespacho: null,
+          pedidos: [{ pedidoId: pedido.id, remision, items }],
+          creadoEn: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        await db.collection(COLECCION_ENVIOS).add(nuevoEnvio);
+      }
+      formAgregarEnvio.reset();
+      cerrarModalAgregarEnvio();
+    } catch (err) {
+      console.error('Error agregando el pedido al envío:', err);
+      alert('No se pudo guardar. Revisa la consola.');
+    } finally {
+      btnGuardar.disabled = false;
+      btnGuardar.textContent = 'Guardar';
+    }
+  });
+
+  // ---------- Render de la tabla ----------
+
+  const buscadorPedidos = document.getElementById('buscador-pedidos');
+  const buscadorSerialPedidos = document.getElementById('buscador-serial-pedidos');
+  // ----- Filtros agregables (estado + tipo) -----
+  // Cada filtro se agrega desde el botón "＋ Filtro" y aparece como una
+  // etiqueta con su icono y una "×" para retirarlo. Reglas: dentro de un mismo
+  // grupo se suman (Normal + Traslado = ambos tipos); entre grupos se combinan
+  // (Traslado + En proceso = solo traslados en proceso). Sin filtros = todos.
+  const FILTROS_PEDIDOS = [
+    { grupo: 'estado', clave: 'en_proceso',  icono: '⏳', texto: 'En proceso' },
+    { grupo: 'estado', clave: 'completado',  icono: '✅', texto: 'Completado' },
+    { grupo: 'estado', clave: 'devolucion',  icono: '↩️', texto: 'Devolución' },
+    { grupo: 'tipo',   clave: 'normal',      icono: '📦', texto: 'Normal' },
+    { grupo: 'tipo',   clave: 'reparacion',  icono: '🔧', texto: 'Reparación' },
+    { grupo: 'tipo',   clave: 'traslado',    icono: '🚚', texto: 'Traslado' },
+    { grupo: 'envio',  clave: 'armado',      icono: '🛠️', texto: 'Envío armado' },
+    { grupo: 'envio',  clave: 'despachado',  icono: '📬', texto: 'Envío despachado' },
+    { grupo: 'envio',  clave: 'sin_armado',  icono: '📭', texto: 'Equipos sin envío armado' },
+    { grupo: 'planta', clave: 'envigado',    icono: '⚫', texto: 'Envigado' },
+    { grupo: 'planta', clave: 'mosquera',    icono: '🔴', texto: 'Mosquera' }
+  ];
+  const TITULO_GRUPO_FILTRO = { estado: 'Estado', tipo: 'Tipo de pedido', envio: 'Envío', planta: 'Planta de cumplimiento' };
+  const filtrosActivosPedidos = { estado: new Set(['en_proceso']), tipo: new Set(), envio: new Set(), planta: new Set() }; // "En proceso" queda por defecto
+  // Filtro por cliente (buscador propio + pastilla): id de la empresa o
+  // subsidiaria elegida, o null. Se combina con los demás filtros.
+  let clienteFiltroPedidosId = null;
+  // Orden de la lista: criterio 'numero' (predeterminado) | 'nombre' | 'salida', y
+  // dirección 1 (ascendente) | -1 (descendente).
+  let ordenPedidosCriterio = 'numero';
+  let ordenPedidosDir = 1;
+
+  const contenedorFiltrosActivos = document.getElementById('filtros-pedidos-activos');
+  const btnAgregarFiltro = document.getElementById('btn-agregar-filtro-pedidos');
+  const menuFiltros = document.getElementById('menu-filtros-pedidos');
+
+  function hayFiltrosActivosPedidos() {
+    return !!clienteFiltroPedidosId || filtrosActivosPedidos.estado.size > 0 || filtrosActivosPedidos.tipo.size > 0 || filtrosActivosPedidos.envio.size > 0 || filtrosActivosPedidos.planta.size > 0;
+  }
+
+  // El aviso/ficha de devolución solo aplica cuando "Devolución" es el único
+  // filtro de estado (igual que cuando era un chip exclusivo).
+  function soloFiltroDevolucion() {
+    return filtrosActivosPedidos.estado.size === 1 && filtrosActivosPedidos.estado.has('devolucion');
+  }
+
+  function refrescarPedidosPorFiltros() {
+    renderFiltrosPedidos();
+    renderTabla();
+    mostrarSugerenciasPedidos();
+    mostrarSugerenciasSerial();
+  }
+
+  function agregarFiltroPedidos(grupo, clave) {
+    filtrosActivosPedidos[grupo].add(clave);
+    cerrarMenuFiltros();
+    refrescarPedidosPorFiltros();
+  }
+
+  function quitarFiltroPedidos(grupo, clave) {
+    filtrosActivosPedidos[grupo].delete(clave);
+    refrescarPedidosPorFiltros();
+  }
+
+  function renderFiltrosPedidos() {
+    const activos = FILTROS_PEDIDOS.filter(f => filtrosActivosPedidos[f.grupo].has(f.clave));
+    contenedorFiltrosActivos.innerHTML = activos.map(f => `
+      <span class="filtro-chip-activo">
+        <span>${f.icono}</span><span>${f.texto}</span>
+        <button type="button" class="filtro-chip-quitar" data-grupo="${f.grupo}" data-clave="${f.clave}" aria-label="Quitar filtro ${f.texto}" title="Quitar filtro">×</button>
+      </span>`).join('') +
+      (activos.length > 1 ? '<button type="button" class="filtro-limpiar" id="btn-limpiar-filtros-pedidos">Limpiar todo</button>' : '');
+
+    contenedorFiltrosActivos.querySelectorAll('.filtro-chip-quitar').forEach(btn => {
+      btn.addEventListener('click', () => quitarFiltroPedidos(btn.dataset.grupo, btn.dataset.clave));
+    });
+    const btnLimpiar = document.getElementById('btn-limpiar-filtros-pedidos');
+    if (btnLimpiar) {
+      btnLimpiar.addEventListener('click', () => {
+        filtrosActivosPedidos.estado.clear();
+        filtrosActivosPedidos.tipo.clear();
+        filtrosActivosPedidos.envio.clear();
+        filtrosActivosPedidos.planta.clear();
+        refrescarPedidosPorFiltros();
+      });
+    }
+    renderMenuFiltros();
+  }
+
+  // El menú solo ofrece los filtros que todavía no están agregados.
+  function renderMenuFiltros() {
+    const disponibles = FILTROS_PEDIDOS.filter(f => !filtrosActivosPedidos[f.grupo].has(f.clave));
+    if (!disponibles.length) {
+      menuFiltros.innerHTML = '<div class="filtro-menu-vacio">Ya agregaste todos los filtros</div>';
+      return;
+    }
+    let html = '';
+    ['estado', 'tipo', 'envio', 'planta'].forEach(grupo => {
+      const items = disponibles.filter(f => f.grupo === grupo);
+      if (!items.length) return;
+      html += `<div class="filtro-menu-titulo">${TITULO_GRUPO_FILTRO[grupo]}</div>` +
+        items.map(f => `<button type="button" class="filtro-menu-item" data-grupo="${f.grupo}" data-clave="${f.clave}"><span>${f.icono}</span><span>${f.texto}</span></button>`).join('');
+    });
+    menuFiltros.innerHTML = html;
+    menuFiltros.querySelectorAll('.filtro-menu-item').forEach(btn => {
+      btn.addEventListener('click', () => agregarFiltroPedidos(btn.dataset.grupo, btn.dataset.clave));
+    });
+  }
+
+  function cerrarMenuFiltros() { menuFiltros.classList.remove('open'); }
+
+  btnAgregarFiltro.addEventListener('click', (e) => {
+    e.stopPropagation();
+    menuFiltros.classList.toggle('open');
+  });
+  document.addEventListener('click', (e) => {
+    if (!menuFiltros.contains(e.target) && e.target !== btnAgregarFiltro) cerrarMenuFiltros();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarMenuFiltros(); });
+
+  renderFiltrosPedidos();
+
+  let filtroTextoPedidos = '';
+  let filtroSerialPedidos = '';
+
+  // Tipo "efectivo" de un pedido: si viene de una reparación cuenta como
+  // 'reparacion' aunque su campo tipo falte; si no tiene tipo, es 'normal'.
+  function tipoEfectivoPedido(pedido) {
+    if (pedido.reparacionId) return 'reparacion';
+    return pedido.tipo || 'normal';
+  }
+
+  function pedidoTieneEnvioEnEstado(pedido, estadosEnvio) {
+    return (window.enviosCache || []).some(en =>
+      estadosEnvio.has(en.estado) && (en.pedidos || []).some(pInfo => pInfo.pedidoId === pedido.id)
+    );
+  }
+
+  // "Equipos sin envío armado": el pedido tiene al menos un equipo (ítem) al
+  // que todavía le falta cantidad por despachar y esa cantidad pendiente NO
+  // está cubierta por envíos en estado "armado". Lo ya despachado (completado)
+  // y lo devuelto no cuenta como pendiente.
+  function pedidoTieneEquiposSinEnvioArmado(pedido) {
+    const enviosArmados = (window.enviosCache || []).filter(en => en.estado === 'armado');
+    return (pedido.equipos || []).some((item, itemIndex) => {
+      // Set por partes: cada parte (sprockets / caja) se revisa por separado.
+      if (setTienePartes(item)) {
+        const completadas = partesCompletadasSet(item);
+        return ['sprockets', 'caja'].some(parte => {
+          const pend = redondear2((item.cantidad || 0) - completadas[parte] - devueltasCountItem(item));
+          if (pend <= 0) return false;
+          let reservado = 0;
+          enviosArmados.forEach(en => {
+            (en.pedidos || []).forEach(pInfo => {
+              if (pInfo.pedidoId !== pedido.id) return;
+              (pInfo.items || []).forEach(it => {
+                if (it.itemIndex !== itemIndex) return;
+                if (it.partes && it.partes.length && !it.partes.includes(parte)) return;
+                reservado += it.cantidad || 0;
+              });
+            });
+          });
+          return redondear2(reservado) < pend;
+        });
+      }
+      const pendiente = redondear2((item.cantidad || 0) - conteoCompletadoItem(item).hecho - devueltasCountItem(item));
+      if (pendiente <= 0) return false;
+      let reservadoArmado = 0;
+      enviosArmados.forEach(en => {
+        (en.pedidos || []).forEach(pInfo => {
+          if (pInfo.pedidoId !== pedido.id) return;
+          (pInfo.items || []).forEach(it => {
+            if (it.itemIndex === itemIndex) reservadoArmado += it.cantidad || 0;
+          });
+        });
+      });
+      return redondear2(reservadoArmado) < pendiente;
+    });
+  }
+
+  // Si cambia un envío (se arma, se despacha, se elimina), la lista debe
+  // reflejarlo cuando hay un filtro de envío activo.
+  // También cuando se ordena por fecha de salida, que sale de los envíos.
+  document.addEventListener('envios:cambio', () => {
+    if (!filtrosActivosPedidos.envio.size && ordenPedidosCriterio !== 'salida') return;
+    renderTabla();
+    mostrarSugerenciasPedidos();
+    mostrarSugerenciasSerial();
+  });
+
+  // Aplica los filtros activos (estado + tipo + envío) a una lista de pedidos. La
+  // usan tanto la tabla como las sugerencias de autocompletar de los dos
+  // buscadores, para que siempre queden "atadas" a los filtros visibles.
+  function pedidosPorFiltroEstado(lista) {
+    const { estado, tipo, envio, planta } = filtrosActivosPedidos;
+    return lista.filter(pedido => {
+      if (clienteFiltroPedidosId && !pedidoCoincideConCliente(pedido)) return false;
+      if (tipo.size && !tipo.has(tipoEfectivoPedido(pedido))) return false;
+      // Planta: sin ninguna elegida se ven todos; con una o ambas, solo esas.
+      if (planta.size && !planta.has(plantaDePedido(pedido))) return false;
+      // Envío: el pedido cumple si está en al menos un envío con alguno de los
+      // estados elegidos (un pedido puede estar repartido en varios envíos).
+      if (envio.size) {
+        const estadosEnvio = new Set([...envio].filter(k => k !== 'sin_armado'));
+        const cumpleEnvio =
+          (estadosEnvio.size > 0 && pedidoTieneEnvioEnEstado(pedido, estadosEnvio)) ||
+          (envio.has('sin_armado') && pedidoTieneEquiposSinEnvioArmado(pedido));
+        if (!cumpleEnvio) return false;
+      }
+      if (estado.size) {
+        const cumpleEstado =
+          (estado.has('completado') && pedidoEstaCompletado(pedido)) ||
+          (estado.has('en_proceso') && !pedidoEstaCompletado(pedido)) ||
+          (estado.has('devolucion') && pedidoTieneDevolucion(pedido));
+        if (!cumpleEstado) return false;
+      }
+      return true;
+    });
+  }
+
+  buscadorPedidos.addEventListener('input', () => {
+    filtroTextoPedidos = normalizar(buscadorPedidos.value.trim());
+    renderTabla();
+    mostrarSugerenciasPedidos();
+  });
+
+  // Buscador aparte, exclusivamente por número de serial (motor, reductor o
+  // individual) — independiente del buscador general de arriba.
+  function serialesDelItem(item) {
+    return [
+      ...(item.seriales || []),
+      ...(item.serialesMotor || []),
+      ...(item.serialesReductor || [])
+    ].filter(Boolean);
+  }
+
+  function pedidoCoincideConSerialTexto(pedido, texto) {
+    if (!texto) return true;
+    return (pedido.equipos || []).some(item =>
+      serialesDelItem(item).some(s => normalizar(s).includes(texto))
+    );
+  }
+
+  function pedidoCoincideConSerial(pedido) {
+    return pedidoCoincideConSerialTexto(pedido, filtroSerialPedidos);
+  }
+
+  buscadorSerialPedidos.addEventListener('input', () => {
+    filtroSerialPedidos = normalizar(buscadorSerialPedidos.value.trim());
+    renderTabla();
+    mostrarSugerenciasSerial();
+  });
+
+  function pedidoCoincideConBusquedaTexto(pedido, texto) {
+    if (!texto) return true;
+    if (normalizar(textoNumeroPedido(pedido)).includes(texto)) return true;
+    // El nombre de la empresa / subsidiaria ya no se busca aquí: tiene su
+    // propio buscador de cliente (con pastilla) justo al lado.
+    if (pedido.contacto && normalizar(pedido.contacto).includes(texto)) return true;
+    // Envío a subsidiaria: también se busca por el contacto (encargado) de
+    // esa subsidiaria.
+    if (pedido.envioSubsidiaria) {
+      if (pedido.subsidiariaContacto && normalizar(pedido.subsidiariaContacto).includes(texto)) return true;
+    }
+    if ((pedido.equipos || []).some(item => normalizar(nombreItemPedido(item)).includes(texto))) return true;
+    // Orden de compra: cada equipo del pedido puede traer la suya.
+    if ((pedido.equipos || []).some(item => normalizar(item.ordenCompra).includes(texto))) return true;
+    // Remisiones: viven dentro de los envíos (un pedido puede tener varias,
+    // repartidas en uno o más envíos), no en el propio documento del pedido.
+    return (window.enviosCache || []).some(envio =>
+      (envio.pedidos || []).some(pInfo => pInfo.pedidoId === pedido.id && normalizar(pInfo.remision).includes(texto))
+    );
+  }
+
+  function pedidoCoincideConBusqueda(pedido) {
+    return pedidoCoincideConBusquedaTexto(pedido, filtroTextoPedidos);
+  }
+
+  // ---------- Buscador de cliente (empresa / subsidiaria) + pastilla ----------
+  // Sale de la lista de clientes. Entran las empresas y las subsidiarias; las
+  // "subsidiarias de Edisatech" no. Al elegir uno queda como pastilla (con ×
+  // para quitarla) y la lista solo muestra los pedidos de ese cliente: los
+  // que lo tienen como compañía o como subsidiaria de destino.
+  const buscadorClientePedidos = document.getElementById('buscador-cliente-pedidos');
+  const resultadosBuscadorCliente = document.getElementById('resultados-buscador-cliente-pedidos');
+  const pastillaClientePedidos = document.getElementById('pastilla-cliente-pedidos');
+  const contenedorOrdenPedidos = document.getElementById('orden-pedidos');
+
+  function clientesParaFiltro() {
+    return (window.clientesCache || [])
+      .filter(c => c.tipo !== 'subsidiaria_edisatech')
+      .sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base', numeric: true }));
+  }
+
+  function iconoCliente(cliente) {
+    return cliente.tipo === 'subsidiaria' ? '🔗' : '🏢';
+  }
+
+  function pedidoCoincideConCliente(pedido) {
+    if (!clienteFiltroPedidosId) return true;
+    if (pedido.companiaId === clienteFiltroPedidosId) return true;
+    return !!pedido.envioSubsidiaria && pedido.subsidiariaId === clienteFiltroPedidosId;
+  }
+
+  function renderPastillaClientePedidos() {
+    const cliente = clienteFiltroPedidosId ? buscarCompania(clienteFiltroPedidosId) : null;
+    if (!cliente) {
+      pastillaClientePedidos.innerHTML = '';
+      return;
+    }
+    pastillaClientePedidos.innerHTML = `
+      <span class="filtro-chip-activo" title="Cliente: ${escapeHtml(cliente.nombre)}">
+        <span>${iconoCliente(cliente)}</span><span>${escapeHtml(cliente.nombre)}</span>
+        <button type="button" class="filtro-chip-quitar" aria-label="Quitar el filtro de cliente" title="Quitar cliente">×</button>
+      </span>`;
+    pastillaClientePedidos.querySelector('.filtro-chip-quitar').addEventListener('click', () => {
+      clienteFiltroPedidosId = null;
+      renderPastillaClientePedidos();
+      renderTabla();
+      mostrarSugerenciasPedidos();
+      mostrarSugerenciasSerial();
+    });
+  }
+
+  function mostrarSugerenciasCliente() {
+    const texto = normalizar(buscadorClientePedidos.value.trim());
+    const candidatos = clientesParaFiltro().filter(c => !texto || normalizar(c.nombre).includes(texto));
+
+    if (!candidatos.length) {
+      resultadosBuscadorCliente.innerHTML = '<div class="buscador-item-vacio">Sin clientes que coincidan</div>';
+      resultadosBuscadorCliente.classList.add('open');
+      return;
+    }
+    resultadosBuscadorCliente.innerHTML = candidatos.slice(0, 40).map(c => `
+      <div class="buscador-item" data-id="${escapeHtml(c.id)}">
+        ${iconoCliente(c)} ${escapeHtml(c.nombre)}
+        <span class="buscador-item-sub">${c.tipo === 'subsidiaria' ? 'Subsidiaria' : 'Empresa'}</span>
+      </div>`).join('');
+    resultadosBuscadorCliente.classList.add('open');
+
+    resultadosBuscadorCliente.querySelectorAll('.buscador-item').forEach(el => {
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        clienteFiltroPedidosId = el.dataset.id;
+        buscadorClientePedidos.value = '';
+        ocultarResultados(resultadosBuscadorCliente);
+        renderPastillaClientePedidos();
+        renderTabla();
+        mostrarSugerenciasPedidos();
+        mostrarSugerenciasSerial();
+      });
+    });
+  }
+
+  buscadorClientePedidos.addEventListener('input', mostrarSugerenciasCliente);
+  buscadorClientePedidos.addEventListener('focus', mostrarSugerenciasCliente);
+  buscadorClientePedidos.addEventListener('blur', () => setTimeout(() => ocultarResultados(resultadosBuscadorCliente), 120));
+  buscadorClientePedidos.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { buscadorClientePedidos.blur(); }
+  });
+
+  // Si cambian los clientes (p. ej. renombran o eliminan el elegido), la
+  // pastilla se actualiza; si ya no existe, el filtro se quita.
+  document.addEventListener('clientes:cambio', () => {
+    if (clienteFiltroPedidosId && !buscarCompania(clienteFiltroPedidosId)) clienteFiltroPedidosId = null;
+    renderPastillaClientePedidos();
+    renderTabla();
+  });
+
+  // ---------- Orden de la lista por nombre ----------
+  // Nombre = el de la compañía del pedido. Los prioritarios siguen yendo
+  // primero (regla de siempre); dentro de cada grupo se ordena por nombre y,
+  // a igual nombre, por número de pedido. Compañías no encontradas, al final.
+  // Fecha de salida de cada pedido: la fechaEnvio más reciente entre los
+  // envíos (window.enviosCache) que lo incluyen. Un envío armado al que nunca
+  // se le tocó la fecha no cuenta (no tiene fechaEnvio guardada). Los pedidos
+  // sin fecha no aparecen en el mapa y van al final del orden por salida.
+  function mapaFechasSalidaPedidos() {
+    const mapa = new Map();
+    (window.enviosCache || []).forEach(envio => {
+      if (!envio.fechaEnvio) return;
+      (envio.pedidos || []).forEach(p => {
+        const previa = mapa.get(p.pedidoId);
+        if (!previa || envio.fechaEnvio > previa) mapa.set(p.pedidoId, envio.fechaEnvio);
+      });
+    });
+    return mapa;
+  }
+
+  function compararPedidosPorSalida(a, b, mapaSalida) {
+    if (ordenPedidosCriterio !== 'salida' || !mapaSalida) return 0;
+    const fa = mapaSalida.get(a.id) || '';
+    const fb = mapaSalida.get(b.id) || '';
+    if (fa === fb) return 0;
+    if (!fa) return 1;   // sin fecha: siempre al final, en cualquier dirección
+    if (!fb) return -1;
+    return (fa < fb ? -1 : 1) * ordenPedidosDir;
+  }
+
+  function compararPedidosPorNombre(a, b) {
+    if (ordenPedidosCriterio !== 'nombre') return 0;
+    const nombreA = buscarCompania(a.companiaId)?.nombre;
+    const nombreB = buscarCompania(b.companiaId)?.nombre;
+    if (!nombreA && !nombreB) return 0;
+    if (!nombreA) return 1;
+    if (!nombreB) return -1;
+    const r = String(nombreA).localeCompare(String(nombreB), 'es', { sensitivity: 'base', numeric: true });
+    return r * ordenPedidosDir;
+  }
+
+  // Dos chips (Número / Nombre): clic en el inactivo lo activa en ascendente;
+  // clic en el activo invierte la dirección.
+  function pintarOrdenPedidos() {
+    contenedorOrdenPedidos.querySelectorAll('[data-orden]').forEach(btn => {
+      const activo = btn.dataset.orden === ordenPedidosCriterio;
+      btn.classList.toggle('active', activo);
+      btn.querySelector('.orden-flecha').textContent = activo ? (ordenPedidosDir === 1 ? '↑' : '↓') : '';
+    });
+  }
+  contenedorOrdenPedidos.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-orden]');
+    if (!btn) return;
+    if (ordenPedidosCriterio === btn.dataset.orden) {
+      ordenPedidosDir *= -1;
+    } else {
+      ordenPedidosCriterio = btn.dataset.orden;
+      // En fechas lo natural es ver lo más reciente primero.
+      ordenPedidosDir = ordenPedidosCriterio === 'salida' ? -1 : 1;
+    }
+    pintarOrdenPedidos();
+    renderTabla();
+  });
+  pintarOrdenPedidos();
+
+  // ---------- Sugerencias de autocompletar (dropdown bajo cada buscador) ----------
+  // Ambos buscadores respetan el chip de estado activo: si está en "Todos"
+  // sugieren sobre todos los pedidos, pero si está en "Completado" o "En
+  // proceso" (o "Devolución"), solo sugieren dentro de ese subconjunto — el
+  // mismo criterio que ya aplica la tabla.
+
+  const resultadosBuscadorPedidos = document.getElementById('resultados-buscador-pedidos');
+  const resultadosBuscadorSerial = document.getElementById('resultados-buscador-serial-pedidos');
+
+  function remisionCoincidenteConTexto(pedido, texto) {
+    if (!texto) return null;
+    for (const envio of (window.enviosCache || [])) {
+      for (const pInfo of (envio.pedidos || [])) {
+        if (pInfo.pedidoId === pedido.id && normalizar(pInfo.remision).includes(texto)) return pInfo.remision;
+      }
+    }
+    return null;
+  }
+
+  // Primera orden de compra del pedido que coincide con el texto (para
+  // mostrarla en las sugerencias), o null.
+  function ocCoincidenteConTexto(pedido, texto) {
+    if (!texto) return null;
+    const item = (pedido.equipos || []).find(it => normalizar(it.ordenCompra).includes(texto));
+    return item ? String(item.ordenCompra).trim() : null;
+  }
+
+  function etiquetaPedidoSugerencia(pedido) {
+    const compania = buscarCompania(pedido.companiaId);
+    const nombreCompania = compania ? compania.nombre : 'Compañía no encontrada';
+    let nombreMostrado = nombreCompania;
+    let contacto = pedido.contacto ? ` · ${pedido.contacto}` : '';
+    // Igual que en las tarjetas: "lo normal / lo de la subsidiaria".
+    if (pedido.envioSubsidiaria) {
+      const subsidiaria = (window.clientesCache || []).find(c => c.id === pedido.subsidiariaId);
+      nombreMostrado = `${nombreCompania} / ${subsidiaria ? subsidiaria.nombre : 'Subsidiaria no encontrada'}`;
+      if (pedido.subsidiariaContacto) contacto += `${pedido.contacto ? ' / ' : ' · '}${pedido.subsidiariaContacto}`;
+    }
+    return `${textoNumeroPedido(pedido)} — ${nombreMostrado}${contacto}`;
+  }
+
+  function irAPedidoDesdeSugerencia(pedido) {
+    if (soloFiltroDevolucion()) abrirFichaDevolucion(pedido);
+    else abrirFicha(pedido);
+  }
+
+  function ocultarResultados(el) {
+    el.classList.remove('open');
+    el.innerHTML = '';
+  }
+
+  function mostrarSugerenciasPedidos() {
+    const texto = filtroTextoPedidos;
+    if (!texto) return ocultarResultados(resultadosBuscadorPedidos);
+
+    const candidatos = pedidosPorFiltroEstado(pedidosCache)
+      .filter(p => pedidoCoincideConBusquedaTexto(p, texto))
+      .sort(compararPedidosPorNumero)
+      .slice(0, 8);
+
+    if (!candidatos.length) {
+      resultadosBuscadorPedidos.innerHTML = `<div class="buscador-item-vacio">Sin pedidos que coincidan${hayFiltrosActivosPedidos() ? ' con este filtro' : ''}</div>`;
+      resultadosBuscadorPedidos.classList.add('open');
+      return;
+    }
+
+    resultadosBuscadorPedidos.innerHTML = candidatos.map(p => {
+      const remisionMatch = remisionCoincidenteConTexto(p, texto);
+      const ocMatch = ocCoincidenteConTexto(p, texto);
+      return `
+      <div class="buscador-item" data-id="${p.id}">
+        ${escapeHtml(etiquetaPedidoSugerencia(p))}
+        <span class="buscador-item-sub">${(p.equipos || []).length} ${(p.equipos || []).length === 1 ? 'equipo' : 'equipos'}${pedidoEstaCompletado(p) ? ' · Completado' : ''}${remisionMatch ? ` · Remisión ${escapeHtml(remisionMatch)}` : ''}${ocMatch ? ` · OC ${escapeHtml(ocMatch)}` : ''}</span>
+      </div>
+    `;
+    }).join('');
+    resultadosBuscadorPedidos.classList.add('open');
+
+    resultadosBuscadorPedidos.querySelectorAll('.buscador-item').forEach(el => {
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const pedido = pedidosCache.find(p => p.id === el.dataset.id);
+        if (!pedido) return;
+        buscadorPedidos.value = textoNumeroPedido(pedido);
+        filtroTextoPedidos = normalizar(textoNumeroPedido(pedido));
+        ocultarResultados(resultadosBuscadorPedidos);
+        renderTabla();
+        irAPedidoDesdeSugerencia(pedido);
+      });
+    });
+  }
+
+  function mostrarSugerenciasSerial() {
+    const texto = filtroSerialPedidos;
+    if (!texto) return ocultarResultados(resultadosBuscadorSerial);
+
+    const candidatos = [];
+    pedidosPorFiltroEstado(pedidosCache).forEach(pedido => {
+      (pedido.equipos || []).forEach(item => {
+        serialesDelItem(item).forEach(serial => {
+          if (normalizar(serial).includes(texto)) {
+            candidatos.push({ serial, pedido, nombreItem: nombreItemPedido(item) });
+          }
+        });
+      });
+    });
+    candidatos.sort((a, b) => compararPedidosPorNumero(a.pedido, b.pedido));
+    const limitados = candidatos.slice(0, 8);
+
+    if (!limitados.length) {
+      resultadosBuscadorSerial.innerHTML = `<div class="buscador-item-vacio">Sin seriales que coincidan${hayFiltrosActivosPedidos() ? ' con este filtro' : ''}</div>`;
+      resultadosBuscadorSerial.classList.add('open');
+      return;
+    }
+
+    resultadosBuscadorSerial.innerHTML = limitados.map((c, i) => `
+      <div class="buscador-item" data-idx="${i}">
+        ${escapeHtml(c.serial)}
+        <span class="buscador-item-sub">${textoNumeroPedido(c.pedido)} · ${escapeHtml(c.nombreItem)}</span>
+      </div>
+    `).join('');
+    resultadosBuscadorSerial.classList.add('open');
+
+    resultadosBuscadorSerial.querySelectorAll('.buscador-item').forEach(el => {
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const candidato = limitados[Number(el.dataset.idx)];
+        if (!candidato) return;
+        buscadorSerialPedidos.value = candidato.serial; // autocompleta con el serial exacto
+        filtroSerialPedidos = normalizar(candidato.serial);
+        ocultarResultados(resultadosBuscadorSerial);
+        renderTabla();
+        irAPedidoDesdeSugerencia(candidato.pedido);
+      });
+    });
+  }
+
+  buscadorPedidos.addEventListener('focus', mostrarSugerenciasPedidos);
+  buscadorPedidos.addEventListener('blur', () => setTimeout(() => ocultarResultados(resultadosBuscadorPedidos), 120));
+  buscadorSerialPedidos.addEventListener('focus', mostrarSugerenciasSerial);
+  buscadorSerialPedidos.addEventListener('blur', () => setTimeout(() => ocultarResultados(resultadosBuscadorSerial), 120));
+
+  // ---------- Expandible "Ver equipos" en la tarjeta de la lista ----------
+  // Resumen compacto por ítem: nombre + extras (brazo/eje/flanche) + cuántas
+  // unidades hay y cuántas de esas ya están preparadas. Mismo dato que ya se
+  // ve en la Ficha completa, pero en una sola línea y sin sus botones de
+  // acción (reemplazar, marcar serial, etc.) — esto es solo para consultar.
+  function htmlExtrasItem(item) {
+    return [
+      item.llevaBrazo ? '+ Brazo de reacción' : '',
+      item.llevaEje ? '+ Eje sólido' : '',
+      item.llevaFlanche ? '+ Flanche de salida' : ''
+    ].filter(Boolean).map(t => ` <span class="extra">${escapeHtml(t)}</span>`).join('');
+  }
+
+  function nombreConIcono(equipo, faltanteTexto) {
+    if (!equipo) return `<span style="color:var(--danger);">${faltanteTexto}</span>`;
+    const icono = window.iconoTipoHtml(buscarTipoEquipo(equipo.tipoId));
+    const variante = equipo.variante ? ` <span class="tag-variante">${escapeHtml(equipo.variante)}</span>` : '';
+    return `${icono ? icono + ' ' : ''}${escapeHtml(equipo.nombre)}${variante}`;
+  }
+
+  function renderFilaExpandibleItem(item) {
+    let nombre;
+    if (item.tipoLinea === 'motoreductor') {
+      const motor = buscarEquipoCatalogo(item.motorEquipoId);
+      const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      // Brazo/eje/flanche son piezas del reductor, así que el extra va pegado a su nombre.
+      nombre = `${nombreConIcono(motor, 'Motor no encontrado')} + ${nombreConIcono(reductor, 'Reductor no encontrado')}${htmlExtrasItem(item)}`;
+    } else {
+      const equipo = equipoDeItem(item);
+      nombre = `${nombreConIcono(equipo, 'Equipo no encontrado')}${htmlExtrasItem(item)}`;
+    }
+
+    const totalPreparable = redondear2((item.cantidad || 0) - devueltasCountItem(item));
+    const preparadas = cantidadPreparadaItem(item);
+    const esMedida = itemEsPorMedida(item);
+    const preparadoTexto = totalPreparable > 0
+      ? `<span class="preparado-chip ${preparadas >= totalPreparable ? 'listo' : ''}">${preparadas} de ${totalPreparable}${esMedida ? ' m preparados' : ' preparadas'}</span>`
+      : '';
+
+    return `
+      <div class="equipo-expandible-fila">
+        <span class="nombre">${nombre}</span>
+        <span class="cantidad">Cant. ${item.cantidad || 1}${itemEsPorMedida(item) ? ' m' : ''}</span>
+        ${preparadoTexto}
+      </div>
+    `;
+  }
+
+  function htmlEquiposExpandible(pedido) {
+    const items = pedido.equipos || [];
+    if (!items.length) return '<div class="equipo-expandible-fila"><span class="nombre" style="color:var(--ink-soft);">Sin equipos.</span></div>';
+    return items.map(renderFilaExpandibleItem).join('');
+  }
+
+  function renderTabla() {
+    if (!pedidosCache.length) {
+      listaContenedor.innerHTML = '';
+      tablaEmpty.style.display = 'block';
+      return;
+    }
+
+    const filtrados = pedidosPorFiltroEstado(pedidosCache)
+      .filter(pedidoCoincideConBusqueda)
+      .filter(pedidoCoincideConSerial);
+
+    if (!filtrados.length) {
+      listaContenedor.innerHTML = '';
+      tablaEmpty.style.display = 'block';
+      tablaEmpty.textContent = pedidosCache.length
+        ? (soloFiltroDevolucion()
+            ? 'Ningún pedido tiene devoluciones registradas (con este filtro/búsqueda).'
+            : 'Ningún pedido coincide con el filtro/búsqueda.')
+        : 'Todavía no hay pedidos registrados.';
+      return;
+    }
+    tablaEmpty.style.display = 'none';
+
+    // Los pedidos con prioridad van primero; luego el resto. Dentro de cada
+    // grupo: por nombre o por fecha de salida (según el criterio activo) y,
+    // a igual valor, por número ascendente; o por número en la dirección
+    // elegida.
+    const dirNumero = ordenPedidosCriterio === 'numero' ? ordenPedidosDir : 1;
+    const mapaSalida = ordenPedidosCriterio === 'salida' ? mapaFechasSalidaPedidos() : null;
+    const ordenados = [...filtrados].sort((a, b) =>
+      (esPrioritario(b) - esPrioritario(a)) ||
+      compararPedidosPorNombre(a, b) ||
+      compararPedidosPorSalida(a, b, mapaSalida) ||
+      (compararPedidosPorNumero(a, b) * dirNumero)
+    );
+
+    listaContenedor.innerHTML = ordenados.map(pedido => {
+      const compania = buscarCompania(pedido.companiaId);
+      const nombreCompaniaBase = compania ? escapeHtml(compania.nombre) : '<span style="color:var(--danger);">Compañía no encontrada</span>';
+      const cantidadEquipos = (pedido.equipos || []).length;
+      const tipoInfo = TIPO_PEDIDO_LABEL[pedido.tipo] || TIPO_PEDIDO_LABEL.normal;
+      const esReparacion = pedido.tipo === 'reparacion';
+      const iconoTipo = esReparacion ? '🔧' : '🪛';
+      const completado = pedidoEstaCompletado(pedido);
+      const conDevolucion = pedidoTieneDevolucion(pedido);
+      const prioritario = esPrioritario(pedido);
+
+      // Fondo de la tarjeta: devolución manda sobre completado; completado
+      // de una reparación queda naranja bajo en vez del gris normal.
+      const clasesEstado = [
+        completado ? 'completado' : '',
+        completado && esReparacion ? 'reparacion' : '',
+        conDevolucion ? 'devolucion' : '',
+        prioritario ? 'prioritario' : ''
+      ].filter(Boolean).join(' ');
+
+      // Si se envía a una Subsidiaria, tanto el nombre de la compañía como
+      // el encargado se muestran combinados: "lo normal / lo de la subsidiaria".
+      let nombreCompania = nombreCompaniaBase;
+      let contactoTexto = pedido.contacto ? escapeHtml(pedido.contacto) : 'Sin encargado asignado';
+      if (pedido.envioSubsidiaria) {
+        const subsidiaria = (window.clientesCache || []).find(c => c.id === pedido.subsidiariaId);
+        const nombreSubsidiaria = subsidiaria ? escapeHtml(subsidiaria.nombre) : '<span style="color:var(--danger);">Subsidiaria no encontrada</span>';
+        const contactoSubsidiaria = pedido.subsidiariaContacto ? escapeHtml(pedido.subsidiariaContacto) : 'sin asignar';
+        nombreCompania = `${nombreCompaniaBase} / ${nombreSubsidiaria}`;
+        contactoTexto = `${contactoTexto} / ${contactoSubsidiaria}`;
+      }
+
+      return `
+        <div class="pedido-card ${clasesEstado}" data-id="${pedido.id}">
+          <div class="pedido-card-header">
+            <span class="pedido-card-icono-tipo">${iconoTipo}</span>
+            <span class="pedido-card-numero">${textoNumeroPedido(pedido)}</span>
+            <span class="pedido-card-compania">${nombreCompania}</span>
+            <span class="${tipoInfo.clase}">${tipoInfo.texto}</span>
+            ${tagPlantaHtml(pedido)}
+            ${completado ? '<span class="tag-pedido-completado">COMPLETADO</span>' : ''}
+            ${conDevolucion ? '<span class="tag-pedido-devolucion">DEVOLUCIÓN</span>' : ''}
+            <div class="pedido-card-actions">
+              ${completado ? '' : `<button type="button" class="btn-prioridad ${prioritario ? 'activa' : ''}" data-id="${pedido.id}" aria-pressed="${prioritario}" title="${prioritario ? 'Quitar prioridad' : 'Marcar como prioridad'}">!</button>`}
+              <button type="button" class="btn-editar" data-id="${pedido.id}" title="${completado ? 'Pedido completado: solo se puede editar la evidencia fotográfica' : 'Editar'}">✏️</button>
+              ${pedidoTieneAlgoDespachado(pedido) ? '' : `<button type="button" class="btn-eliminar danger" data-id="${pedido.id}" title="Eliminar">🗑️</button>`}
+            </div>
+          </div>
+          <div class="pedido-card-resumen-row">
+            <div class="pedido-card-resumen">Encargado: ${contactoTexto} · ${cantidadEquipos} ${cantidadEquipos === 1 ? 'equipo' : 'equipos'}</div>
+            <button type="button" class="btn-expandir-equipos" data-id="${pedido.id}">
+              <span class="flecha">▾</span> Ver equipos
+            </button>
+          </div>
+          <div class="pedido-card-equipos-expandible">
+            ${htmlEquiposExpandible(pedido)}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Clic en cualquier parte de la tarjeta (fuera de los botones) abre la
+    // Ficha. Con el filtro "Devolución" activo, abre en su lugar la Ficha de
+    // Devolución (vista reducida: solo el/los equipo(s) devuelto(s)).
+    listaContenedor.querySelectorAll('.pedido-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return; // los botones tienen su propio comportamiento
+        const pedido = pedidosCache.find(p => p.id === card.dataset.id);
+        if (!pedido) return;
+        if (soloFiltroDevolucion()) abrirFichaDevolucion(pedido);
+        else abrirFicha(pedido);
+      });
+    });
+
+    listaContenedor.querySelectorAll('.btn-expandir-equipos').forEach(btn => {
+      btn.addEventListener('click', () => {
+        btn.closest('.pedido-card').classList.toggle('expandido');
+      });
+    });
+
+    // ❗ Prioridad: un clic la activa (tarjeta amarilla y sube al inicio de la
+    // lista); otro clic la quita.
+    listaContenedor.querySelectorAll('.btn-prioridad').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const pedido = pedidosCache.find(p => p.id === btn.dataset.id);
+        if (!pedido) return;
+        btn.disabled = true;
+        try {
+          await db.collection(COLECCION).doc(pedido.id).update({ prioridad: !esPrioritario(pedido) });
+        } catch (err) {
+          console.error('Error cambiando la prioridad:', err);
+          alert('No se pudo cambiar la prioridad. Revisa la consola.');
+          btn.disabled = false;
+        }
+      });
+    });
+
+    listaContenedor.querySelectorAll('.btn-editar').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const pedido = pedidosCache.find(p => p.id === btn.dataset.id);
+        if (pedido) {
+          origenEdicion = null;
+          abrirModalEditar(pedido);
+        }
+      });
+    });
+    listaContenedor.querySelectorAll('.btn-eliminar').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const pedido = pedidosCache.find(p => p.id === btn.dataset.id);
+        if (pedido) eliminarPedido(pedido);
+      });
+    });
+  }
+
+  // ---------- Suscripción en tiempo real ----------
+
+  let suscrito = false;
+  function iniciarSuscripcion() {
+    if (suscrito) return;
+    suscrito = true;
+    db.collection(COLECCION).onSnapshot(
+      (snapshot) => {
+        pedidosCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        window.pedidosCache = pedidosCache;
+        renderTabla();
+        document.dispatchEvent(new CustomEvent('pedidos:cambio', { detail: { pedidos: pedidosCache } }));
+      },
+      (err) => {
+        console.error('Error escuchando pedidos:', err);
+      }
+    );
+  }
+
+  // Igual que en clientes.js: se necesita desde el arranque (reparaciones.js
+  // lee window.pedidosCache), pero solo después de que haya sesión iniciada.
+  document.addEventListener('auth:listo', () => iniciarSuscripcion());
+
+  document.addEventListener('tab:activada', (e) => {
+    if (e.detail.tab !== 'pedidos') return;
+    iniciarSuscripcion();
+  });
+})();
