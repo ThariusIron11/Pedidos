@@ -154,6 +154,15 @@
   inputTipoTexto.addEventListener('blur', () => {
     setTimeout(() => resultadosTipo.classList.remove('open'), 120);
   });
+  // Flechas ↑/↓ + Enter (elige y pasa al siguiente campo) + Esc. La función
+  // compartida vive en pedidos.js, que carga DESPUÉS de este archivo; por eso
+  // se engancha la primera vez que el campo recibe el foco (para entonces ya
+  // está definida).
+  inputTipoTexto.addEventListener('focus', () => {
+    if (window.habilitarTecladoBuscador) {
+      window.habilitarTecladoBuscador(inputTipoTexto, resultadosTipo, mostrarResultadosTipo);
+    }
+  }, { once: true });
 
   document.addEventListener('tipos-equipo:cambio', () => {
     poblarSelectsDeTipo();

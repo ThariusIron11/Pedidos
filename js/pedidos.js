@@ -341,6 +341,86 @@
 
   // ---------- Select de compañía / contacto ----------
 
+  // ---------- Teclado en los buscadores de los formularios ----------
+  // Flechas ↑/↓ mueven el resaltado por las opciones (↓ abre la lista si
+  // estaba cerrada), Enter elige la opción resaltada (o la primera si no hay
+  // ninguna resaltada) y pasa al siguiente campo del formulario, Esc cierra
+  // la lista. Reusa el mismo 'mousedown' de cada opción, así que no cambia
+  // cómo se elige: solo agrega el teclado. Con la lista cerrada, Enter queda
+  // como siempre. Se expone en window para que Reparaciones (que carga
+  // después) use el mismo comportamiento.
+  const SELECTOR_CAMPOS_FORM = 'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="button"]):not([type="submit"]), select, textarea';
+
+  function irAlSiguienteCampo(actual) {
+    const raiz = actual.closest('form') || document;
+    const campos = [...raiz.querySelectorAll(SELECTOR_CAMPOS_FORM)].filter(el =>
+      !el.disabled && !el.readOnly && el.offsetParent !== null && !el.closest('.buscador-resultados')
+    );
+    const i = campos.indexOf(actual);
+    const siguiente = i >= 0 ? campos[i + 1] : null;
+    if (!siguiente) return;
+    siguiente.focus();
+    // Los buscadores de equipo abren su lista al recibir el foco; los de
+    // texto solo con clic, así que acá se abre para que el flujo siga.
+    if (siguiente.classList.contains('buscador-input')) {
+      const lista = siguiente.parentElement && siguiente.parentElement.querySelector('.buscador-resultados');
+      if (lista && !lista.classList.contains('open')) siguiente.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    }
+  }
+
+  // `abrir`: función que (re)dibuja y abre la lista. `permitirSinCoincidencia`:
+  // si no hay opciones, Enter igual avanza (ej. equipo nuevo en Reparaciones).
+  function habilitarTecladoBuscador(inputTexto, resultados, abrir, { permitirSinCoincidencia = false } = {}) {
+    const itemsLista = () => [...resultados.querySelectorAll('.buscador-item')];
+    function marcar(items, i) {
+      items.forEach((el, k) => el.classList.toggle('activo', k === i));
+      if (items[i]) items[i].scrollIntoView({ block: 'nearest' });
+    }
+
+    inputTexto.addEventListener('keydown', (e) => {
+      if (e.isComposing) return;
+      const abierta = resultados.classList.contains('open');
+
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (!abierta && abrir) abrir();
+        const items = itemsLista();
+        if (!items.length) return;
+        const actual = items.findIndex(el => el.classList.contains('activo'));
+        const reciénAbierta = !abierta;
+        let siguiente;
+        if (e.key === 'ArrowDown') siguiente = (reciénAbierta || actual < 0) ? 0 : (actual + 1) % items.length;
+        else siguiente = (reciénAbierta || actual < 0) ? items.length - 1 : (actual - 1 + items.length) % items.length;
+        marcar(items, siguiente);
+        return;
+      }
+
+      if (e.key === 'Enter') {
+        if (!abierta) return; // lista cerrada: Enter se comporta como siempre
+        e.preventDefault();   // que no guarde el formulario por accidente
+        const items = itemsLista();
+        const elegido = items.find(el => el.classList.contains('activo')) || items[0];
+        if (elegido) {
+          elegido.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+          irAlSiguienteCampo(inputTexto);
+        } else if (permitirSinCoincidencia) {
+          resultados.classList.remove('open');
+          irAlSiguienteCampo(inputTexto);
+        }
+        return;
+      }
+
+      if (e.key === 'Escape' && abierta) {
+        e.preventDefault();
+        e.stopPropagation(); // que no cierre también la ventana
+        resultados.classList.remove('open');
+      }
+    });
+  }
+
+  window.habilitarTecladoBuscador = habilitarTecladoBuscador;
+  window.irAlSiguienteCampo = irAlSiguienteCampo;
+
   // Buscador de texto genérico (compañía, contacto, subsidiaria, encargado
   // de subsidiaria comparten el mismo comportamiento): input.buscador-input
   // visible + input[hidden] que guarda el id/valor real + div.buscador-resultados.
@@ -385,6 +465,7 @@
     inputTexto.addEventListener('blur', () => {
       setTimeout(() => resultados.classList.remove('open'), 120);
     });
+    habilitarTecladoBuscador(inputTexto, resultados, mostrarResultados);
 
     return { refrescar: mostrarResultados };
   }
@@ -602,6 +683,7 @@
         inputTexto.value = nombreMostrableEquipo(eq);
       }
     }
+    habilitarTecladoBuscador(inputTexto, resultados, mostrarResultados);
 
     return { refrescar: mostrarResultados };
   }
@@ -670,6 +752,7 @@
         inputTexto.value = nombreMostrableTipo(ti);
       }
     }
+    habilitarTecladoBuscador(inputTexto, resultados, mostrarResultados);
 
     return { refrescar: mostrarResultados };
   }

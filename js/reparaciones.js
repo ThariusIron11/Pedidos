@@ -1560,6 +1560,10 @@
   inputCompaniaTexto.addEventListener('blur', () => {
     setTimeout(() => resultadosCompania.classList.remove('open'), 120);
   });
+  // Flechas + Enter (ver habilitarTecladoBuscador en pedidos.js).
+  if (window.habilitarTecladoBuscador) {
+    window.habilitarTecladoBuscador(inputCompaniaTexto, resultadosCompania, mostrarResultadosCompania);
+  }
 
   document.addEventListener('clientes:cambio', () => {
     sincronizarTextoCompaniaDesdeId();
@@ -1706,6 +1710,11 @@
     // interno), el desplegable quedaría desalineado del input — mejor
     // cerrarlo, igual que pasaría al hacer blur.
     window.addEventListener('scroll', () => resultados.classList.remove('open'), true);
+    // Flechas + Enter. Sin coincidencias, Enter igual avanza: el equipo se
+    // registra como nuevo.
+    if (window.habilitarTecladoBuscador) {
+      window.habilitarTecladoBuscador(inputTexto, resultados, mostrarResultados, { permitirSinCoincidencia: true });
+    }
 
     return { refrescar: mostrarResultados };
   }
@@ -1726,6 +1735,13 @@
 
   // Si cambia el tipo, la búsqueda se re-filtra y cualquier selección
   // previa deja de ser válida (era de otro tipo).
+  // Enter en el select de Tipo pasa al campo de equipo (las flechas ya
+  // cambian la opción de forma nativa).
+  selectTipoFiltro.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (window.irAlSiguienteCampo) window.irAlSiguienteCampo(selectTipoFiltro);
+  });
   selectTipoFiltro.addEventListener('change', () => {
     inputEquipoId.value = '';
     inputEquipoTexto.value = '';
