@@ -1080,6 +1080,41 @@
     color: var(--ok);
     margin-left: 4px;
   }
+  /* ---------- Ficha de reparación · pestaña Equipos (solo lectura) ----------
+     Una tarjeta por pieza (motor / reductor; o una sola si es equipo
+     individual), con el serial destacado y botón para copiarlo. */
+  .ficha-equipo-vista{ color: var(--ink); white-space: normal; }
+  .ficha-equipo-vista .reparacion-card-sin-equipo{ font-style: italic; color: var(--ink-soft); font-size: 14px; }
+  .ficha-equipo-top{ display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .ficha-equipo-tag{
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 600; color: var(--ink);
+    background: #eef0f3; border-radius: 999px; padding: 4px 12px;
+  }
+  .ficha-equipo-top .btn-guia-equipo{
+    margin-left: auto; width: 28px; height: 28px; padding: 0;
+    font-family: inherit; font-size: 14px; font-weight: 800;
+    background: #fff; color: var(--ink); border: 1px solid #d4d7dc; border-radius: 50%; cursor: pointer;
+  }
+  .ficha-equipo-top .btn-guia-equipo:hover{ background: #f0f1f4; }
+  .ficha-equipo-piezas{ display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .ficha-pieza{
+    background: var(--paper-card); border: 1px solid #e2e4e9; border-radius: 10px;
+    padding: 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0;
+  }
+  .ficha-pieza-label{ display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
+  .ficha-pieza-nombre{ font-size: 17px; font-weight: 600; line-height: 1.3; color: var(--ink); overflow-wrap: anywhere; }
+  .ficha-pieza-sn{ display: flex; align-items: center; gap: 8px; background: #f4f5f7; border-radius: var(--radius); padding: 6px 6px 6px 10px; }
+  .ficha-pieza-sn-lab{ font-size: 12px; font-weight: 600; color: var(--ink-soft); }
+  .ficha-pieza-sn-valor{ font-family: Consolas, "SF Mono", Menlo, monospace; font-size: 16px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+  .ficha-pieza-sn-vacio{ font-size: 13px; font-style: italic; color: var(--ink-soft); padding: 8px 10px; }
+  .ficha-pieza-copiar{
+    margin-left: auto; flex: none; width: 28px; height: 28px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; color: var(--ink-soft); border: none; border-radius: var(--radius); cursor: pointer;
+  }
+  .ficha-pieza-copiar:hover{ background: #e2e4e9; color: var(--ink); }
+  .ficha-pieza-copiar.copiado{ color: var(--ok); }
   .reparacion-observaciones-texto-view{
     font-weight: 400;
     font-size: 13.5px;
@@ -3810,7 +3845,7 @@
         <div class="panel-header" style="margin-bottom:14px;">
           <h2 style="font-size:14px;">Equipo que ingresó a esta reparación</h2>
         </div>
-        <div id="ficha-reparacion-equipo-texto" class="reparacion-equipo-texto-view"><!-- generado por reparaciones.js --></div>
+        <div id="ficha-reparacion-equipo-texto" class="ficha-equipo-vista"><!-- generado por reparaciones.js --></div>
       </div>
 
       <div class="subtab-panel" id="subtab-ficha-reparacion-observaciones">

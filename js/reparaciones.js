@@ -574,9 +574,90 @@
     return `<button type="button" class="btn-guia-equipo" data-guia-id="${guia.id}" title="Sugerencia de remisión" aria-label="Sugerencia de remisión">?</button>`;
   }
 
-  function renderFichaEquipos(reparacion) {
-    fichaEquipoTexto.innerHTML = htmlEquipoTarjeta(reparacion) + botonGuiaReparacionHtml(reparacion) + htmlReemplazoFichaReparacion(reparacion);
+  // Pestaña Equipos de la ficha: una tarjeta por pieza. Motoreductor armado
+  // = tarjeta de Motor + tarjeta de Reductor, cada una con su serial; equipo
+  // individual = una sola tarjeta. El "?" de la sugerencia de remisión queda
+  // arriba a la derecha. (La tarjeta de la lista sigue usando htmlEquipoTarjeta.)
+  const ICONO_COPIAR_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>';
+  const ICONO_CHECK_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>';
+
+  function htmlPiezaFicha(etiqueta, iconoHtml, nombreHtml, serial) {
+    const serialLimpio = String(serial || '').trim();
+    const serialHtml = serialLimpio
+      ? `<div class="ficha-pieza-sn"><span class="ficha-pieza-sn-lab">S/N</span><span class="ficha-pieza-sn-valor">${escapeHtml(serialLimpio)}</span><button type="button" class="ficha-pieza-copiar" data-copiar-serial="${escapeAttr(serialLimpio)}" title="Copiar serial" aria-label="Copiar serial">${ICONO_COPIAR_SVG}</button></div>`
+      : '<div class="ficha-pieza-sn ficha-pieza-sn-vacio">Sin serial registrado</div>';
+    const labelHtml = etiqueta
+      ? `<div class="ficha-pieza-label">${iconoHtml ? iconoHtml + ' ' : ''}${escapeHtml(etiqueta)}</div>`
+      : '';
+    return `<div class="ficha-pieza">${labelHtml}<div class="ficha-pieza-nombre">${nombreHtml}</div>${serialHtml}</div>`;
   }
+
+  function htmlFichaEquipoPiezas(reparacion) {
+    const item = reparacion.equipo;
+    if (!item) return '<span class="reparacion-card-sin-equipo">Sin equipo registrado</span>';
+    const noEncontrado = (txt) => `<span style="color:var(--danger);">${txt}</span>`;
+    let etiquetaLinea;
+    let iconoLinea;
+    let piezas;
+
+    if (item.tipoLinea === 'motoreductor') {
+      const zd = !!item.zd;
+      const nt = nombresTipoMotoreductor(zd);
+      const motor = buscarEquipoCatalogo(item.motorEquipoId);
+      const reductor = buscarEquipoCatalogo(item.reductorEquipoId);
+      etiquetaLinea = etiquetaMotoreductor(zd);
+      iconoLinea = iconoDeTipoId(tipoIdLineaMotoreductor(zd));
+      piezas = [
+        htmlPiezaFicha(zd ? 'Motor ZD' : 'Motor', iconoDeTipoId(tipoIdPorNombre(nt.motor)),
+          motor ? escapeHtml(nombreMostrableEquipo(motor)) : noEncontrado('Motor no encontrado'), item.motorSerial),
+        htmlPiezaFicha(zd ? 'Reductor ZD' : 'Reductor', iconoDeTipoId(tipoIdPorNombre(nt.reductor)),
+          reductor ? escapeHtml(nombreMostrableEquipo(reductor)) : noEncontrado('Reductor no encontrado'), item.reductorSerial)
+      ];
+    } else {
+      const eq = buscarEquipoCatalogo(item.equipoId);
+      const tipo = eq ? (window.tiposEquipoCache || []).find(t => t.id === eq.tipoId) : null;
+      etiquetaLinea = 'Equipo';
+      iconoLinea = iconoTipoDe(eq);
+      piezas = [
+        htmlPiezaFicha(tipo ? tipo.nombre : '', iconoTipoDe(eq),
+          eq ? escapeHtml(nombreMostrableEquipo(eq)) : noEncontrado('Equipo no encontrado'), item.serial)
+      ];
+    }
+
+    return `<div class="ficha-equipo-top"><span class="ficha-equipo-tag">${iconoLinea ? iconoLinea + ' ' : ''}${escapeHtml(etiquetaLinea)}</span>${botonGuiaReparacionHtml(reparacion)}</div>` +
+      `<div class="ficha-equipo-piezas">${piezas.join('')}</div>`;
+  }
+
+  function renderFichaEquipos(reparacion) {
+    fichaEquipoTexto.innerHTML = htmlFichaEquipoPiezas(reparacion) + htmlReemplazoFichaReparacion(reparacion);
+  }
+
+  // Copiar el serial al portapapeles (el botón cambia a ✓ un instante).
+  fichaEquipoTexto.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-copiar-serial]');
+    if (!btn) return;
+    const serial = btn.dataset.copiarSerial;
+    try {
+      await navigator.clipboard.writeText(serial);
+    } catch (err) {
+      const ta = document.createElement('textarea');
+      ta.value = serial;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (e2) { /* sin portapapeles: no pasa nada */ }
+      ta.remove();
+    }
+    btn.classList.add('copiado');
+    btn.innerHTML = ICONO_CHECK_SVG;
+    btn.title = 'Copiado';
+    setTimeout(() => {
+      btn.classList.remove('copiado');
+      btn.innerHTML = ICONO_COPIAR_SVG;
+      btn.title = 'Copiar serial';
+    }, 1200);
+  });
 
   function abrirFicha(reparacion, subtabInicial) {
     fichaHeaderNumero.textContent = fichaTextoHeader(reparacion);
